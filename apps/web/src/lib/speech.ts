@@ -1,0 +1,88 @@
+// Thin wrapper around the browser Web Speech API for the Live Guide.
+//   - speak():  text-to-speech (Nova narrating / answering)         [output]
+//   - createListener(): speech-to-text (you talking back)           [input]
+//
+// Everything feature-detects and degrades gracefully so the UI can hide voice
+// controls when a browser (notably some iOS/Safari builds) doesn't support it.
+
+export const ttsSupported = (): boolean =>
+  typeof window !== "undefined" && "speechSynthesis" in window;
+
+export const sttSupported = (): boolean =>
+  typeof window !== "undefined" &&
+  ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+
+export interface SpeakOptions {
+  lang?: string; // BCP-47, e.g. "en-US"
+  rate?: number; // 0.1–10, default ~1
+  onStart?: () => void;
+  onEnd?: () => void;
+}
+
+// Speak a string aloud. Cancels anything currently being spoken first so the
+// guide never talks over itself when stops change quickly.
+export function speak(text: string, opts: SpeakOptions = {}): void {
+  if (!ttsSupported() || !text) return;
+
+  window.speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = opts.lang ?? "en-US";
+  utterance.rate = opts.rate ?? 0.98;
+  if (opts.onStart) utterance.onstart = opts.onStart;
+  if (opts.onEnd) {
+    utterance.onend = opts.onEnd;
+    utterance.onerror = opts.onEnd;
+  }
+
+  window.speechSynthesis.speak(utterance);
+}
+
+export function stopSpeaking(): void {
+  if (ttsSupported()) window.speechSynthesis.cancel();
+}
+
+export interface Listener {
+  start: () => void;
+  stop: () => void;
+}
+
+export interface ListenHandlers {
+  onResult: (transcript: string) => void;
+  onError?: (message: string) => void;
+  onEnd?: () => void;
+  lang?: string;
+}
+
+// Create a one-shot speech recogniser. Returns null if unsupported so callers
+// can fall back to the text input.
+export function createListener(handlers: ListenHandlers): Listener | null {
+  if (!sttSupported()) return null;
+
+  const Ctor =
+    (window as unknown as { SpeechRecognition?: typeof window.SpeechRecognition })
+      .SpeechRecognition ??
+    (window as unknown as { webkitSpeechRecognition?: typeof window.SpeechRecognition })
+      .webkitSpeechRecognition;
+
+  if (!Ctor) return null;
+
+  const recognition = new Ctor();
+  recognition.lang = handlers.lang ?? "en-US";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  recognition.continuous = false;
+
+  recognition.onresult = (event: SpeechRecognitionEvent) => {
+    const transcript = event.results[0]?.[0]?.transcript?.trim();
+    if (transcript) handlers.onResult(transcript);
+  };
+  recognition.onerror = (event: SpeechRecognitionErrorEvent) =>
+    handlers.onError?.(event.error);
+  if (handlers.onEnd) recognition.onend = handlers.onEnd;
+
+  return {
+    start: () => recognition.start(),
+    stop: () => recognition.stop(),
+  };
+}

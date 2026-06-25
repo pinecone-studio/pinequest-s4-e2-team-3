@@ -1,16 +1,17 @@
 import Link from "next/link";
 import { SectionHeader } from "@/components/SectionHeader";
 import { Tag } from "@/components/Tag";
-import { PlayIcon } from "@/components/icons";
+import { MapPinIcon, MicIcon, PlayIcon, ShieldIcon } from "@/components/icons";
 import { guide, nearbySpots, todaysJourney, trip, weather } from "@/lib/mockData";
-import type { NearbySpot } from "@/types";
+import type { NearbySpot, Tone } from "@/types";
 
 export default function HomePage() {
   return (
     <div className="space-y-6">
       <Header />
-      <WeatherStrip />
-      <TodaysJourneyCard />
+      <StatStrip />
+      <LiveGuideCard />
+      <QuickActions />
 
       <section>
         <SectionHeader title="Right now, near you" action="Explore" />
@@ -46,18 +47,18 @@ function Header() {
           </span>
         </Link>
         <span className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-[#c9d8f5] to-[#9fb6e8] font-bold text-primary-900">
-          S
+          N
         </span>
       </div>
     </header>
   );
 }
 
-function WeatherStrip() {
+function StatStrip() {
   return (
     <div className="grid grid-cols-3 gap-2">
       <StatCard label="Weather" value={`${weather.temperature}°`} sub={weather.description} />
-      <StatCard label="Energy" value={weather.energy} />
+      <StatCard label="Altitude" value="1,350 m" sub="UB is high" />
       <StatCard label="Day" value={trip.dayLabel} />
     </div>
   );
@@ -83,59 +84,90 @@ function StatCard({
   );
 }
 
-// The hero image card: today's journey with the guide-ready pill and a serif title.
-function TodaysJourneyCard() {
+// The hero: your AI local guide, ready to walk a route with you (→ /live).
+function LiveGuideCard() {
   return (
-    <section className="relative overflow-hidden rounded-[26px] shadow-lg shadow-ink/20">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={todaysJourney.imageUrl}
-        alt={todaysJourney.title}
-        className="h-72 w-full object-cover"
-      />
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/80" />
+    <section className="relative overflow-hidden rounded-[26px] bg-[#0d1422] p-6 shadow-lg shadow-ink/20">
+      <div className="absolute inset-0 bg-[radial-gradient(120%_90%_at_80%_10%,#1f56e0_0%,#16233d_45%,#0d1422_75%)]" />
+      <div className="relative">
+        <div className="inline-flex items-center gap-2 rounded-full bg-white/10 py-1.5 pl-2 pr-3 backdrop-blur">
+          <span className="h-4 w-4 rounded-full bg-gradient-to-br from-primary-500 to-primary-700" />
+          <span className="text-xs font-bold text-white">{guide.name} is ready</span>
+        </div>
 
-      <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full bg-white/90 py-1.5 pl-2 pr-3 backdrop-blur">
-        <span className="h-4 w-4 rounded-full bg-gradient-to-br from-primary-500 to-primary-700" />
-        <span className="text-xs font-bold text-ink">{guide.name} is ready</span>
-      </div>
-
-      <div className="absolute inset-x-5 bottom-5">
-        <p className="text-xs font-bold uppercase tracking-wide text-white/80">
-          Today&apos;s journey
+        <p className="mt-5 text-xs font-bold uppercase tracking-wide text-white/60">
+          Live guide
         </p>
         <h2 className="mt-1 font-serif text-3xl leading-tight text-white">
           {todaysJourney.title}
         </h2>
+        <p className="mt-2 text-sm leading-snug text-white/70">
+          {todaysJourney.subtitle}
+        </p>
+
         <Link
-          href="/journey"
-          className="mt-4 flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-bold text-primary-900"
+          href="/live"
+          className="mt-5 flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-bold text-primary-900"
         >
           <PlayIcon size={14} className="text-primary-600" />
-          Start my journey
+          Start live guide
         </Link>
       </div>
     </section>
   );
 }
 
-// A compact photo card in the horizontally-scrolling "near you" row.
+// Quick entry into the companion's other surfaces (teammates' screens).
+function QuickActions() {
+  const actions = [
+    { href: "/translate", label: "Phrases", Icon: MicIcon },
+    { href: "/explore", label: "Explore", Icon: MapPinIcon },
+    { href: "/sos", label: "Safety", Icon: ShieldIcon },
+  ];
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {actions.map(({ href, label, Icon }) => (
+        <Link
+          key={href}
+          href={href}
+          className="flex flex-col items-center gap-2 rounded-2xl border border-ink/5 bg-white/70 py-4 backdrop-blur"
+        >
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+            <Icon size={20} />
+          </span>
+          <span className="text-xs font-bold text-ink">{label}</span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+// Gradient tints per tone so cards look premium without remote photos.
+const cardTint: Record<Tone, string> = {
+  blue: "from-[#2f6bff] to-[#1f3a8a]",
+  amber: "from-[#f59e0b] to-[#b45309]",
+  green: "from-[#1F9D6B] to-[#0f5c3f]",
+  purple: "from-[#7c5cff] to-[#4c1d95]",
+  white: "from-sand-200 to-sand-300",
+};
+
+// A compact card in the horizontally-scrolling "near you" row.
 function NearbyCard({ spot }: { spot: NearbySpot }) {
   return (
     <Link
       href="/explore"
       className="w-44 shrink-0 overflow-hidden rounded-3xl bg-white shadow-sm"
     >
-      <div className="relative h-28">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={spot.imageUrl}
-          alt={spot.title}
-          className="h-full w-full object-cover"
-        />
+      <div
+        className={`relative h-28 bg-gradient-to-br ${cardTint[spot.badgeTone]}`}
+      >
         <div className="absolute left-2 top-2">
           <Tag label={spot.badge} tone={spot.badgeTone} />
         </div>
+        <MapPinIcon
+          size={26}
+          className="absolute bottom-2 right-2 text-white/40"
+        />
       </div>
       <p className="p-3 text-sm font-bold text-ink">{spot.title}</p>
     </Link>
