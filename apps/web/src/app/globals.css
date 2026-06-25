@@ -1,3 +1,15 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Soft blue ambient glow over the warm sand base — the airy Lumo backdrop.
+   Fixed so it stays put while content scrolls. */
+body {
+  background-color: #f3eee6;
+  background-image: radial-gradient(
+    120% 80% at 30% -10%,
+    #eaf0fb 0%,
+    rgba(234, 240, 251, 0) 55%
+  );
+  background-attachment: fixed;
+}
