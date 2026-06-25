@@ -1,17 +1,28 @@
+import Link from "next/link";
+
 type SectionHeaderProps = {
   title: string;
   action?: string;
+  actionHref?: string;
 };
 
-// Title row used above each section, with an optional right-aligned action word.
-export function SectionHeader({ title, action }: SectionHeaderProps) {
+export function SectionHeader({ title, action, actionHref }: SectionHeaderProps) {
   return (
     <div className="mb-3 flex items-center justify-between">
       <h2 className="text-lg font-bold text-ink">{title}</h2>
       {action ? (
-        <button className="text-sm font-semibold text-primary-600 hover:text-primary-700">
-          {action}
-        </button>
+        actionHref ? (
+          <Link
+            href={actionHref}
+            className="text-sm font-semibold text-primary-600 hover:text-primary-700"
+          >
+            {action}
+          </Link>
+        ) : (
+          <button className="text-sm font-semibold text-primary-600 hover:text-primary-700">
+            {action}
+          </button>
+        )
       ) : null}
     </div>
   );

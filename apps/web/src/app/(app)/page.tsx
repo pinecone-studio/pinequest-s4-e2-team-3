@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { HeaderActions } from "@/components/HeaderActions";
 import { SectionHeader } from "@/components/SectionHeader";
-import { Tag } from "@/components/Tag";
 import { MapPinIcon, MicIcon, PlayIcon, ShieldIcon } from "@/components/icons";
-import { guide, nearbySpots, todaysJourney, trip, weather } from "@/lib/mockData";
-import type { NearbySpot, Tone } from "@/types";
+import { guide, todaysJourney, trip, weather } from "@/lib/mockData";
+import { NearbySection } from "./NearbySection";
 
 export default function HomePage() {
   return (
@@ -15,12 +14,8 @@ export default function HomePage() {
       <QuickActions />
 
       <section>
-        <SectionHeader title="Right now, near you" action="Explore" />
-        <div className="flex gap-3 overflow-x-auto pb-1">
-          {nearbySpots.map((spot) => (
-            <NearbyCard key={spot.id} spot={spot} />
-          ))}
-        </div>
+        <SectionHeader title="Right now, near you" action="Explore" actionHref="/explore" />
+        <NearbySection />
       </section>
     </div>
   );
@@ -131,34 +126,3 @@ function QuickActions() {
   );
 }
 
-// Gradient tints per tone so cards look premium without remote photos.
-const cardTint: Record<Tone, string> = {
-  blue: "from-[#2f6bff] to-[#1f3a8a]",
-  amber: "from-[#f59e0b] to-[#b45309]",
-  green: "from-[#1F9D6B] to-[#0f5c3f]",
-  purple: "from-[#7c5cff] to-[#4c1d95]",
-  white: "from-sand-200 to-sand-300",
-};
-
-// A compact card in the horizontally-scrolling "near you" row.
-function NearbyCard({ spot }: { spot: NearbySpot }) {
-  return (
-    <Link
-      href="/explore"
-      className="w-44 shrink-0 overflow-hidden rounded-3xl bg-white shadow-sm"
-    >
-      <div
-        className={`relative h-28 bg-gradient-to-br ${cardTint[spot.badgeTone]}`}
-      >
-        <div className="absolute left-2 top-2">
-          <Tag label={spot.badge} tone={spot.badgeTone} />
-        </div>
-        <MapPinIcon
-          size={26}
-          className="absolute bottom-2 right-2 text-white/40"
-        />
-      </div>
-      <p className="p-3 text-sm font-bold text-ink">{spot.title}</p>
-    </Link>
-  );
-}
