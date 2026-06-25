@@ -11,13 +11,17 @@ interface AskPayload {
 
 @Injectable()
 export class GuideService {
-  private openai: OpenAI;
+  private openai: OpenAI | null = null;
 
   constructor(private readonly config: ConfigService) {
-    this.openai = new OpenAI({ apiKey: this.config.get("openai.apiKey") });
+    const apiKey = this.config.get<string>("openai.apiKey");
+    if (apiKey) {
+      this.openai = new OpenAI({ apiKey });
+    }
   }
 
   async ask(payload: AskPayload) {
+    if (!this.openai) return { reply: "AI guide is not configured." };
     // TODO: add context (place info, user location, history) to system prompt
     const completion = await this.openai.chat.completions.create({
       model: this.config.get("openai.model") ?? "gpt-4o",

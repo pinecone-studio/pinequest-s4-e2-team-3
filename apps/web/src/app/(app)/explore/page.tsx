@@ -1,28 +1,29 @@
-import { ExploreCard } from "@/components/ExploreCard";
-import { SearchIcon, SunIcon } from "@/components/icons";
-import { exploreBanner, exploreCategories, exploreSpots, trip } from "@/lib/mockData";
+import { SearchIcon } from "@/components/icons";
+import { CategoryChips } from "./CategoryChips";
+import { PlacesList } from "./PlacesList";
+import { GuideBanner } from "./GuideBanner";
 
-export default function ExplorePage() {
+const EXPLORE_CATEGORIES = ["All", "Food", "Viewpoints", "Culture", "History"];
+
+export default async function ExplorePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ category?: string }>;
+}) {
+  const { category = "All" } = await searchParams;
+
   return (
     <div className="space-y-5">
       <header>
         <h1 className="font-serif text-4xl leading-none text-ink">
-          Explore {trip.city}
+          Explore Улаанбаатар
         </h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          {exploreSpots.length} places nearby
-        </p>
       </header>
 
       <SearchBar />
-      <CategoryChips />
+      <CategoryChips categories={EXPLORE_CATEGORIES} selected={category} />
       <GuideBanner />
-
-      <div className="space-y-3">
-        {exploreSpots.map((spot) => (
-          <ExploreCard key={spot.id} spot={spot} />
-        ))}
-      </div>
+      <PlacesList category={category} />
     </div>
   );
 }
@@ -33,45 +34,10 @@ function SearchBar() {
       <SearchIcon size={18} className="text-ink-muted" />
       <input
         type="text"
-        placeholder="Search attractions, food, events…"
+        placeholder="Газар, хоол, арга хэмжээ хайх…"
         className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-muted"
       />
     </div>
   );
 }
 
-// The first category is shown as selected; the rest are resting filters.
-function CategoryChips() {
-  return (
-    <div className="flex gap-2 overflow-x-auto pb-1">
-      {exploreCategories.map((category, index) => {
-        const isSelected = index === 0;
-        return (
-          <button
-            key={category}
-            className={[
-              "shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-colors",
-              isSelected
-                ? "bg-primary-600 text-white"
-                : "bg-white text-ink-muted hover:text-ink",
-            ].join(" ")}
-          >
-            {category}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-// Soft blue note from the guide above the results.
-function GuideBanner() {
-  return (
-    <div className="flex items-start gap-3 rounded-3xl bg-primary-50 p-4">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-600 text-white">
-        <SunIcon size={18} />
-      </span>
-      <p className="text-sm font-medium text-ink">{exploreBanner}</p>
-    </div>
-  );
-}

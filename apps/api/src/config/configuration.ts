@@ -41,6 +41,10 @@ export default () => ({
     secretToken: process.env.MAPBOX_SECRET_TOKEN,
   },
 
+  google: {
+    placesApiKey: process.env.GOOGLE_PLACES_API_KEY,
+  },
+
   weather: {
     apiKey: process.env.WEATHER_API_KEY,
     apiUrl: process.env.WEATHER_API_URL,
