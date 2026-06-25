@@ -99,6 +99,10 @@ export interface SosOption {
   title: string;
   subtitle: string;
   tone: Tone;
+  // The message prepared for the operator and the service that gets called.
+  message: string;
+  service: string;
+  serviceNumber: string;
 }
 
 // ---------------------------------------------------------------------------

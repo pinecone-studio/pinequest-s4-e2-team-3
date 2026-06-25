@@ -204,6 +204,14 @@ export function BarsIcon(props: IconProps) {
   );
 }
 
+export function PhoneIcon(props: IconProps) {
+  return (
+    <svg {...svgProps(props)} fill="currentColor" stroke="none">
+      <path d="M6.6 3H4.3C3.6 3 3 3.6 3 4.3 3 13 11 21 19.7 21c.7 0 1.3-.6 1.3-1.3v-2.3c0-.6-.4-1.1-1-1.3l-2.7-.7c-.5-.1-1 0-1.3.4l-1 1c-2.4-1.2-4.3-3.1-5.5-5.5l1-1c.4-.3.5-.8.4-1.3l-.7-2.7c-.2-.6-.7-1-1.3-1Z" />
+    </svg>
+  );
+}
+
 export function PlayIcon(props: IconProps) {
   return (
     <svg {...svgProps(props)} fill="currentColor" stroke="none">
