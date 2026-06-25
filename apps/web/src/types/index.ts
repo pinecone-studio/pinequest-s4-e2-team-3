@@ -100,3 +100,59 @@ export interface SosOption {
   subtitle: string;
   tone: Tone;
 }
+
+// ---------------------------------------------------------------------------
+// Live Guide — the location-aware voice companion.
+// A route is a fixed sequence of stops; the guide tracks the traveller's
+// position and, on arrival at a stop, speaks its narration aloud.
+// ---------------------------------------------------------------------------
+
+export interface Coords {
+  latitude: number;
+  longitude: number;
+}
+
+// How the traveller gets from the previous stop to this one — Nomad AI is an
+// advisory layer, so this is "what to do / what to ask", not turn-by-turn.
+export interface TransportTip {
+  mode: "walk" | "taxi" | "bus" | "shared-van" | "drive";
+  label: string; // e.g. "Taxi · ~15 min · ₮8,000–12,000"
+}
+
+export interface RouteStop {
+  id: string;
+  name: string;
+  // The traveller-facing place type, e.g. "Airport", "Square", "Guanz".
+  kind: string;
+  latitude: number;
+  longitude: number;
+  // Distance (metres) within which we treat the traveller as "arrived".
+  arrivalRadius: number;
+  // What Nova says aloud the moment you arrive (pre-written = works offline).
+  narration: string;
+  // Why this place matters / cultural context (shown under the narration).
+  context?: string;
+  // Practical "ask a local" phrases for this leg (EN + MN + romanised).
+  askLocalPhrases?: LocalPhrase[];
+  // How to reach this stop from the previous one.
+  transport?: TransportTip[];
+  imageUrl?: string;
+}
+
+export interface LocalPhrase {
+  en: string;
+  mn: string;
+  // Latin romanisation so a non-Mongolian speaker can attempt to say it.
+  roman: string;
+}
+
+export type RouteRegion = "ulaanbaatar" | "khuvsgul" | "gobi";
+
+export interface DemoRoute {
+  id: string;
+  title: string;
+  region: RouteRegion;
+  // One-line pitch shown in the route picker.
+  summary: string;
+  stops: RouteStop[];
+}

@@ -26,26 +26,26 @@ const PHOTO = {
 
 export const guide = {
   name: "Nova",
-  status: "Planning your day",
+  status: "Your local guide",
 };
 
 export const trip = {
-  city: "Lisbon",
-  weekday: "Saturday",
-  greeting: "Morning, Sara",
-  dayLabel: "2 of 4",
+  city: "Ulaanbaatar",
+  weekday: "Day 1",
+  greeting: "Welcome to Mongolia",
+  dayLabel: "1 of 7",
 };
 
 export const weather = {
-  temperature: 24,
-  description: "Sunny",
+  temperature: 18,
+  description: "Clear skies",
   energy: "Fresh",
 };
 
 export const todaysJourney = {
-  title: "Old Alfama & the river light",
+  title: "Your first hours in Ulaanbaatar",
   subtitle:
-    "Not a schedule — a thread of moments. I'll bend it to the weather, crowds and how you feel.",
+    "I'll walk it with you — speaking up when you reach each place, telling you what to ask locals, and what it all means.",
   imageUrl: PHOTO.alfama,
 };
 
@@ -61,24 +61,24 @@ export const adaptationPrompt = {
 export const nearbySpots: NearbySpot[] = [
   {
     id: "near-1",
-    title: "Miradouro de Santa Luzia",
-    imageUrl: PHOTO.tram,
-    badge: "Quiet now",
-    badgeTone: "green",
+    title: "Gandantegchinlen Monastery",
+    imageUrl: "",
+    badge: "Open now",
+    badgeTone: "blue",
   },
   {
     id: "near-2",
-    title: "Manteigaria",
-    imageUrl: PHOTO.market,
+    title: "Naran Tuul Market",
+    imageUrl: "",
     badge: "Local pick",
     badgeTone: "amber",
   },
   {
     id: "near-3",
-    title: "Sé Cathedral",
-    imageUrl: PHOTO.cathedral,
-    badge: "Open now",
-    badgeTone: "blue",
+    title: "Sükhbaatar Square",
+    imageUrl: "",
+    badge: "Quiet now",
+    badgeTone: "green",
   },
 ];
 
