@@ -28,7 +28,7 @@ const OPTION_ICON: Record<string, (props: { size?: number }) => React.ReactNode>
 };
 
 // How long the "getting help ready" countdown runs before showing the call screen.
-const COUNTDOWN_SECONDS = 3;
+const COUNTDOWN_SECONDS = 5;
 
 type Step = "choose" | "countdown" | "ready";
 
@@ -190,12 +190,11 @@ function CountdownView({
   );
 }
 
-// The draining red ring with the seconds count in the middle.
+// The draining red ring with the seconds count in the middle. The ring runs one
+// smooth animation across the whole countdown so it empties exactly when the
+// timer hits zero (rather than stepping once per second).
 function CountdownRing({ secondsLeft }: { secondsLeft: number }) {
   const radius = 52;
-  const circumference = 2 * Math.PI * radius;
-  const remainingFraction = secondsLeft / COUNTDOWN_SECONDS;
-  const dashOffset = circumference * (1 - remainingFraction);
 
   return (
     <div className="relative my-4 h-40 w-40">
@@ -209,9 +208,9 @@ function CountdownRing({ secondsLeft }: { secondsLeft: number }) {
           stroke="#e53935"
           strokeWidth="9"
           strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={dashOffset}
-          className="transition-[stroke-dashoffset] duration-1000 ease-linear"
+          pathLength={1}
+          strokeDasharray={1}
+          style={{ animation: `sosDrain ${COUNTDOWN_SECONDS}s linear forwards` }}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">

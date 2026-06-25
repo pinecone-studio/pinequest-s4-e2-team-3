@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* SOS countdown ring: drains smoothly from full to empty over the countdown.
+   With pathLength=1 the offset goes 0 -> 1 regardless of the circle's size, so
+   it always empties exactly when the timer ends. */
+@keyframes sosDrain {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: 1;
+  }
+}
+
 /* Soft blue ambient glow over the warm sand base — the airy Lumo backdrop.
    Fixed so it stays put while content scrolls. */
 body {
