@@ -1,17 +1,16 @@
 import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity } from "react-native";
 import { Link, useRouter } from "expo-router";
-import { useSignUp, isClerkAPIResponseError } from "@clerk/clerk-expo";
+import { useSignIn, isClerkAPIResponseError } from "@clerk/clerk-expo";
 
-export default function RegisterScreen() {
-  const { isLoaded, signUp, setActive } = useSignUp();
+export default function ForgotPasswordScreen() {
+  const { isLoaded, signIn, setActive } = useSignIn();
   const router = useRouter();
 
-  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
-  const [pendingVerification, setPendingVerification] = useState(false);
+  const [password, setPassword] = useState("");
+  const [pendingReset, setPendingReset] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -21,18 +20,16 @@ export default function RegisterScreen() {
       : "Something went wrong. Please try again.";
   }
 
-  async function handleSignUp() {
+  async function handleSendCode() {
     if (!isLoaded || submitting) return;
     setError(null);
     setSubmitting(true);
     try {
-      await signUp.create({
-        emailAddress: email,
-        password,
-        unsafeMetadata: { fullName },
+      await signIn.create({
+        strategy: "reset_password_email_code",
+        identifier: email,
       });
-      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-      setPendingVerification(true);
+      setPendingReset(true);
     } catch (err) {
       setError(describeError(err));
     } finally {
@@ -40,27 +37,21 @@ export default function RegisterScreen() {
     }
   }
 
-  async function handleResend() {
-    if (!isLoaded || submitting) return;
-    setError(null);
-    try {
-      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-    } catch (err) {
-      setError(describeError(err));
-    }
-  }
-
-  async function handleVerify() {
+  async function handleReset() {
     if (!isLoaded || submitting) return;
     setError(null);
     setSubmitting(true);
     try {
-      const result = await signUp.attemptEmailAddressVerification({ code });
+      const result = await signIn.attemptFirstFactor({
+        strategy: "reset_password_email_code",
+        code,
+        password,
+      });
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
         router.replace("/(tabs)");
       } else {
-        setError("Couldn't verify that code. Please try again.");
+        setError("Couldn't reset your password. Please try again.");
       }
     } catch (err) {
       setError(describeError(err));
@@ -69,21 +60,28 @@ export default function RegisterScreen() {
     }
   }
 
-  if (pendingVerification) {
+  if (pendingReset) {
     return (
       <View className="flex-1 justify-center px-6 bg-white">
         <Text className="text-3xl font-bold text-primary-900 mb-2">
-          Verify your email
+          Set a new password
         </Text>
         <Text className="text-gray-500 mb-8">We sent a code to {email}</Text>
 
         <TextInput
-          className="border border-gray-300 rounded-xl px-4 py-3 mb-6"
-          placeholder="Verification code"
+          className="border border-gray-300 rounded-xl px-4 py-3 mb-4"
+          placeholder="Reset code"
           keyboardType="number-pad"
           autoCapitalize="none"
           value={code}
           onChangeText={setCode}
+        />
+        <TextInput
+          className="border border-gray-300 rounded-xl px-4 py-3 mb-6"
+          placeholder="New password"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
         />
 
         {error && <Text className="text-red-600 mb-4">{error}</Text>}
@@ -92,27 +90,22 @@ export default function RegisterScreen() {
           className="bg-primary-600 rounded-xl py-4 items-center mb-4"
           style={{ opacity: !isLoaded || submitting ? 0.6 : 1 }}
           disabled={!isLoaded || submitting}
-          onPress={handleVerify}
+          onPress={handleReset}
         >
           <Text className="text-white font-semibold text-base">
-            {submitting ? "Verifying…" : "Verify & Continue"}
+            {submitting ? "Resetting…" : "Reset password"}
           </Text>
         </TouchableOpacity>
 
-        <View className="flex-row items-center justify-center gap-4">
-          <TouchableOpacity onPress={handleResend} disabled={submitting}>
-            <Text className="text-primary-600 font-medium">Resend code</Text>
-          </TouchableOpacity>
-          <Text className="text-gray-300">·</Text>
-          <TouchableOpacity
-            onPress={() => {
-              setPendingVerification(false);
-              setError(null);
-            }}
-          >
-            <Text className="text-gray-500">Use a different email</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          className="items-center"
+          onPress={() => {
+            setPendingReset(false);
+            setError(null);
+          }}
+        >
+          <Text className="text-gray-500">Use a different email</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -120,30 +113,19 @@ export default function RegisterScreen() {
   return (
     <View className="flex-1 justify-center px-6 bg-white">
       <Text className="text-3xl font-bold text-primary-900 mb-2">
-        Create Account
+        Reset password
       </Text>
-      <Text className="text-gray-500 mb-8">Start your travel journey</Text>
+      <Text className="text-gray-500 mb-8">
+        Enter your email and we&apos;ll send you a reset code
+      </Text>
 
       <TextInput
-        className="border border-gray-300 rounded-xl px-4 py-3 mb-4"
-        placeholder="Full Name"
-        value={fullName}
-        onChangeText={setFullName}
-      />
-      <TextInput
-        className="border border-gray-300 rounded-xl px-4 py-3 mb-4"
+        className="border border-gray-300 rounded-xl px-4 py-3 mb-6"
         placeholder="Email"
         keyboardType="email-address"
         autoCapitalize="none"
         value={email}
         onChangeText={setEmail}
-      />
-      <TextInput
-        className="border border-gray-300 rounded-xl px-4 py-3 mb-6"
-        placeholder="Password"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
       />
 
       {error && <Text className="text-red-600 mb-4">{error}</Text>}
@@ -152,16 +134,16 @@ export default function RegisterScreen() {
         className="bg-primary-600 rounded-xl py-4 items-center mb-4"
         style={{ opacity: !isLoaded || submitting ? 0.6 : 1 }}
         disabled={!isLoaded || submitting}
-        onPress={handleSignUp}
+        onPress={handleSendCode}
       >
         <Text className="text-white font-semibold text-base">
-          {submitting ? "Creating…" : "Create Account"}
+          {submitting ? "Sending…" : "Send reset code"}
         </Text>
       </TouchableOpacity>
 
       <Link href="/(auth)/login" asChild>
         <TouchableOpacity className="items-center">
-          <Text className="text-primary-600">Already have an account? Sign in</Text>
+          <Text className="text-primary-600">Remembered it? Sign in</Text>
         </TouchableOpacity>
       </Link>
     </View>

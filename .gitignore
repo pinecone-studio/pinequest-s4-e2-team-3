@@ -55,6 +55,10 @@ Thumbs.db
 *.swp
 *.swo
 
+# Claude Code (local agent settings — never commit)
+.claude/
+CLAUDE.md
+
 # Testing
 coverage/
 .nyc_output/

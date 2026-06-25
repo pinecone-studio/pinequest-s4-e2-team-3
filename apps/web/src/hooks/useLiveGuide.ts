@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { aiService } from "@/services/ai";
-import { useAuthStore } from "@/stores/authStore";
 import { useLiveStore } from "@/stores/liveStore";
 import { useLocationStore } from "@/stores/locationStore";
 import { haversineMeters, hasArrived } from "@/lib/geo";
@@ -44,7 +44,7 @@ export function useLiveGuide() {
     markArrived,
   } = useLiveStore();
   const realCoords = useLocationStore((s) => s.coordinates);
-  const token = useAuthStore((s) => s.session?.access_token ?? "");
+  const { getToken } = useAuth();
 
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [listening, setListening] = useState(false);
@@ -101,6 +101,7 @@ export function useLiveGuide() {
       const message = `${buildContext(currentStop, nextStop)}\n\nThe traveller asks: ${question}`;
       let reply: string;
       try {
+        const token = (await getToken()) ?? "";
         const res = await aiService.askGuide(
           {
             message,
@@ -122,7 +123,7 @@ export function useLiveGuide() {
       });
       return reply;
     },
-    [currentStop, nextStop, effectiveCoords, token],
+    [currentStop, nextStop, effectiveCoords, getToken],
   );
 
   const listenerRef = useRef<ReturnType<typeof createListener>>(null);

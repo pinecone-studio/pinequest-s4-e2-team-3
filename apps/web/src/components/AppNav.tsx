@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useClerk } from "@clerk/nextjs";
 import {
   ChatIcon,
   CompassIcon,
@@ -38,6 +39,9 @@ export function AppNav() {
 
 // Left sidebar on large screens.
 function DesktopSidebar({ pathname }: { pathname: string }) {
+  const { signOut } = useClerk();
+  const router = useRouter();
+
   return (
     <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-sand-200 bg-sand-50 px-4 py-6 lg:flex">
       <Link href="/" className="mb-8 flex items-center gap-2 px-2">
@@ -67,6 +71,29 @@ function DesktopSidebar({ pathname }: { pathname: string }) {
           );
         })}
       </nav>
+
+      <button
+        type="button"
+        onClick={() => signOut(() => router.push("/login"))}
+        className="mt-auto flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-ink-muted transition-colors hover:bg-sand-200 hover:text-ink"
+      >
+        <svg
+          width={20}
+          height={20}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+          <polyline points="16 17 21 12 16 7" />
+          <line x1="21" y1="12" x2="9" y2="12" />
+        </svg>
+        Sign out
+      </button>
     </aside>
   );
 }

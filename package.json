@@ -4,6 +4,7 @@
   "private": true,
   "description": "AI Travel Guide App - Monorepo Root",
   "scripts": {
+    "dev": "cd apps/web && bun run dev",
     "web": "cd apps/web && bun run dev",
     "mobile": "cd apps/mobile && bunx expo start",
     "api": "cd apps/api && bun run start:dev",
