@@ -1,0 +1,13 @@
+{
+  "name": "pinequest-s4-e2-team-3",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Travel Guide App - Monorepo Root",
+  "scripts": {
+    "web": "cd apps/web && bun run dev",
+    "mobile": "cd apps/mobile && bunx expo start",
+    "api": "cd apps/api && bun run start:dev",
+    "api:build": "cd apps/api && bun run build",
+    "install:all": "cd apps/mobile && bun install && cd ../api && bun install && cd ../web && bun install && cd ../../packages/shared && bun install"
+  }
+}

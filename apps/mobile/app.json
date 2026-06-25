@@ -1,0 +1,62 @@
+{
+  "expo": {
+    "name": "AI Travel Guide",
+    "slug": "ai-travel-guide",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "aitravelguide",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pinequest.aitravelguide",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "This app uses your location to provide nearby travel recommendations.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses your location for audio guides while exploring.",
+        "NSMicrophoneUsageDescription": "This app uses the microphone for voice-based travel queries."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.pinequest.aitravelguide",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-location",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#ffffff"
+        }
+      ],
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsDownloadToken": "YOUR_MAPBOX_SECRET_TOKEN"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
