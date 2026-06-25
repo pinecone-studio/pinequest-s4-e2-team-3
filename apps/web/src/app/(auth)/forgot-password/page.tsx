@@ -3,19 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useSignUp } from "@clerk/nextjs/legacy";
+import { useSignIn } from "@clerk/nextjs/legacy";
 import { isClerkAPIResponseError } from "@clerk/nextjs/errors";
 
-export default function RegisterPage() {
-  const { isLoaded, signUp, setActive } = useSignUp();
+export default function ForgotPasswordPage() {
+  const { isLoaded, signIn, setActive } = useSignIn();
   const router = useRouter();
 
-  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
-  // After we send the email code, swap the form for the verification step.
-  const [pendingVerification, setPendingVerification] = useState(false);
+  const [password, setPassword] = useState("");
+  // After we email the reset code, swap the form for the reset step.
+  const [pendingReset, setPendingReset] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -25,20 +24,17 @@ export default function RegisterPage() {
       : "Something went wrong. Please try again.";
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSendCode(e: React.FormEvent) {
     e.preventDefault();
     if (!isLoaded || submitting) return;
-
     setError(null);
     setSubmitting(true);
     try {
-      await signUp.create({
-        emailAddress: email,
-        password,
-        unsafeMetadata: { fullName },
+      await signIn.create({
+        strategy: "reset_password_email_code",
+        identifier: email,
       });
-      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-      setPendingVerification(true);
+      setPendingReset(true);
     } catch (err) {
       setError(describeError(err));
     } finally {
@@ -46,29 +42,22 @@ export default function RegisterPage() {
     }
   }
 
-  async function handleResend() {
-    if (!isLoaded || submitting) return;
-    setError(null);
-    try {
-      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-    } catch (err) {
-      setError(describeError(err));
-    }
-  }
-
-  async function handleVerify(e: React.FormEvent) {
+  async function handleReset(e: React.FormEvent) {
     e.preventDefault();
     if (!isLoaded || submitting) return;
-
     setError(null);
     setSubmitting(true);
     try {
-      const result = await signUp.attemptEmailAddressVerification({ code });
+      const result = await signIn.attemptFirstFactor({
+        strategy: "reset_password_email_code",
+        code,
+        password,
+      });
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
         router.push("/");
       } else {
-        setError("Couldn't verify that code. Please try again.");
+        setError("Couldn't reset your password. Please try again.");
       }
     } catch (err) {
       setError(describeError(err));
@@ -80,21 +69,14 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 w-full max-w-md">
-        {!pendingVerification ? (
+        {!pendingReset ? (
           <>
-            <h1 className="text-2xl font-bold text-primary-900 mb-1">Create Account</h1>
-            <p className="text-gray-500 mb-6">Start your travel journey</p>
+            <h1 className="text-2xl font-bold text-primary-900 mb-1">Reset password</h1>
+            <p className="text-gray-500 mb-6">
+              Enter your email and we&apos;ll send you a reset code
+            </p>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <input
-                type="text"
-                placeholder="Full Name"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-                autoComplete="name"
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500"
-              />
+            <form onSubmit={handleSendCode} className="space-y-4">
               <input
                 type="email"
                 placeholder="Email"
@@ -104,9 +86,46 @@ export default function RegisterPage() {
                 autoComplete="email"
                 className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500"
               />
+
+              {error && <p className="text-sm text-red-600">{error}</p>}
+
+              <button
+                type="submit"
+                disabled={!isLoaded || submitting}
+                className="w-full bg-primary-600 text-white rounded-xl py-3 font-semibold hover:bg-primary-700 transition-colors disabled:opacity-60"
+              >
+                {submitting ? "Sending…" : "Send reset code"}
+              </button>
+            </form>
+
+            <p className="text-center text-gray-500 mt-6 text-sm">
+              Remembered it?{" "}
+              <Link href="/login" className="text-primary-600 font-medium hover:underline">
+                Sign in
+              </Link>
+            </p>
+          </>
+        ) : (
+          <>
+            <h1 className="text-2xl font-bold text-primary-900 mb-1">Set a new password</h1>
+            <p className="text-gray-500 mb-6">
+              We sent a code to <span className="font-medium text-ink">{email}</span>
+            </p>
+
+            <form onSubmit={handleReset} className="space-y-4">
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="Reset code"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                required
+                autoComplete="one-time-code"
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500"
+              />
               <input
                 type="password"
-                placeholder="Password"
+                placeholder="New password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -116,76 +135,25 @@ export default function RegisterPage() {
 
               {error && <p className="text-sm text-red-600">{error}</p>}
 
-              {/* Clerk Smart CAPTCHA / bot-protection widget mounts here. */}
-              <div id="clerk-captcha" />
-
               <button
                 type="submit"
                 disabled={!isLoaded || submitting}
                 className="w-full bg-primary-600 text-white rounded-xl py-3 font-semibold hover:bg-primary-700 transition-colors disabled:opacity-60"
               >
-                {submitting ? "Creating…" : "Create Account"}
+                {submitting ? "Resetting…" : "Reset password"}
               </button>
             </form>
 
-            <p className="text-center text-gray-500 mt-6 text-sm">
-              Already have an account?{" "}
-              <Link href="/login" className="text-primary-600 font-medium hover:underline">
-                Sign in
-              </Link>
-            </p>
-          </>
-        ) : (
-          <>
-            <h1 className="text-2xl font-bold text-primary-900 mb-1">Verify your email</h1>
-            <p className="text-gray-500 mb-6">
-              We sent a code to <span className="font-medium text-ink">{email}</span>
-            </p>
-
-            <form onSubmit={handleVerify} className="space-y-4">
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="Verification code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                required
-                autoComplete="one-time-code"
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500"
-              />
-
-              {error && <p className="text-sm text-red-600">{error}</p>}
-
-              <button
-                type="submit"
-                disabled={!isLoaded || submitting}
-                className="w-full bg-primary-600 text-white rounded-xl py-3 font-semibold hover:bg-primary-700 transition-colors disabled:opacity-60"
-              >
-                {submitting ? "Verifying…" : "Verify & Continue"}
-              </button>
-            </form>
-
-            <div className="mt-6 flex items-center justify-center gap-4 text-sm">
-              <button
-                type="button"
-                onClick={handleResend}
-                disabled={submitting}
-                className="text-primary-600 font-medium hover:underline disabled:opacity-60"
-              >
-                Resend code
-              </button>
-              <span className="text-gray-300">·</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setPendingVerification(false);
-                  setError(null);
-                }}
-                className="text-gray-500 hover:underline"
-              >
-                Use a different email
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setPendingReset(false);
+                setError(null);
+              }}
+              className="block w-full text-center text-gray-500 mt-6 text-sm hover:underline"
+            >
+              Use a different email
+            </button>
           </>
         )}
       </div>

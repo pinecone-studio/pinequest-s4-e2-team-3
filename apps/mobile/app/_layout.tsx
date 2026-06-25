@@ -1,18 +1,33 @@
 import "../global.css";
-import { Slot, SplashScreen, Stack } from "expo-router";
+import { ClerkProvider, useAuth } from "@clerk/clerk-expo";
+import { tokenCache } from "@clerk/clerk-expo/token-cache";
+import { SplashScreen, Stack, useRouter, useSegments } from "expo-router";
 import { useEffect } from "react";
-import { useAuthStore } from "@/stores/authStore";
 
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
-  const { initialized, session } = useAuthStore();
+const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
+// Keeps the user in the right place: signed-in users land in the tabs, and
+// everyone else is sent to the auth screens. Runs once Clerk has loaded.
+function InitialLayout() {
+  const { isLoaded, isSignedIn } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
 
   useEffect(() => {
-    if (initialized) SplashScreen.hideAsync();
-  }, [initialized]);
+    if (!isLoaded) return;
+    SplashScreen.hideAsync();
 
-  if (!initialized) return null;
+    const inAuthGroup = segments[0] === "(auth)";
+    if (isSignedIn && inAuthGroup) {
+      router.replace("/(tabs)");
+    } else if (!isSignedIn && !inAuthGroup) {
+      router.replace("/(auth)/login");
+    }
+  }, [isLoaded, isSignedIn, segments]);
+
+  if (!isLoaded) return null;
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
@@ -20,5 +35,13 @@ export default function RootLayout() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="+not-found" />
     </Stack>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+      <InitialLayout />
+    </ClerkProvider>
   );
 }

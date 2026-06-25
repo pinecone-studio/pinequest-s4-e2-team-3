@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HeaderActions } from "@/components/HeaderActions";
 import { SectionHeader } from "@/components/SectionHeader";
 import { Tag } from "@/components/Tag";
 import { MapPinIcon, MicIcon, PlayIcon, ShieldIcon } from "@/components/icons";
@@ -37,19 +38,7 @@ function Header() {
         </h1>
       </div>
 
-      <div className="flex items-center gap-2">
-        <Link
-          href="/sos"
-          className="flex h-11 w-11 items-center justify-center rounded-full border border-safety-critical/30 bg-white"
-        >
-          <span className="text-[11px] font-extrabold tracking-wide text-safety-critical">
-            SOS
-          </span>
-        </Link>
-        <span className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-[#c9d8f5] to-[#9fb6e8] font-bold text-primary-900">
-          N
-        </span>
-      </div>
+      <HeaderActions />
     </header>
   );
 }
