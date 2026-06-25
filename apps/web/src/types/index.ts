@@ -61,7 +61,7 @@ export interface ExploreSpot {
 }
 
 // One stop in the adaptive day journey.
-export type JourneyStopStatus = "done" | "current" | "upcoming";
+export type JourneyStopStatus = "done" | "current" | "upcoming" | "skipped";
 
 export interface JourneyStop {
   id: string;
@@ -74,6 +74,13 @@ export interface JourneyStop {
   dwell: string;
   imageUrl: string;
   status: JourneyStopStatus;
+}
+
+// A single day in a multi-day planned trip.
+export interface TripDay {
+  dayNumber: number;
+  label: string;
+  stops: JourneyStop[];
 }
 
 // One labelled segment of the interpreter conversation.
