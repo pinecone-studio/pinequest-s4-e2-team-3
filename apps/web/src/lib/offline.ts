@@ -4,7 +4,7 @@
 // Static Images snapshot of the route plus the narration/phrases, so the journey
 // is still viewable with no network. (The route data itself is already bundled.)
 
-import { MAPBOX_TOKEN, STATIC_STYLE_ID, hasMapboxToken } from "@/lib/mapbox";
+import { GOOGLE_MAPS_KEY, hasGoogleMapsKey } from "@/lib/googlemaps";
 import type { DemoRoute } from "@/types";
 
 const KEY_PREFIX = "nomad:offline:";
@@ -18,32 +18,29 @@ export interface OfflinePack {
   stops: { name: string; narration: string }[];
 }
 
-// Build a Mapbox Static Images API URL showing the whole route + numbered pins.
+// Build a Google Static Maps API URL showing the whole route + numbered pins.
+// (Requires "Maps Static API" enabled on the key; otherwise the fetch fails and
+// the pack still saves the narration/phrases with no image.)
 export function buildStaticMapUrl(route: DemoRoute, width = 640, height = 420): string | null {
-  if (!hasMapboxToken) return null;
+  if (!hasGoogleMapsKey) return null;
 
-  const line = {
-    type: "Feature" as const,
-    properties: { stroke: "#2f6bff", "stroke-width": 4 },
-    geometry: {
-      type: "LineString" as const,
-      coordinates: route.stops.map((s) => [s.longitude, s.latitude]),
-    },
-  };
-  const points = route.stops.map((s, i) => ({
-    type: "Feature" as const,
-    properties: { "marker-color": "#2f6bff", "marker-symbol": String(i + 1) },
-    geometry: { type: "Point" as const, coordinates: [s.longitude, s.latitude] },
-  }));
+  const points = route.stops.map((s) => `${s.latitude},${s.longitude}`);
 
-  const fc = { type: "FeatureCollection", features: [line, ...points] };
-  const overlay = `geojson(${encodeURIComponent(JSON.stringify(fc))})`;
+  const params = new URLSearchParams({
+    size: `${width}x${height}`,
+    scale: "2",
+  });
+  // Route line through all stops.
+  params.append("path", `color:0x2f6bffff|weight:4|${points.join("|")}`);
+  // A numbered/labelled blue pin per stop (labels A–Z; Static API caps labels at
+  // a single char, so we use the stop index letter for compactness).
+  route.stops.forEach((s, i) => {
+    const labelChar = String.fromCharCode(65 + (i % 26)); // A, B, C…
+    params.append("markers", `color:0x2f6bff|label:${labelChar}|${s.latitude},${s.longitude}`);
+  });
+  params.append("key", GOOGLE_MAPS_KEY);
 
-  return (
-    `https://api.mapbox.com/styles/v1/mapbox/${STATIC_STYLE_ID}/static/` +
-    `${overlay}/auto/${width}x${height}@2x` +
-    `?padding=50&access_token=${MAPBOX_TOKEN}`
-  );
+  return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
 }
 
 async function urlToDataUrl(url: string): Promise<string | null> {

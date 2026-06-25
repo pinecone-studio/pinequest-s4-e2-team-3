@@ -1,113 +1,162 @@
 "use client";
 
-import type { ComponentProps } from "react";
-import Map, { Layer, Marker, Source } from "react-map-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
-import { MAPBOX_TOKEN, MAP_STYLE } from "@/lib/mapbox";
+import { useEffect, useMemo } from "react";
+import {
+  APIProvider,
+  Map,
+  Marker,
+  useApiLoadingStatus,
+  useMap,
+  useMapsLibrary,
+} from "@vis.gl/react-google-maps";
+import { GOOGLE_MAPS_KEY, DARK_MAP_STYLES } from "@/lib/googlemaps";
 import type { Coords, DemoRoute } from "@/types";
 
-type SourceData = ComponentProps<typeof Source>["data"];
-
-// Interactive Mapbox map for the Live Guide: draws the journey route line,
+// Interactive Google map for the Live Guide: draws the journey route line,
 // numbered stop markers, and the traveller's current position. Rendered only
-// when a Mapbox token exists (gated by the caller) and lazily (ssr: false).
+// when a key exists (gated by the caller) and lazily (ssr: false).
 export default function RouteMap({
   route,
   currentIndex,
   position,
+  onError,
 }: {
   route: DemoRoute;
   currentIndex: number;
   position: Coords | null;
+  // Fired if the map can't load (e.g. an invalid/blocked key) so the caller can
+  // fall back to the stylised backdrop instead of showing a blank area.
+  onError?: () => void;
 }) {
-  const coordinates = route.stops.map(
-    (s) => [s.longitude, s.latitude] as [number, number],
+  const path = useMemo(
+    () => route.stops.map((s) => ({ lat: s.latitude, lng: s.longitude })),
+    [route],
   );
-
-  const lineData = {
-    type: "FeatureCollection",
-    features: [
-      {
-        type: "Feature",
-        properties: {},
-        geometry: { type: "LineString", coordinates },
-      },
-    ],
-  } as SourceData;
 
   return (
-    <Map
-      mapboxAccessToken={MAPBOX_TOKEN}
-      mapStyle={MAP_STYLE.dark}
-      initialViewState={{
-        longitude: coordinates[0][0],
-        latitude: coordinates[0][1],
-        zoom: 5,
-      }}
-      attributionControl={false}
-      style={{ width: "100%", height: "100%" }}
-      onLoad={(e) => {
-        const lons = coordinates.map((c) => c[0]);
-        const lats = coordinates.map((c) => c[1]);
-        e.target.fitBounds(
-          [
-            [Math.min(...lons), Math.min(...lats)],
-            [Math.max(...lons), Math.max(...lats)],
-          ],
-          { padding: 70, duration: 0, maxZoom: 14 },
-        );
-      }}
-    >
-      <Source id="route-line" type="geojson" data={lineData}>
-        <Layer
-          id="route-line-layer"
-          type="line"
-          layout={{ "line-cap": "round", "line-join": "round" }}
-          paint={{
-            "line-color": "#2f6bff",
-            "line-width": 3,
-            "line-dasharray": [1, 1.8],
-          }}
-        />
-      </Source>
+    <APIProvider apiKey={GOOGLE_MAPS_KEY}>
+      <LoadGuard onError={onError} />
+      <Map
+        defaultCenter={path[0]}
+        defaultZoom={5}
+        styles={DARK_MAP_STYLES}
+        disableDefaultUI
+        gestureHandling="greedy"
+        clickableIcons={false}
+        style={{ width: "100%", height: "100%" }}
+      >
+        <RouteLine path={path} />
+        <FitBounds path={path} />
 
-      {route.stops.map((stop, i) => {
-        const isCurrent = i === currentIndex;
-        const isPast = i < currentIndex;
-        return (
-          <Marker
+        {route.stops.map((stop, i) => (
+          <StopMarker
             key={stop.id}
-            longitude={stop.longitude}
-            latitude={stop.latitude}
-            anchor="center"
-          >
-            <span
-              className={[
-                "flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ring-2 ring-[#0d1422]",
-                isCurrent
-                  ? "bg-primary-600 text-white"
-                  : isPast
-                    ? "bg-safety-safe text-white"
-                    : "bg-white text-primary-900",
-              ].join(" ")}
-            >
-              {i + 1}
-            </span>
-          </Marker>
-        );
-      })}
+            lat={stop.latitude}
+            lng={stop.longitude}
+            label={i + 1}
+            state={i === currentIndex ? "current" : i < currentIndex ? "past" : "upcoming"}
+          />
+        ))}
 
-      {position && (
-        <Marker
-          longitude={position.longitude}
-          latitude={position.latitude}
-          anchor="center"
-        >
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 ring-8 ring-primary-600/20">
-            <span className="h-2 w-2 rounded-full bg-white" />
-          </span>
-        </Marker>
-      )}
-    </Map>
+        {position && (
+          <PositionMarker lat={position.latitude} lng={position.longitude} />
+        )}
+      </Map>
+    </APIProvider>
   );
+}
+
+// Surfaces auth/load failures (e.g. invalid key) to the caller.
+function LoadGuard({ onError }: { onError?: () => void }) {
+  const status = useApiLoadingStatus();
+  useEffect(() => {
+    if (status === "AUTH_FAILURE" || status === "FAILED") onError?.();
+  }, [status, onError]);
+  return null;
+}
+
+// The route polyline, drawn imperatively (no declarative Polyline component).
+function RouteLine({ path }: { path: google.maps.LatLngLiteral[] }) {
+  const map = useMap();
+  const mapsLib = useMapsLibrary("maps");
+
+  useEffect(() => {
+    if (!map || !mapsLib) return;
+    const line = new mapsLib.Polyline({
+      path,
+      geodesic: true,
+      strokeColor: "#2f6bff",
+      strokeOpacity: 0.9,
+      strokeWeight: 3,
+      map,
+    });
+    return () => line.setMap(null);
+  }, [map, mapsLib, path]);
+
+  return null;
+}
+
+// Fit the whole route into view once the map and geometry are ready.
+function FitBounds({ path }: { path: google.maps.LatLngLiteral[] }) {
+  const map = useMap();
+  const coreLib = useMapsLibrary("core");
+
+  useEffect(() => {
+    if (!map || !coreLib || path.length === 0) return;
+    const bounds = new coreLib.LatLngBounds();
+    path.forEach((p) => bounds.extend(p));
+    map.fitBounds(bounds, 60);
+  }, [map, coreLib, path]);
+
+  return null;
+}
+
+type StopState = "current" | "past" | "upcoming";
+
+function stopPinSvg(label: number, state: StopState): string {
+  const fill = state === "current" ? "#2f6bff" : state === "past" ? "#1F9D6B" : "#ffffff";
+  const text = state === "upcoming" ? "#14213d" : "#ffffff";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28"><circle cx="14" cy="14" r="11" fill="${fill}" stroke="#0d1422" stroke-width="2"/><text x="14" y="18" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="700" fill="${text}">${label}</text></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function StopMarker({
+  lat,
+  lng,
+  label,
+  state,
+}: {
+  lat: number;
+  lng: number;
+  label: number;
+  state: StopState;
+}) {
+  const coreLib = useMapsLibrary("core");
+  const icon = useMemo(() => {
+    if (!coreLib) return undefined;
+    return {
+      url: stopPinSvg(label, state),
+      scaledSize: new coreLib.Size(28, 28),
+      anchor: new coreLib.Point(14, 14),
+    };
+  }, [coreLib, label, state]);
+
+  if (!icon) return null;
+  return <Marker position={{ lat, lng }} icon={icon} />;
+}
+
+function PositionMarker({ lat, lng }: { lat: number; lng: number }) {
+  const coreLib = useMapsLibrary("core");
+  const icon = useMemo(() => {
+    if (!coreLib) return undefined;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34"><circle cx="17" cy="17" r="16" fill="#2f6bff" fill-opacity="0.2"/><circle cx="17" cy="17" r="7" fill="#2f6bff" stroke="#ffffff" stroke-width="2.5"/></svg>`;
+    return {
+      url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+      scaledSize: new coreLib.Size(34, 34),
+      anchor: new coreLib.Point(17, 17),
+    };
+  }, [coreLib]);
+
+  if (!icon) return null;
+  return <Marker position={{ lat, lng }} icon={icon} zIndex={10} />;
 }

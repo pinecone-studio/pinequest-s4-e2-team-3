@@ -16,16 +16,15 @@ import {
 } from "@/components/icons";
 import { demoRoutes } from "@/lib/routes";
 import { googleMapsDirectionsUrl } from "@/lib/maps";
-import { hasMapboxToken } from "@/lib/mapbox";
+import { hasGoogleMapsKey } from "@/lib/googlemaps";
 import { hasPack, loadPack, savePack } from "@/lib/offline";
 import { useLiveGuide } from "@/hooks/useLiveGuide";
 import { useLiveStore } from "@/stores/liveStore";
 import { useLocationStore } from "@/stores/locationStore";
 import { useLocation } from "@/hooks/useLocation";
-import { formatDistance } from "@/lib/geo";
 import type { Coords, DemoRoute } from "@/types";
 
-// Loaded lazily + client-only because mapbox-gl touches `window` on import.
+// Loaded lazily + client-only because the Google Maps SDK touches `window`.
 const RouteMap = dynamic(() => import("@/components/RouteMap"), { ssr: false });
 
 // The dark, full-screen live guide. It sits outside the (app) shell, so it has
@@ -54,6 +53,7 @@ function LiveBackground() {
   const position: Coords | null = simulatedCoords ?? realCoords;
 
   const [online, setOnline] = useState(true);
+  const [mapFailed, setMapFailed] = useState(false);
   useEffect(() => {
     const sync = () => setOnline(navigator.onLine);
     sync();
@@ -69,14 +69,17 @@ function LiveBackground() {
 
   const offline = forceOffline || !online;
 
-  // Live interactive map when we have a token and a connection.
-  if (hasMapboxToken && !offline) {
+  // Live interactive map when we have a key, a connection, and it loads.
+  // If the map errors (e.g. an invalid key) we fall through to the stylised
+  // backdrop so the screen never shows a blank void.
+  if (hasGoogleMapsKey && !offline && !mapFailed) {
     return (
       <div className="absolute inset-0">
         <RouteMap
           route={activeRoute}
           currentIndex={currentStopIndex}
           position={position}
+          onError={() => setMapFailed(true)}
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#0d1422]/40 via-transparent to-[#0d1422]/90" />
       </div>
@@ -130,32 +133,22 @@ function RoutePicker() {
       <h1 className="mt-6 font-serif text-3xl leading-tight">
         Where shall we go?
       </h1>
-      <p className="mt-2 text-sm text-white/60">
-        Pick a journey. I&apos;ll travel it with you — speaking up when you reach
-        each place, and answering whenever you ask.
-      </p>
 
-      <div className="mt-6 space-y-3">
+      <div className="mt-5 space-y-3">
         {demoRoutes.map((route) => (
           <button
             key={route.id}
             onClick={() => start(route)}
             className="w-full rounded-3xl bg-white/[0.07] p-5 text-left backdrop-blur transition-colors hover:bg-white/[0.12]"
           >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase tracking-wide text-primary-500">
-                {route.region}
-              </span>
-              <span className="flex items-center gap-1 text-xs text-white/50">
-                <MapPinIcon size={13} />
-                {route.stops.length} stops
-              </span>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-primary-500">
+              {route.region} · {route.stops.length} stops
+            </p>
+            <div className="mt-1 flex items-center gap-2">
+              <p className="flex-1 font-serif text-xl leading-tight">{route.title}</p>
+              <ChevronRightIcon size={18} className="shrink-0 text-white/40" />
             </div>
-            <p className="mt-1.5 font-serif text-xl">{route.title}</p>
-            <p className="mt-1 text-sm text-white/60">{route.summary}</p>
-            <span className="mt-3 inline-flex items-center gap-1.5 text-sm font-bold text-white">
-              Start journey <ChevronRightIcon size={15} />
-            </span>
+            <p className="mt-1 line-clamp-1 text-sm text-white/55">{route.summary}</p>
           </button>
         ))}
       </div>
@@ -186,7 +179,6 @@ function LiveExperience() {
     currentStop,
     nextStop,
     effectiveCoords,
-    distanceToCurrent,
     isSpeaking,
     listening,
     thinking,
@@ -199,6 +191,10 @@ function LiveExperience() {
   } = guide;
 
   const arrived = currentStop ? arrivedStopIds.includes(currentStop.id) : false;
+
+  // Secondary panels (Local tips + demo controls) are hidden by default so Nova
+  // stays the focus; one button reveals them.
+  const [showExtras, setShowExtras] = useState(false);
 
   // --- Offline pack ---
   const offlineSaved = activeRoute ? offlineReadyIds.includes(activeRoute.id) : false;
@@ -236,38 +232,38 @@ function LiveExperience() {
 
   return (
     <>
-      <TopBar
-        region={activeRoute?.region ?? ""}
-        distanceLabel={
-          distanceToCurrent != null ? formatDistance(distanceToCurrent) : "—"
-        }
-        liveOn={liveOn}
-        onToggleLive={() => setLiveOn(!liveOn)}
-      />
+      <TopBar liveOn={liveOn} onToggleLive={() => setLiveOn(!liveOn)} />
 
-      <NextStopPill
-        label={arrived ? nextStop?.name ?? "Final stop" : currentStop?.name ?? ""}
-        prefix={arrived ? "Next" : "Now"}
+      <JourneyPill
+        currentName={currentStop?.name ?? ""}
+        nextName={nextStop?.name}
       />
 
       <div className="flex-1" />
 
-      <OfflineBar
-        saved={offlineSaved}
-        saving={saving}
-        offlinePreview={forceOffline}
-        onDownload={downloadPack}
-        onTogglePreview={() => setForceOffline(!forceOffline)}
-      />
+      <button
+        onClick={() => setShowExtras(!showExtras)}
+        className="mb-3 ml-auto flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold text-white/70 backdrop-blur hover:bg-white/15"
+      >
+        {showExtras ? "Hide details" : "Tips & controls"}
+        <ChevronRightIcon
+          size={14}
+          className={[
+            "transition-transform",
+            showExtras ? "-rotate-90" : "rotate-90",
+          ].join(" ")}
+        />
+      </button>
 
-      <SimulatePanel
-        arrived={arrived}
-        currentName={currentStop?.name ?? ""}
-        nextName={nextStop?.name}
-        onArrive={simulateArrival}
-        onWalkNext={walkToNext}
-        onChangeRoute={reset}
-      />
+      {showExtras && currentStop && (
+        <LocalTips
+          stop={currentStop}
+          mapsUrl={googleMapsDirectionsUrl(currentStop, effectiveCoords)}
+          offlineSaved={offlineSaved}
+          saving={saving}
+          onDownload={downloadPack}
+        />
+      )}
 
       <NarrationCard
         speaking={isSpeaking}
@@ -282,10 +278,17 @@ function LiveExperience() {
         onAsk={ask}
       />
 
-      {currentStop && (
-        <StopDetails
-          stop={currentStop}
-          mapsUrl={googleMapsDirectionsUrl(currentStop, effectiveCoords)}
+      {showExtras && (
+        <PresenterStrip
+          arrived={arrived}
+          currentName={currentStop?.name ?? ""}
+          nextName={nextStop?.name}
+          offlineSaved={offlineSaved}
+          offlinePreview={forceOffline}
+          onArrive={simulateArrival}
+          onWalkNext={walkToNext}
+          onTogglePreview={() => setForceOffline(!forceOffline)}
+          onChangeRoute={reset}
         />
       )}
     </>
@@ -293,13 +296,9 @@ function LiveExperience() {
 }
 
 function TopBar({
-  region,
-  distanceLabel,
   liveOn,
   onToggleLive,
 }: {
-  region: string;
-  distanceLabel: string;
   liveOn: boolean;
   onToggleLive: () => void;
 }) {
@@ -312,14 +311,6 @@ function TopBar({
       >
         <ChevronLeftIcon size={20} />
       </Link>
-
-      <StatusPill>
-        <MapPinIcon size={13} />
-        {distanceLabel}
-      </StatusPill>
-      <StatusPill>
-        <span className="capitalize">{region}</span>
-      </StatusPill>
 
       <button
         onClick={onToggleLive}
@@ -347,66 +338,95 @@ function TopBar({
   );
 }
 
-function StatusPill({ children }: { children: React.ReactNode }) {
+// Shows where you are now and where you're heading next — the whole point of the
+// guide is the journey, so both stops stay visible.
+function JourneyPill({
+  currentName,
+  nextName,
+}: {
+  currentName: string;
+  nextName?: string;
+}) {
   return (
-    <span className="flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-2 text-xs font-bold">
-      {children}
-    </span>
-  );
-}
-
-function NextStopPill({ label, prefix }: { label: string; prefix: string }) {
-  return (
-    <div className="mt-3 flex items-center gap-2 rounded-full bg-white/10 px-3 py-2.5">
-      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-600">
-        <MapPinIcon size={13} />
+    <div className="mt-3 flex items-center gap-3 rounded-2xl bg-white/10 px-3 py-2.5">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-600">
+        <MapPinIcon size={16} />
       </span>
-      <span className="text-xs font-semibold text-white/70">{prefix}</span>
-      <span className="truncate text-sm font-bold">{label}</span>
-      <ChevronRightIcon size={16} className="ml-auto shrink-0 text-white/50" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-bold leading-tight">
+          <span className="text-white/50">Now · </span>
+          {currentName}
+        </p>
+        {nextName ? (
+          <p className="mt-0.5 truncate text-xs font-semibold leading-tight text-white/60">
+            Next · {nextName}
+          </p>
+        ) : (
+          <p className="mt-0.5 text-xs font-semibold leading-tight text-white/40">
+            Final stop
+          </p>
+        )}
+      </div>
     </div>
   );
 }
 
-// Offline travel pack: download a snapshot of the whole journey (map + words)
-// so it's viewable with no network. The eye toggle previews the offline view.
-function OfflineBar({
-  saved,
-  saving,
+// Recessed "presenter" strip: the demo/dev controls, deliberately low-emphasis so
+// they read as a tool rather than product chrome. Drives the on-stage walkthrough
+// (simulate arrival → walk to next), plus offline preview and route switching.
+function PresenterStrip({
+  arrived,
+  currentName,
+  nextName,
+  offlineSaved,
   offlinePreview,
-  onDownload,
+  onArrive,
+  onWalkNext,
   onTogglePreview,
+  onChangeRoute,
 }: {
-  saved: boolean;
-  saving: boolean;
+  arrived: boolean;
+  currentName: string;
+  nextName?: string;
+  offlineSaved: boolean;
   offlinePreview: boolean;
-  onDownload: () => void;
+  onArrive: () => void;
+  onWalkNext: () => void;
   onTogglePreview: () => void;
+  onChangeRoute: () => void;
 }) {
   return (
-    <div className="mb-3 flex items-center gap-2">
-      <button
-        onClick={onDownload}
-        disabled={saving}
-        className={[
-          "flex flex-1 items-center justify-center gap-2 rounded-full py-2.5 text-xs font-bold transition-colors",
-          saved
-            ? "bg-safety-safe/20 text-safety-safe"
-            : "bg-white/10 text-white/80 hover:bg-white/15",
-        ].join(" ")}
-      >
-        <MapPinIcon size={15} />
-        {saving
-          ? "Saving…"
-          : saved
-            ? "Saved for offline ✓"
-            : "Download offline pack"}
-      </button>
-      {saved && (
+    <div className="mt-3 flex items-center gap-1.5 rounded-2xl bg-white/[0.04] p-1.5">
+      <span className="pl-2 pr-0.5 text-[9px] font-bold uppercase tracking-wider text-white/30">
+        Demo
+      </span>
+
+      {!arrived ? (
+        <button
+          onClick={onArrive}
+          className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/10 py-2 text-xs font-bold text-white/80 hover:bg-white/15"
+        >
+          <WalkIcon size={14} /> Simulate arrival
+        </button>
+      ) : nextName ? (
+        <button
+          onClick={onWalkNext}
+          className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/10 py-2 text-xs font-bold text-white/80 hover:bg-white/15"
+        >
+          <WalkIcon size={14} /> Walk to next
+        </button>
+      ) : (
+        <span className="flex min-w-0 flex-1 items-center justify-center truncate rounded-xl bg-white/5 py-2 text-xs font-bold text-white/40">
+          Arrived · {currentName}
+        </span>
+      )}
+
+      {offlineSaved && (
         <button
           onClick={onTogglePreview}
+          title="Preview how the journey looks with no internet"
           className={[
-            "rounded-full px-3 py-2.5 text-xs font-bold transition-colors",
+            "shrink-0 rounded-xl px-2.5 py-2 text-xs font-bold transition-colors",
             offlinePreview
               ? "bg-safety-armed text-white"
               : "bg-white/10 text-white/60 hover:bg-white/15",
@@ -415,52 +435,13 @@ function OfflineBar({
           {offlinePreview ? "Offline view" : "Preview offline"}
         </button>
       )}
-    </div>
-  );
-}
 
-// On-stage demo control: drop the traveller onto a stop to trigger the guide.
-function SimulatePanel({
-  arrived,
-  currentName,
-  nextName,
-  onArrive,
-  onWalkNext,
-  onChangeRoute,
-}: {
-  arrived: boolean;
-  currentName: string;
-  nextName?: string;
-  onArrive: () => void;
-  onWalkNext: () => void;
-  onChangeRoute: () => void;
-}) {
-  return (
-    <div className="mb-3 flex items-center gap-2">
-      {!arrived ? (
-        <button
-          onClick={onArrive}
-          className="flex flex-1 items-center justify-center gap-2 rounded-full bg-white/10 py-2.5 text-xs font-bold text-white/80 hover:bg-white/15"
-        >
-          <WalkIcon size={15} /> Simulate arrival
-        </button>
-      ) : nextName ? (
-        <button
-          onClick={onWalkNext}
-          className="flex flex-1 items-center justify-center gap-2 rounded-full bg-white/10 py-2.5 text-xs font-bold text-white/80 hover:bg-white/15"
-        >
-          <WalkIcon size={15} /> Walk to {nextName}
-        </button>
-      ) : (
-        <span className="flex flex-1 items-center justify-center gap-2 rounded-full bg-white/5 py-2.5 text-xs font-bold text-white/40">
-          Journey complete · {currentName}
-        </span>
-      )}
       <button
         onClick={onChangeRoute}
-        className="rounded-full bg-white/10 px-3 py-2.5 text-xs font-bold text-white/60 hover:bg-white/15"
+        title="Change route"
+        className="shrink-0 rounded-xl bg-white/10 px-2.5 py-2 text-xs font-bold text-white/60 hover:bg-white/15"
       >
-        Change route
+        Routes
       </button>
     </div>
   );
@@ -490,6 +471,11 @@ function NarrationCard({
   onAsk: (q: string) => void;
 }) {
   const [draft, setDraft] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > 150;
+
+  // Re-collapse whenever the narration / answer changes.
+  useEffect(() => setExpanded(false), [text]);
 
   const status = listening
     ? "listening…"
@@ -524,7 +510,22 @@ function NarrationCard({
         />
       </div>
 
-      <p className="mt-4 min-h-[3.5rem] text-lg leading-snug">{text}</p>
+      <p
+        className={[
+          "mt-4 text-lg leading-snug",
+          !expanded && isLong ? "line-clamp-3" : "",
+        ].join(" ")}
+      >
+        {text}
+      </p>
+      {isLong && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-1.5 text-xs font-bold text-primary-500 hover:text-primary-400"
+        >
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      )}
 
       <div className="mt-5 flex items-center gap-3">
         <button
@@ -566,58 +567,108 @@ function NarrationCard({
   );
 }
 
-// Context + transport + phrases + the Google Maps hand-off for the current stop.
-function StopDetails({
+// Collapsible "Local tips" panel: the product content for the current stop —
+// transport, "ask a local" phrases, Google Maps hand-off, and the offline pack.
+// Collapsed by default so Nova's narration stays the hero.
+function LocalTips({
   stop,
   mapsUrl,
+  offlineSaved,
+  saving,
+  onDownload,
 }: {
   stop: import("@/types").RouteStop;
   mapsUrl: string;
+  offlineSaved: boolean;
+  saving: boolean;
+  onDownload: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <div className="mt-3 space-y-3">
-      {stop.transport && stop.transport.length > 0 && (
-        <div className="rounded-2xl bg-white/[0.05] p-4">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-white/50">
-            Getting there
-          </p>
-          <ul className="mt-2 space-y-1.5">
-            {stop.transport.map((t) => (
-              <li key={t.label} className="flex items-center gap-2 text-sm text-white/80">
-                <span className="h-1.5 w-1.5 rounded-full bg-primary-500" />
-                {t.label}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {stop.askLocalPhrases && stop.askLocalPhrases.length > 0 && (
-        <div className="rounded-2xl bg-white/[0.05] p-4">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-white/50">
-            Ask a local
-          </p>
-          <ul className="mt-2 space-y-2.5">
-            {stop.askLocalPhrases.map((p) => (
-              <li key={p.en}>
-                <p className="text-sm font-semibold text-white">{p.en}</p>
-                <p className="text-sm text-primary-500">{p.mn}</p>
-                <p className="text-xs italic text-white/45">{p.roman}</p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <a
-        href={mapsUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="flex items-center justify-center gap-2 rounded-full bg-white py-3.5 text-sm font-bold text-primary-900"
+    <div className="mb-3 overflow-hidden rounded-2xl bg-white/[0.05]">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left"
       >
-        <MapPinIcon size={16} className="text-primary-600" />
-        Open route in Google Maps
-      </a>
+        <MapPinIcon size={15} className="shrink-0 text-primary-500" />
+        <span className="text-sm font-bold text-white">Local tips</span>
+        <span className="text-xs text-white/40">transport · phrases · map</span>
+        <ChevronRightIcon
+          size={16}
+          className={[
+            "ml-auto shrink-0 text-white/40 transition-transform",
+            open ? "rotate-90" : "",
+          ].join(" ")}
+        />
+      </button>
+
+      {open && (
+        <div className="space-y-3 px-4 pb-4">
+          {stop.transport && stop.transport.length > 0 && (
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-white/50">
+                Getting there
+              </p>
+              <ul className="mt-2 space-y-1.5">
+                {stop.transport.map((t) => (
+                  <li
+                    key={t.label}
+                    className="flex items-center gap-2 text-sm text-white/80"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary-500" />
+                    {t.label}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {stop.askLocalPhrases && stop.askLocalPhrases.length > 0 && (
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-white/50">
+                Ask a local
+              </p>
+              <ul className="mt-2 space-y-2.5">
+                {stop.askLocalPhrases.map((p) => (
+                  <li key={p.en}>
+                    <p className="text-sm font-semibold text-white">{p.en}</p>
+                    <p className="text-sm text-primary-500">{p.mn}</p>
+                    <p className="text-xs italic text-white/45">{p.roman}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center justify-center gap-2 rounded-full bg-white py-3 text-sm font-bold text-primary-900"
+          >
+            <MapPinIcon size={16} className="text-primary-600" />
+            Open route in Google Maps
+          </a>
+
+          <button
+            onClick={onDownload}
+            disabled={saving}
+            className={[
+              "flex w-full items-center justify-center gap-2 rounded-full py-3 text-sm font-bold transition-colors",
+              offlineSaved
+                ? "bg-safety-safe/20 text-safety-safe"
+                : "bg-white/10 text-white/80 hover:bg-white/15",
+            ].join(" ")}
+          >
+            {saving
+              ? "Saving…"
+              : offlineSaved
+                ? "Saved for offline ✓"
+                : "Download offline pack"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

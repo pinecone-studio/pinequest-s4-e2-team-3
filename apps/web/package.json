@@ -13,6 +13,7 @@
     "@clerk/nextjs": "^7.5.8",
     "@supabase/ssr": "^0.5.0",
     "@supabase/supabase-js": "^2.45.0",
+    "@vis.gl/react-google-maps": "^1.8.3",
     "clsx": "^2.1.0",
     "mapbox-gl": "^3.7.0",
     "next": "^15.0.0",
