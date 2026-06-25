@@ -8,8 +8,24 @@ type Turn = {
   spokenLang: "mn" | "en";
   spokenText: string;
   translatedText: string;
-  audioUrl?: string;
+  audioUrl?: string; // not persisted — blob URLs don't survive refresh
 };
+
+const STORAGE_KEY = "lumo_interpreter_turns";
+
+function loadTurns(): Turn[] {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveTurns(turns: Turn[]) {
+  // strip audioUrl — blob URLs are session-only
+  const clean = turns.map(({ audioUrl: _a, ...t }) => t);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(clean));
+}
 
 const LANG = {
   mn: { label: "Mongolian", flag: "🇲🇳" },
@@ -25,6 +41,16 @@ export default function TranslatePage() {
   const [activeLang, setActiveLang] = useState<"mn" | "en" | null>(null);
   const [loading,    setLoading]    = useState(false);
   const [turns,      setTurns]      = useState<Turn[]>([]);
+
+  // Load saved conversation on mount
+  useEffect(() => {
+    setTurns(loadTurns());
+  }, []);
+
+  // Persist whenever turns change
+  useEffect(() => {
+    if (turns.length > 0) saveTurns(turns);
+  }, [turns]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -109,10 +135,23 @@ export default function TranslatePage() {
             Tap your flag, speak, tap again to translate.
           </p>
         </div>
-        <div className="flex items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-bold text-ink shadow-sm">
-          🇲🇳 MN
-          <SwapIcon size={14} className="text-ink-muted" />
-          🇬🇧 EN
+        <div className="flex items-center gap-2">
+          {turns.length > 0 && (
+            <button
+              onClick={() => {
+                setTurns([]);
+                localStorage.removeItem(STORAGE_KEY);
+              }}
+              className="rounded-full bg-sand-100 px-3 py-2 text-xs font-semibold text-ink-muted hover:bg-sand-200 hover:text-ink"
+            >
+              Clear
+            </button>
+          )}
+          <div className="flex items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-bold text-ink shadow-sm">
+            🇲🇳 MN
+            <SwapIcon size={14} className="text-ink-muted" />
+            🇬🇧 EN
+          </div>
         </div>
       </header>
 
