@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+}
+
+model Profile {
+  id                String       @id @default(uuid())
+  email             String       @unique
+  fullName          String?
+  avatarUrl         String?
+  preferredLanguage String       @default("en")
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  savedPlaces       SavedPlace[]
+  guideSessions     GuideSession[]
+
+  @@map("profiles")
+}
+
+model Place {
+  id          String   @id @default(uuid())
+  name        String
+  nameEn      String?
+  nameMn      String?
+  description String?
+  latitude    Float
+  longitude   Float
+  category    String
+  imageUrl    String?
+  rating      Float?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  savedBy     SavedPlace[]
+
+  @@map("places")
+}
+
+model SavedPlace {
+  id        String   @id @default(uuid())
+  profileId String
+  placeId   String
+  savedAt   DateTime @default(now())
+
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  place     Place    @relation(fields: [placeId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, placeId])
+  @@map("saved_places")
+}
+
+model GuideSession {
+  id        String         @id @default(uuid())
+  profileId String
+  language  String         @default("en")
+  createdAt DateTime       @default(now())
+
+  profile   Profile        @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  messages  GuideMessage[]
+
+  @@map("guide_sessions")
+}
+
+model GuideMessage {
+  id        String       @id @default(uuid())
+  sessionId String
+  role      String
+  content   String
+  audioUrl  String?
+  createdAt DateTime     @default(now())
+
+  session   GuideSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("guide_messages")
+}
