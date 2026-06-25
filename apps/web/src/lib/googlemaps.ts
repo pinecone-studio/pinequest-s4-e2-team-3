@@ -37,3 +37,43 @@ export const LIGHT_MAP_STYLES: google.maps.MapTypeStyle[] = [
   { featureType: "transit", stylers: [{ visibility: "off" }] },
   { featureType: "water", elementType: "geometry", stylers: [{ color: "#cfe0f7" }] },
 ];
+
+// ---------------------------------------------------------------------------
+// Maps JS SDK loader
+// Lazily injects the Google Maps JS SDK (with the Places library) and resolves
+// with the `google` global. Used by client-side features that need the
+// interactive SDK directly — e.g. reverse-geocoding a place name. The promise is
+// cached so the script is only ever added once.
+// ---------------------------------------------------------------------------
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+let mapsPromise: Promise<any> | null = null;
+
+export function loadGoogleMaps(apiKey: string): Promise<any> {
+  if (typeof window === "undefined") {
+    return Promise.reject(new Error("Google Maps can only load in the browser"));
+  }
+
+  const w = window as any;
+  if (w.google?.maps) return Promise.resolve(w.google);
+  if (mapsPromise) return mapsPromise;
+
+  mapsPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&v=weekly&loading=async`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      if (w.google?.maps) resolve(w.google);
+      else reject(new Error("Google Maps loaded but `google.maps` is unavailable"));
+    };
+    script.onerror = () => {
+      mapsPromise = null; // allow a later retry
+      reject(new Error("Failed to load the Google Maps script"));
+    };
+    document.head.appendChild(script);
+  });
+
+  return mapsPromise;
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
