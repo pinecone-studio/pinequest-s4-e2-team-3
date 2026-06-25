@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { Moon, Sun } from "lucide-react";
 import {
   BarsIcon,
   ChevronLeftIcon,
@@ -27,18 +28,85 @@ import type { Coords, DemoRoute } from "@/types";
 // Loaded lazily + client-only because the Google Maps SDK touches `window`.
 const RouteMap = dynamic(() => import("@/components/RouteMap"), { ssr: false });
 
-// The dark, full-screen live guide. It sits outside the (app) shell, so it has
-// no sidebar/tab bar — just the map and the narration card.
+type Theme = "dark" | "light";
+
+// Local light/night theme just for the Live Guide screen. Night (dark) is the
+// default since this screen is designed dark-first; the choice is remembered.
+function useLiveTheme() {
+  const [theme, setTheme] = useState<Theme>("dark");
+
+  useEffect(() => {
+    const saved = localStorage.getItem("live-theme");
+    if (saved === "light" || saved === "dark") setTheme(saved);
+  }, []);
+
+  const toggleTheme = () =>
+    setTheme((t) => {
+      const next: Theme = t === "dark" ? "light" : "dark";
+      try {
+        localStorage.setItem("live-theme", next);
+      } catch {
+        /* ignore storage failures (private mode etc.) */
+      }
+      return next;
+    });
+
+  return { theme, toggleTheme };
+}
+
+// Sun in night mode (tap → go light), Moon in light mode (tap → go night).
+function ThemeToggle({
+  theme,
+  onToggle,
+  className,
+}: {
+  theme: Theme;
+  onToggle: () => void;
+  className?: string;
+}) {
+  const isDark = theme === "dark";
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={isDark ? "Switch to light mode" : "Switch to night mode"}
+      title={isDark ? "Light mode" : "Night mode"}
+      className={[
+        "flex h-10 w-10 items-center justify-center rounded-full transition-colors",
+        "bg-ink/5 text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15",
+        className ?? "",
+      ].join(" ")}
+    >
+      {isDark ? <Sun size={18} /> : <Moon size={18} />}
+    </button>
+  );
+}
+
+// The live guide. It sits outside the (app) shell, so it has no sidebar/tab bar
+// — just the map and the narration card. Defaults to night mode; the toggle in
+// the top bar switches it to light. `.dark` is scoped to this wrapper, so the
+// rest of the app is unaffected.
 export default function LiveGuidePage() {
   const activeRoute = useLiveStore((s) => s.activeRoute);
   // Begin watching real GPS as soon as the screen mounts.
   useLocation();
+  const { theme, toggleTheme } = useLiveTheme();
 
+  // The `dark` class lives on the OUTER element; the themed colours live on the
+  // inner element. Tailwind's class strategy compiles `dark:` to a descendant
+  // selector (`.dark .dark\:bg-…`), so an element can't theme itself — the inner
+  // div must be a *child* of the one carrying `.dark`.
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#0d1422] text-white">
-      {activeRoute ? <LiveBackground /> : <MapBackdrop />}
-      <div className="relative mx-auto flex min-h-screen w-full max-w-md flex-col px-5 pb-6 pt-6">
-        {activeRoute ? <LiveExperience /> : <RoutePicker />}
+    <div className={theme === "dark" ? "dark" : ""}>
+      <div className="relative min-h-screen overflow-hidden bg-[#eef2fb] text-ink transition-colors dark:bg-[#0d1422] dark:text-white">
+        {activeRoute ? <LiveBackground theme={theme} /> : <MapBackdrop />}
+        <div className="relative mx-auto flex min-h-screen w-full max-w-md flex-col px-5 pb-6 pt-6">
+          {activeRoute ? (
+            <LiveExperience theme={theme} onToggleTheme={toggleTheme} />
+          ) : (
+            <RoutePicker theme={theme} onToggleTheme={toggleTheme} />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -46,7 +114,7 @@ export default function LiveGuidePage() {
 
 // Decides what fills the screen behind the guide UI:
 //   real Mapbox route map → cached static snapshot (offline) → stylised backdrop.
-function LiveBackground() {
+function LiveBackground({ theme }: { theme: Theme }) {
   const { activeRoute, currentStopIndex, simulatedCoords, forceOffline } =
     useLiveStore();
   const realCoords = useLocationStore((s) => s.coordinates);
@@ -80,8 +148,9 @@ function LiveBackground() {
           currentIndex={currentStopIndex}
           position={position}
           onError={() => setMapFailed(true)}
+          theme={theme}
         />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#0d1422]/40 via-transparent to-[#0d1422]/90" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#eef2fb]/40 via-transparent to-[#eef2fb]/90 dark:from-[#0d1422]/40 dark:via-transparent dark:to-[#0d1422]/90" />
       </div>
     );
   }
@@ -97,7 +166,7 @@ function LiveBackground() {
           alt={`${activeRoute.title} route`}
           className="h-full w-full object-cover opacity-90"
         />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#0d1422]/40 via-transparent to-[#0d1422]/90" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#eef2fb]/40 via-transparent to-[#eef2fb]/90 dark:from-[#0d1422]/40 dark:via-transparent dark:to-[#0d1422]/90" />
       </div>
     );
   }
@@ -108,13 +177,17 @@ function LiveBackground() {
 // ---------------------------------------------------------------------------
 // Route picker — shown until a route is active. Each route is a demo journey.
 // ---------------------------------------------------------------------------
-function RoutePicker() {
+function RoutePicker({
+  theme,
+  onToggleTheme,
+}: {
+  theme: Theme;
+  onToggleTheme: () => void;
+}) {
   const setRoute = useLiveStore((s) => s.setRoute);
-  const setLiveOn = useLiveStore((s) => s.setLiveOn);
 
   const start = (route: DemoRoute) => {
     setRoute(route);
-    setLiveOn(true);
   };
 
   return (
@@ -123,11 +196,14 @@ function RoutePicker() {
         <Link
           href="/"
           aria-label="Back"
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-ink/5 dark:bg-white/10"
         >
           <ChevronLeftIcon size={20} />
         </Link>
-        <span className="text-sm font-semibold text-white/70">Live Guide</span>
+        <span className="text-sm font-semibold text-ink-muted dark:text-white/70">
+          Live Guide
+        </span>
+        <ThemeToggle theme={theme} onToggle={onToggleTheme} className="ml-auto" />
       </div>
 
       <h1 className="mt-6 font-serif text-3xl leading-tight">
@@ -139,16 +215,21 @@ function RoutePicker() {
           <button
             key={route.id}
             onClick={() => start(route)}
-            className="w-full rounded-3xl bg-white/[0.07] p-5 text-left backdrop-blur transition-colors hover:bg-white/[0.12]"
+            className="w-full rounded-3xl bg-white p-5 text-left shadow-sm backdrop-blur transition-colors hover:bg-sand-50 dark:bg-white/[0.07] dark:shadow-none dark:hover:bg-white/[0.12]"
           >
-            <p className="text-[11px] font-bold uppercase tracking-wide text-primary-500">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-primary-600 dark:text-primary-500">
               {route.region} · {route.stops.length} stops
             </p>
             <div className="mt-1 flex items-center gap-2">
               <p className="flex-1 font-serif text-xl leading-tight">{route.title}</p>
-              <ChevronRightIcon size={18} className="shrink-0 text-white/40" />
+              <ChevronRightIcon
+                size={18}
+                className="shrink-0 text-ink-muted/60 dark:text-white/40"
+              />
             </div>
-            <p className="mt-1 line-clamp-1 text-sm text-white/55">{route.summary}</p>
+            <p className="mt-1 line-clamp-2 text-sm text-ink-muted dark:text-white/55">
+              {route.stops.map((s) => s.name).join(" → ")}
+            </p>
           </button>
         ))}
       </div>
@@ -159,14 +240,18 @@ function RoutePicker() {
 // ---------------------------------------------------------------------------
 // Live experience — the working guide once a route is chosen.
 // ---------------------------------------------------------------------------
-function LiveExperience() {
+function LiveExperience({
+  theme,
+  onToggleTheme,
+}: {
+  theme: Theme;
+  onToggleTheme: () => void;
+}) {
   const guide = useLiveGuide();
   const {
-    liveOn,
     arrivedStopIds,
     offlineReadyIds,
     forceOffline,
-    setLiveOn,
     setSimulated,
     advanceStop,
     reset,
@@ -232,7 +317,7 @@ function LiveExperience() {
 
   return (
     <>
-      <TopBar liveOn={liveOn} onToggleLive={() => setLiveOn(!liveOn)} />
+      <TopBar theme={theme} onToggleTheme={onToggleTheme} />
 
       <JourneyPill
         currentName={currentStop?.name ?? ""}
@@ -243,7 +328,7 @@ function LiveExperience() {
 
       <button
         onClick={() => setShowExtras(!showExtras)}
-        className="mb-3 ml-auto flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold text-white/70 backdrop-blur hover:bg-white/15"
+        className="mb-3 ml-auto flex items-center gap-1.5 rounded-full bg-ink/5 px-3 py-1.5 text-xs font-bold text-ink-muted backdrop-blur hover:bg-ink/10 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15"
       >
         {showExtras ? "Hide details" : "Tips & controls"}
         <ChevronRightIcon
@@ -296,41 +381,27 @@ function LiveExperience() {
 }
 
 function TopBar({
-  liveOn,
-  onToggleLive,
+  theme,
+  onToggleTheme,
 }: {
-  liveOn: boolean;
-  onToggleLive: () => void;
+  theme: Theme;
+  onToggleTheme: () => void;
 }) {
   return (
     <div className="flex items-center gap-2">
       <Link
         href="/"
         aria-label="Back"
-        className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10"
+        className="flex h-10 w-10 items-center justify-center rounded-full bg-ink/5 dark:bg-white/10"
       >
         <ChevronLeftIcon size={20} />
       </Link>
 
-      <button
-        onClick={onToggleLive}
-        className={[
-          "ml-auto flex h-10 items-center gap-1.5 rounded-full px-3 text-xs font-bold transition-colors",
-          liveOn ? "bg-safety-safe text-white" : "bg-white/10 text-white/60",
-        ].join(" ")}
-      >
-        <span
-          className={[
-            "h-2 w-2 rounded-full",
-            liveOn ? "bg-white" : "bg-white/40",
-          ].join(" ")}
-        />
-        {liveOn ? "Live" : "Paused"}
-      </button>
+      <ThemeToggle theme={theme} onToggle={onToggleTheme} className="ml-auto" />
 
       <Link
         href="/sos"
-        className="flex h-10 items-center rounded-full bg-safety-critical px-4 text-xs font-extrabold tracking-wide"
+        className="flex h-10 items-center rounded-full bg-safety-critical px-4 text-xs font-extrabold tracking-wide text-white"
       >
         SOS
       </Link>
@@ -348,21 +419,21 @@ function JourneyPill({
   nextName?: string;
 }) {
   return (
-    <div className="mt-3 flex items-center gap-3 rounded-2xl bg-white/10 px-3 py-2.5">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-600">
+    <div className="mt-3 flex items-center gap-3 rounded-2xl bg-ink/5 px-3 py-2.5 dark:bg-white/10">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white">
         <MapPinIcon size={16} />
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-bold leading-tight">
-          <span className="text-white/50">Now · </span>
+          <span className="text-ink-muted dark:text-white/50">Now · </span>
           {currentName}
         </p>
         {nextName ? (
-          <p className="mt-0.5 truncate text-xs font-semibold leading-tight text-white/60">
+          <p className="mt-0.5 truncate text-xs font-semibold leading-tight text-ink-muted dark:text-white/60">
             Next · {nextName}
           </p>
         ) : (
-          <p className="mt-0.5 text-xs font-semibold leading-tight text-white/40">
+          <p className="mt-0.5 text-xs font-semibold leading-tight text-ink-muted/70 dark:text-white/40">
             Final stop
           </p>
         )}
@@ -396,27 +467,27 @@ function PresenterStrip({
   onChangeRoute: () => void;
 }) {
   return (
-    <div className="mt-3 flex items-center gap-1.5 rounded-2xl bg-white/[0.04] p-1.5">
-      <span className="pl-2 pr-0.5 text-[9px] font-bold uppercase tracking-wider text-white/30">
+    <div className="mt-3 flex items-center gap-1.5 rounded-2xl bg-ink/[0.04] p-1.5 dark:bg-white/[0.04]">
+      <span className="pl-2 pr-0.5 text-[9px] font-bold uppercase tracking-wider text-ink-muted/60 dark:text-white/30">
         Demo
       </span>
 
       {!arrived ? (
         <button
           onClick={onArrive}
-          className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/10 py-2 text-xs font-bold text-white/80 hover:bg-white/15"
+          className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-ink/5 py-2 text-xs font-bold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15"
         >
           <WalkIcon size={14} /> Simulate arrival
         </button>
       ) : nextName ? (
         <button
           onClick={onWalkNext}
-          className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/10 py-2 text-xs font-bold text-white/80 hover:bg-white/15"
+          className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-ink/5 py-2 text-xs font-bold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15"
         >
           <WalkIcon size={14} /> Walk to next
         </button>
       ) : (
-        <span className="flex min-w-0 flex-1 items-center justify-center truncate rounded-xl bg-white/5 py-2 text-xs font-bold text-white/40">
+        <span className="flex min-w-0 flex-1 items-center justify-center truncate rounded-xl bg-ink/5 py-2 text-xs font-bold text-ink-muted dark:bg-white/5 dark:text-white/40">
           Arrived · {currentName}
         </span>
       )}
@@ -429,7 +500,7 @@ function PresenterStrip({
             "shrink-0 rounded-xl px-2.5 py-2 text-xs font-bold transition-colors",
             offlinePreview
               ? "bg-safety-armed text-white"
-              : "bg-white/10 text-white/60 hover:bg-white/15",
+              : "bg-ink/5 text-ink-muted hover:bg-ink/10 dark:bg-white/10 dark:text-white/60 dark:hover:bg-white/15",
           ].join(" ")}
         >
           {offlinePreview ? "Offline view" : "Preview offline"}
@@ -439,7 +510,7 @@ function PresenterStrip({
       <button
         onClick={onChangeRoute}
         title="Change route"
-        className="shrink-0 rounded-xl bg-white/10 px-2.5 py-2 text-xs font-bold text-white/60 hover:bg-white/15"
+        className="shrink-0 rounded-xl bg-ink/5 px-2.5 py-2 text-xs font-bold text-ink-muted hover:bg-ink/10 dark:bg-white/10 dark:text-white/60 dark:hover:bg-white/15"
       >
         Routes
       </button>
@@ -494,18 +565,18 @@ function NarrationCard({
   };
 
   return (
-    <div className="rounded-3xl bg-white/[0.07] p-5 backdrop-blur">
+    <div className="rounded-3xl bg-white p-5 shadow-sm backdrop-blur dark:bg-white/[0.07] dark:shadow-none">
       <div className="flex items-center gap-3">
         <span className="h-9 w-9 rounded-full bg-gradient-to-br from-primary-500 to-primary-700" />
         <div>
           <p className="font-bold">Nova</p>
-          <p className="text-xs text-white/60">{status}</p>
+          <p className="text-xs text-ink-muted dark:text-white/60">{status}</p>
         </div>
         <BarsIcon
           size={22}
           className={[
             "ml-auto transition-colors",
-            speaking ? "text-primary-500" : "text-white/30",
+            speaking ? "text-primary-500" : "text-ink-muted/50 dark:text-white/30",
           ].join(" ")}
         />
       </div>
@@ -521,7 +592,7 @@ function NarrationCard({
       {isLong && (
         <button
           onClick={() => setExpanded(!expanded)}
-          className="mt-1.5 text-xs font-bold text-primary-500 hover:text-primary-400"
+          className="mt-1.5 text-xs font-bold text-primary-600 hover:text-primary-500 dark:text-primary-500 dark:hover:text-primary-400"
         >
           {expanded ? "Show less" : "Show more"}
         </button>
@@ -530,22 +601,26 @@ function NarrationCard({
       <div className="mt-5 flex items-center gap-3">
         <button
           onClick={speaking ? onPause : onReplay}
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-600"
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white"
           aria-label={speaking ? "Pause" : "Replay"}
         >
           {speaking ? <PauseIcon size={20} /> : <PlayIcon size={18} />}
         </button>
 
         {/* Ask by text — always available, robust on a noisy stage. */}
-        <div className="flex flex-1 items-center gap-2 rounded-full bg-white/10 px-4 py-2">
+        <div className="flex flex-1 items-center gap-2 rounded-full bg-ink/5 px-4 py-2 dark:bg-white/10">
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()}
             placeholder="Ask Nova…"
-            className="w-full bg-transparent text-sm outline-none placeholder:text-white/40"
+            className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted dark:placeholder:text-white/40"
           />
-          <button onClick={submit} aria-label="Send" className="text-white/70 hover:text-white">
+          <button
+            onClick={submit}
+            aria-label="Send"
+            className="text-ink-muted hover:text-ink dark:text-white/70 dark:hover:text-white"
+          >
             <SendIcon size={18} />
           </button>
         </div>
@@ -556,7 +631,9 @@ function NarrationCard({
             aria-label="Talk to Nova"
             className={[
               "flex h-12 w-12 shrink-0 items-center justify-center rounded-full",
-              listening ? "bg-safety-critical" : "bg-white/10",
+              listening
+                ? "bg-safety-critical text-white"
+                : "bg-ink/5 text-ink dark:bg-white/10 dark:text-white",
             ].join(" ")}
           >
             <MicIcon size={20} />
@@ -586,18 +663,20 @@ function LocalTips({
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="mb-3 overflow-hidden rounded-2xl bg-white/[0.05]">
+    <div className="mb-3 overflow-hidden rounded-2xl bg-ink/[0.04] dark:bg-white/[0.05]">
       <button
         onClick={() => setOpen(!open)}
         className="flex w-full items-center gap-2 px-4 py-3 text-left"
       >
         <MapPinIcon size={15} className="shrink-0 text-primary-500" />
-        <span className="text-sm font-bold text-white">Local tips</span>
-        <span className="text-xs text-white/40">transport · phrases · map</span>
+        <span className="text-sm font-bold text-ink dark:text-white">Local tips</span>
+        <span className="text-xs text-ink-muted/70 dark:text-white/40">
+          transport · phrases · map
+        </span>
         <ChevronRightIcon
           size={16}
           className={[
-            "ml-auto shrink-0 text-white/40 transition-transform",
+            "ml-auto shrink-0 text-ink-muted/70 transition-transform dark:text-white/40",
             open ? "rotate-90" : "",
           ].join(" ")}
         />
@@ -607,14 +686,14 @@ function LocalTips({
         <div className="space-y-3 px-4 pb-4">
           {stop.transport && stop.transport.length > 0 && (
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-wide text-white/50">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-ink-muted dark:text-white/50">
                 Getting there
               </p>
               <ul className="mt-2 space-y-1.5">
                 {stop.transport.map((t) => (
                   <li
                     key={t.label}
-                    className="flex items-center gap-2 text-sm text-white/80"
+                    className="flex items-center gap-2 text-sm text-ink dark:text-white/80"
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-primary-500" />
                     {t.label}
@@ -626,15 +705,17 @@ function LocalTips({
 
           {stop.askLocalPhrases && stop.askLocalPhrases.length > 0 && (
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-wide text-white/50">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-ink-muted dark:text-white/50">
                 Ask a local
               </p>
               <ul className="mt-2 space-y-2.5">
                 {stop.askLocalPhrases.map((p) => (
                   <li key={p.en}>
-                    <p className="text-sm font-semibold text-white">{p.en}</p>
-                    <p className="text-sm text-primary-500">{p.mn}</p>
-                    <p className="text-xs italic text-white/45">{p.roman}</p>
+                    <p className="text-sm font-semibold text-ink dark:text-white">{p.en}</p>
+                    <p className="text-sm text-primary-600 dark:text-primary-500">{p.mn}</p>
+                    <p className="text-xs italic text-ink-muted/80 dark:text-white/45">
+                      {p.roman}
+                    </p>
                   </li>
                 ))}
               </ul>
@@ -645,9 +726,9 @@ function LocalTips({
             href={mapsUrl}
             target="_blank"
             rel="noreferrer"
-            className="flex items-center justify-center gap-2 rounded-full bg-white py-3 text-sm font-bold text-primary-900"
+            className="flex items-center justify-center gap-2 rounded-full bg-primary-600 py-3 text-sm font-bold text-white dark:bg-white dark:text-primary-900"
           >
-            <MapPinIcon size={16} className="text-primary-600" />
+            <MapPinIcon size={16} className="text-white dark:text-primary-600" />
             Open route in Google Maps
           </a>
 
@@ -658,7 +739,7 @@ function LocalTips({
               "flex w-full items-center justify-center gap-2 rounded-full py-3 text-sm font-bold transition-colors",
               offlineSaved
                 ? "bg-safety-safe/20 text-safety-safe"
-                : "bg-white/10 text-white/80 hover:bg-white/15",
+                : "bg-ink/5 text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15",
             ].join(" ")}
           >
             {saving
@@ -677,7 +758,7 @@ function LocalTips({
 function MapBackdrop() {
   return (
     <div className="absolute inset-0">
-      <div className="absolute inset-0 bg-[radial-gradient(120%_90%_at_70%_20%,#16233d_0%,#0d1422_60%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(120%_90%_at_70%_20%,#dbe6ff_0%,#eef2fb_60%)] dark:bg-[radial-gradient(120%_90%_at_70%_20%,#16233d_0%,#0d1422_60%)]" />
       <svg
         className="absolute inset-0 h-full w-full"
         viewBox="0 0 100 100"

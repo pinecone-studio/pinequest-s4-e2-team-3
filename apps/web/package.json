@@ -15,6 +15,7 @@
     "@supabase/supabase-js": "^2.45.0",
     "@vis.gl/react-google-maps": "^1.8.3",
     "clsx": "^2.1.0",
+    "lucide-react": "^1.21.0",
     "mapbox-gl": "^3.7.0",
     "next": "^15.0.0",
     "openai": "^4.67.0",

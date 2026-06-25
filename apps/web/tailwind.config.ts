@@ -2,6 +2,9 @@ import type { Config } from "tailwindcss";
 
 const config: Config = {
   content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
+  // Class-based dark mode. Currently only the Live Guide screen opts in (it wraps
+  // itself in `.dark`), so the rest of the app is unaffected.
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
