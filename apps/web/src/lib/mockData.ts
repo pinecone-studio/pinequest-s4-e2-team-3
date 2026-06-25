@@ -253,32 +253,46 @@ export const liveGuide = {
 
 // The Emergency SOS bottom sheet.
 export const sos = {
-  location: "Lisbon · location ready",
-  language: "Portuguese",
+  location: "Ulaanbaatar · location ready",
+  language: "Mongolian",
+  place: "Sükhbaatar Square, Ulaanbaatar",
+  coords: "47.9186° N · 106.9177° E",
   options: [
     {
       id: "sos-1",
       title: "Fell / injured",
       subtitle: "I may be hurt",
       tone: "amber",
+      message: "I have fallen and may be injured. I need an ambulance.",
+      service: "Ambulance",
+      serviceNumber: "103",
     },
     {
       id: "sos-2",
       title: "Got lost",
       subtitle: "Can't find my way",
       tone: "blue",
+      message: "I am lost and need help finding my way to safety.",
+      service: "Help line",
+      serviceNumber: "108",
     },
     {
       id: "sos-3",
       title: "Medical",
       subtitle: "Urgent illness",
       tone: "green",
+      message: "I have a medical emergency and need an ambulance.",
+      service: "Ambulance",
+      serviceNumber: "103",
     },
     {
       id: "sos-4",
       title: "Feel unsafe",
       subtitle: "Need police",
       tone: "purple",
+      message: "I feel unsafe and need police assistance.",
+      service: "Police",
+      serviceNumber: "102",
     },
   ] satisfies SosOption[],
 };
