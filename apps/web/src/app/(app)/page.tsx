@@ -3,10 +3,9 @@ import Link from "next/link";
 import { HeaderActions } from "@/components/HeaderActions";
 import { LiveClock } from "@/components/LiveClock";
 import { SectionHeader } from "@/components/SectionHeader";
-import { Tag } from "@/components/Tag";
-import { MapPinIcon, PlayIcon } from "@/components/icons";
-import { guide, nearbySpots, trip, weather } from "@/lib/mockData";
-import type { NearbySpot, Tone } from "@/types";
+import { MapPinIcon, MicIcon, PlayIcon, ShieldIcon } from "@/components/icons";
+import { guide, todaysJourney, trip, weather } from "@/lib/mockData";
+import { NearbySection } from "./NearbySection";
 
 export default function HomePage() {
   return (
@@ -16,12 +15,12 @@ export default function HomePage() {
       <LiveGuideCard />
 
       <section>
-        <SectionHeader title="Right now, near you" action="Explore" />
-        <div className="flex gap-3 overflow-x-auto pb-1">
-          {nearbySpots.map((spot) => (
-            <NearbyCard key={spot.id} spot={spot} />
-          ))}
-        </div>
+        <SectionHeader
+          title="Right now, near you"
+          action="Explore"
+          actionHref="/explore"
+        />
+        <NearbySection />
       </section>
     </div>
   );
@@ -47,7 +46,11 @@ function Header() {
 function StatStrip() {
   return (
     <div className="grid grid-cols-3 gap-2">
-      <StatCard label="Weather" value={`${weather.temperature}°`} sub={weather.description} />
+      <StatCard
+        label="Weather"
+        value={`${weather.temperature}°`}
+        sub={weather.description}
+      />
       <StatCard label="Local time" value={<LiveClock />} sub="Ulaanbaatar" />
       <StatCard label="Day" value={trip.dayLabel} />
     </div>
@@ -83,12 +86,18 @@ function LiveGuideCard() {
       <div className="relative flex flex-col gap-5">
         <div className="flex w-fit items-center gap-2 rounded-full bg-white/10 py-1.5 pl-2 pr-3 backdrop-blur">
           <span className="h-4 w-4 rounded-full bg-gradient-to-br from-primary-500 to-primary-700" />
-          <span className="text-xs font-bold text-white">{guide.name} is ready</span>
+          <span className="text-xs font-bold text-white">
+            {guide.name} is ready
+          </span>
         </div>
 
         <div>
-          <h2 className="font-serif text-3xl leading-tight text-white">Live Guide</h2>
-          <p className="mt-1 text-sm text-white/70">Your voice companion for Mongolia.</p>
+          <h2 className="font-serif text-3xl leading-tight text-white">
+            Live Guide
+          </h2>
+          <p className="mt-1 text-sm text-white/70">
+            Your voice companion for Mongolia.
+          </p>
         </div>
 
         <Link
@@ -103,34 +112,27 @@ function LiveGuideCard() {
   );
 }
 
-// Gradient tints per tone so cards look premium without remote photos.
-const cardTint: Record<Tone, string> = {
-  blue: "from-[#2f6bff] to-[#1f3a8a]",
-  amber: "from-[#f59e0b] to-[#b45309]",
-  green: "from-[#1F9D6B] to-[#0f5c3f]",
-  purple: "from-[#7c5cff] to-[#4c1d95]",
-  white: "from-sand-200 to-sand-300",
-};
-
-// A compact card in the horizontally-scrolling "near you" row.
-function NearbyCard({ spot }: { spot: NearbySpot }) {
+// Quick entry into the companion's other surfaces (teammates' screens).
+function QuickActions() {
+  const actions = [
+    { href: "/translate", label: "Phrases", Icon: MicIcon },
+    { href: "/explore", label: "Explore", Icon: MapPinIcon },
+    { href: "/sos", label: "Safety", Icon: ShieldIcon },
+  ];
   return (
-    <Link
-      href="/explore"
-      className="w-44 shrink-0 overflow-hidden rounded-3xl bg-white shadow-sm"
-    >
-      <div
-        className={`relative h-28 bg-gradient-to-br ${cardTint[spot.badgeTone]}`}
-      >
-        <div className="absolute left-2 top-2">
-          <Tag label={spot.badge} tone={spot.badgeTone} />
-        </div>
-        <MapPinIcon
-          size={26}
-          className="absolute bottom-2 right-2 text-white/40"
-        />
-      </div>
-      <p className="p-3 text-sm font-bold text-ink">{spot.title}</p>
-    </Link>
+    <div className="grid grid-cols-3 gap-2">
+      {actions.map(({ href, label, Icon }) => (
+        <Link
+          key={href}
+          href={href}
+          className="flex flex-col items-center gap-2 rounded-2xl border border-ink/5 bg-white/70 py-4 backdrop-blur"
+        >
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+            <Icon size={20} />
+          </span>
+          <span className="text-xs font-bold text-ink">{label}</span>
+        </Link>
+      ))}
+    </div>
   );
 }

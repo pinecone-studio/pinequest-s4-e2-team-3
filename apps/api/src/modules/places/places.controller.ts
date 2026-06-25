@@ -9,12 +9,14 @@ export class PlacesController {
   findAll(
     @Query("lat") lat?: string,
     @Query("lng") lng?: string,
-    @Query("radius") radius?: string
+    @Query("category") category?: string,
+    @Query("limit") limit?: string,
   ) {
     return this.placesService.findNearby(
       lat ? parseFloat(lat) : undefined,
       lng ? parseFloat(lng) : undefined,
-      radius ? parseFloat(radius) : 5000
+      category,
+      limit ? parseInt(limit, 10) : undefined,
     );
   }
 
