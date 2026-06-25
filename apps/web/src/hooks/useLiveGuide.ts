@@ -37,7 +37,6 @@ export function useLiveGuide() {
   const {
     activeRoute,
     currentStopIndex,
-    liveOn,
     arrivedStopIds,
     simulatedCoords,
     advanceStop,
@@ -72,16 +71,16 @@ export function useLiveGuide() {
     setLastAnswer(null);
   }, []);
 
-  // Proactive trigger: when live mode is on and the traveller reaches the
-  // current stop, narrate it once.
+  // Proactive trigger: when the traveller reaches the current stop, narrate it
+  // once.
   useEffect(() => {
-    if (!liveOn || !currentStop || !effectiveCoords) return;
+    if (!currentStop || !effectiveCoords) return;
     if (arrivedStopIds.includes(currentStop.id)) return;
     if (hasArrived(effectiveCoords, currentStop)) {
       markArrived(currentStop.id);
       sayNarration(currentStop);
     }
-  }, [liveOn, currentStop, effectiveCoords, arrivedStopIds, markArrived, sayNarration]);
+  }, [currentStop, effectiveCoords, arrivedStopIds, markArrived, sayNarration]);
 
   const replay = useCallback(() => {
     if (currentStop) sayNarration(currentStop);

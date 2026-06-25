@@ -9,7 +9,7 @@ import {
   useMap,
   useMapsLibrary,
 } from "@vis.gl/react-google-maps";
-import { GOOGLE_MAPS_KEY, DARK_MAP_STYLES } from "@/lib/googlemaps";
+import { GOOGLE_MAPS_KEY, DARK_MAP_STYLES, LIGHT_MAP_STYLES } from "@/lib/googlemaps";
 import type { Coords, DemoRoute } from "@/types";
 
 // Interactive Google map for the Live Guide: draws the journey route line,
@@ -20,6 +20,7 @@ export default function RouteMap({
   currentIndex,
   position,
   onError,
+  theme = "dark",
 }: {
   route: DemoRoute;
   currentIndex: number;
@@ -27,6 +28,7 @@ export default function RouteMap({
   // Fired if the map can't load (e.g. an invalid/blocked key) so the caller can
   // fall back to the stylised backdrop instead of showing a blank area.
   onError?: () => void;
+  theme?: "dark" | "light";
 }) {
   const path = useMemo(
     () => route.stops.map((s) => ({ lat: s.latitude, lng: s.longitude })),
@@ -39,8 +41,9 @@ export default function RouteMap({
       <Map
         defaultCenter={path[0]}
         defaultZoom={5}
-        styles={DARK_MAP_STYLES}
+        styles={theme === "light" ? LIGHT_MAP_STYLES : DARK_MAP_STYLES}
         disableDefaultUI
+        zoomControl
         gestureHandling="greedy"
         clickableIcons={false}
         style={{ width: "100%", height: "100%" }}
@@ -75,23 +78,77 @@ function LoadGuard({ onError }: { onError?: () => void }) {
   return null;
 }
 
-// The route polyline, drawn imperatively (no declarative Polyline component).
+// The route line, drawn imperatively (no declarative Polyline component).
+//
+// For each leg (stop → next stop) we ask the Directions API for the real road
+// path so the line hugs streets instead of cutting straight across the map. Any
+// leg the Directions API can't route — e.g. the long rural/Gobi legs across open
+// steppe with no mapped roads — falls back to a straight geodesic line, so the
+// route is always drawn end-to-end. (Requires "Directions API" on the key; if
+// it's disabled, every leg simply falls back to the straight line.)
 function RouteLine({ path }: { path: google.maps.LatLngLiteral[] }) {
   const map = useMap();
   const mapsLib = useMapsLibrary("maps");
+  const routesLib = useMapsLibrary("routes");
 
   useEffect(() => {
-    if (!map || !mapsLib) return;
-    const line = new mapsLib.Polyline({
-      path,
-      geodesic: true,
-      strokeColor: "#2f6bff",
-      strokeOpacity: 0.9,
-      strokeWeight: 3,
-      map,
-    });
-    return () => line.setMap(null);
-  }, [map, mapsLib, path]);
+    if (!map || !mapsLib || path.length < 2) return;
+
+    const polylines: google.maps.Polyline[] = [];
+    let cancelled = false;
+
+    const draw = (
+      pts: google.maps.LatLngLiteral[] | google.maps.LatLng[],
+      geodesic: boolean,
+    ) => {
+      if (cancelled) return;
+      polylines.push(
+        new mapsLib.Polyline({
+          path: pts,
+          geodesic,
+          strokeColor: "#2f6bff",
+          strokeOpacity: 0.9,
+          strokeWeight: 4,
+          map,
+        }),
+      );
+    };
+
+    const cleanup = () => {
+      cancelled = true;
+      polylines.forEach((l) => l.setMap(null));
+    };
+
+    // No routes library (not loaded yet / unavailable) → straight overview line.
+    if (!routesLib) {
+      draw(path, true);
+      return cleanup;
+    }
+
+    const service = new routesLib.DirectionsService();
+
+    (async () => {
+      for (let i = 0; i < path.length - 1 && !cancelled; i++) {
+        const origin = path[i];
+        const destination = path[i + 1];
+        try {
+          const result = await service.route({
+            origin,
+            destination,
+            travelMode: google.maps.TravelMode.DRIVING,
+          });
+          const road = result.routes[0]?.overview_path;
+          if (road?.length) draw(road, false);
+          else draw([origin, destination], true);
+        } catch {
+          // No route available for this leg — fall back to a straight line.
+          draw([origin, destination], true);
+        }
+      }
+    })();
+
+    return cleanup;
+  }, [map, mapsLib, routesLib, path]);
 
   return null;
 }

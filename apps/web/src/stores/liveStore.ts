@@ -5,7 +5,6 @@ import type { Coords, DemoRoute } from "@/types";
 interface LiveState {
   activeRoute: DemoRoute | null;
   currentStopIndex: number;
-  liveOn: boolean;
   // Stops we've already spoken on arrival — so each narrates exactly once.
   arrivedStopIds: string[];
   // When set, this overrides the real GPS (the on-stage "simulate" control).
@@ -16,7 +15,6 @@ interface LiveState {
   forceOffline: boolean;
 
   setRoute: (route: DemoRoute) => void;
-  setLiveOn: (on: boolean) => void;
   goToStop: (index: number) => void;
   advanceStop: () => void;
   markArrived: (stopId: string) => void;
@@ -29,7 +27,6 @@ interface LiveState {
 export const useLiveStore = create<LiveState>((set) => ({
   activeRoute: null,
   currentStopIndex: 0,
-  liveOn: false,
   arrivedStopIds: [],
   simulatedCoords: null,
   offlineReadyIds: [],
@@ -42,8 +39,6 @@ export const useLiveStore = create<LiveState>((set) => ({
       arrivedStopIds: [],
       simulatedCoords: null,
     }),
-
-  setLiveOn: (liveOn) => set({ liveOn }),
 
   goToStop: (currentStopIndex) => set({ currentStopIndex }),
 
@@ -75,7 +70,6 @@ export const useLiveStore = create<LiveState>((set) => ({
     set({
       activeRoute: null,
       currentStopIndex: 0,
-      liveOn: false,
       arrivedStopIds: [],
       simulatedCoords: null,
     }),
