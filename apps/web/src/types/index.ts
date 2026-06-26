@@ -56,7 +56,8 @@ export interface ExploreSpot {
   walkTime: string;
   description: string;
   imageUrl: string;
-  // Optional "Perfect right now" style highlight shown over the photo.
+  latitude?: number;
+  longitude?: number;
   highlight?: string;
 }
 
