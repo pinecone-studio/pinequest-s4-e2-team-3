@@ -45,7 +45,6 @@ interface PlacesTextResult {
   formattedAddress?: string;
   location?: { latitude?: number; longitude?: number };
   currentOpeningHours?: { openNow?: boolean };
-  location?: { latitude: number; longitude: number };
   photos?: { name: string }[];
   editorialSummary?: { text?: string };
 }
@@ -94,10 +93,12 @@ export async function findNearbyPlaces(
       const data = await response.json();
       const places: PlacesTextResult[] = data.places ?? [];
       return places.slice(0, 5).map((place) => {
-        const distKm = place.location
-          ? haversineKm(latitude, longitude, place.location.latitude, place.location.longitude)
-          : undefined;
-        // ~83 m/min is an average walking pace.
+        const lat = place.location?.latitude;
+        const lng = place.location?.longitude;
+        const distKm =
+          lat != null && lng != null
+            ? haversineKm(latitude, longitude, lat, lng)
+            : undefined;
         const walkMinutes =
           distKm !== undefined ? Math.max(1, Math.round((distKm * 1000) / 83)) : undefined;
         const photoName = place.photos?.[0]?.name;
@@ -105,7 +106,10 @@ export async function findNearbyPlaces(
           ? `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&key=${GOOGLE_KEY}`
           : undefined;
         return {
+          id: place.id ?? crypto.randomUUID(),
           name: place.displayName?.text ?? "Unknown",
+          latitude: lat ?? latitude,
+          longitude: lng ?? longitude,
           rating: place.rating,
           address: place.formattedAddress,
           openNow: place.currentOpeningHours?.openNow,

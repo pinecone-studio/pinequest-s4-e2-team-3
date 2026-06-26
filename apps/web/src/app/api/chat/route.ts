@@ -6,7 +6,6 @@ import type {
 import { findNearbyPlaces } from "@/lib/places";
 import type { PlaceOption } from "@/types";
 
-// Classify a lookup so the UI can tell a bus station from a food spot.
 function placeKind(keyword = "", type = ""): PlaceOption["kind"] {
   const q = `${keyword} ${type}`.toLowerCase();
   if (/bus|station|transit|stop/.test(q)) return "transit";
@@ -67,7 +66,6 @@ const SYSTEM_PROMPT =
   "4) Only ask the traveller to enable location if it is genuinely unknown — never blame " +
   "location when it's already on. Never invent fake places.";
 
-// Lets the model fetch real places near the traveller when it needs to.
 const TOOLS: ChatCompletionTool[] = [
   {
     type: "function",
@@ -133,6 +131,74 @@ interface ChatRequest {
   location?: { lat: number; lng: number };
 }
 
+interface ToolArgs {
+  keyword?: string;
+  type?: string;
+  title?: string;
+  summary?: string;
+}
+
+function safeParse(json: string): ToolArgs {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return {};
+  }
+}
+
+async function runConversation(
+  openai: OpenAI,
+  conversation: ChatCompletionMessageParam[],
+  location?: { lat: number; lng: number },
+): Promise<{ reply: string; places: PlaceOption[]; pendingPlan?: { title: string; summary: string } }> {
+  const collected: PlaceOption[] = [];
+  let pendingPlan: { title: string; summary: string } | undefined;
+
+  for (let round = 0; round < 3; round++) {
+    const resp = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: conversation,
+      tools: round < 2 ? TOOLS : undefined,
+    });
+    const msg = resp.choices[0]?.message;
+    if (!msg) break;
+
+    if (!msg.tool_calls?.length) {
+      return { reply: msg.content ?? "", places: collected, pendingPlan };
+    }
+
+    conversation.push(msg);
+
+    for (const call of msg.tool_calls) {
+      if (call.type !== "function") continue;
+      const args = safeParse(call.function.arguments);
+      let result: unknown;
+
+      if (call.function.name === "finalize_trip_plan") {
+        if (args.title && args.summary) pendingPlan = { title: args.title, summary: args.summary };
+        result = { presented: Boolean(pendingPlan) };
+      } else {
+        const found = location
+          ? await findNearbyPlaces(location.lat, location.lng, args.keyword ?? "place", args.type)
+          : [];
+        const kind = placeKind(args.keyword, args.type);
+        for (const p of found) {
+          collected.push({ id: p.id, name: p.name, latitude: p.latitude, longitude: p.longitude, address: p.address, kind });
+        }
+        console.log(`[chat] keyword="${args.keyword}" → ${found.length} places`);
+        result = {
+          locationKnown: Boolean(location),
+          places: found.map((p) => ({ name: p.name, rating: p.rating, walkMinutes: p.walkMinutes, openNow: p.openNow })),
+        };
+      }
+      conversation.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+    }
+  }
+
+  const final = await openai.chat.completions.create({ model: "gpt-4o", messages: conversation });
+  return { reply: final.choices[0]?.message.content ?? "", places: collected, pendingPlan };
+}
+
 export async function POST(req: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -155,176 +221,10 @@ export async function POST(req: Request) {
       ...messages.map((m) => ({ role: m.role, content: m.content })),
     ];
 
-    const { reply, places, pendingPlan } = await runConversation(
-      openai,
-      conversation,
-      location,
-    );
+    const { reply, places, pendingPlan } = await runConversation(openai, conversation, location);
     return Response.json({ reply, places, pendingPlan });
   } catch (error) {
     console.error("chat route error", error);
     return Response.json({ error: "Failed to get a reply" }, { status: 500 });
-  }
-}
-
-// Runs the model, resolves any place lookups it requests, then returns the final
-// text PLUS the structured places it found — so the Live Guide can show them as
-// selectable buttons/markers. One tool round-trip is enough.
-async function runConversation(
-  openai: OpenAI,
-  conversation: ChatCompletionMessageParam[],
-  location?: { lat: number; lng: number },
-): Promise<{ reply: string; places: PlaceOption[] }> {
-  const first = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: conversation,
-    tools: TOOLS,
-  });
-  const message = first.choices[0]?.message;
-
-  if (!message?.tool_calls?.length) {
-    return { reply: message?.content ?? "", places: [] };
-  }
-
-  const collected: PlaceOption[] = [];
-  conversation.push(message);
-  for (const call of message.tool_calls) {
-    if (call.type !== "function") continue;
-    const args = safeParse(call.function.arguments);
-    const found = location
-      ? await findNearbyPlaces(location.lat, location.lng, args.keyword ?? "place", args.type)
-      : [];
-    const kind = placeKind(args.keyword, args.type);
-    for (const p of found) {
-      collected.push({
-        id: p.id,
-        name: p.name,
-        latitude: p.latitude,
-        longitude: p.longitude,
-        address: p.address,
-        kind,
-      });
-    }
-    console.log(
-      `[chat] location=${location ? `${location.lat},${location.lng}` : "NONE"} ` +
-        `keyword="${args.keyword}" type="${args.type ?? ""}" → ${found.length} places: ` +
-        found.map((p) => p.name).join(", "),
-    );
-    conversation.push({
-      role: "tool",
-      tool_call_id: call.id,
-      content: JSON.stringify({
-        locationKnown: Boolean(location),
-        places: found,
-      }),
-    });
-    const message = completion.choices[0]?.message;
-    if (!message) break;
-
-    // No more lookups needed — this is the answer.
-    if (!message.tool_calls?.length) {
-      return { reply: message.content ?? "", places: toCards(collected), pendingPlan };
-    }
-
-    conversation.push(message);
-    for (const call of message.tool_calls) {
-      if (call.type !== "function") continue;
-      const args = safeParse(call.function.arguments);
-
-      let result: unknown;
-      if (call.function.name === "finalize_trip_plan") {
-        // Don't save here — hand the plan to the UI so the traveller can confirm.
-        if (args.title && args.summary) {
-          pendingPlan = { title: args.title, summary: args.summary };
-        }
-        result = { presented: Boolean(pendingPlan) };
-      } else {
-        const places = location
-          ? await findNearbyPlaces(location.lat, location.lng, args.keyword ?? "place", args.type)
-          : [];
-        collected.push(...places);
-        console.log(
-          `[chat] location=${location ? "yes" : "NONE"} keyword="${args.keyword}" → ` +
-            `${places.length} places, ${places.filter((p) => p.imageUrl).length} with photos`,
-        );
-        // The model only needs names/ratings/walk time to choose and write text.
-        result = {
-          locationKnown: Boolean(location),
-          places: places.map((p) => ({
-            name: p.name,
-            rating: p.rating,
-            walkMinutes: p.walkMinutes,
-            openNow: p.openNow,
-          })),
-        };
-      }
-
-      conversation.push({
-        role: "tool",
-        tool_call_id: call.id,
-        content: JSON.stringify(result),
-      });
-    }
-  }
-
-  // Hit the round cap — make one final pass without tools to force a text reply.
-  const final = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: conversation,
-  });
-  return {
-    reply: final.choices[0]?.message.content ?? "",
-    places: toCards(collected),
-    pendingPlan,
-  };
-}
-
-// A finished plan awaiting the traveller's Save / Add more decision in the UI.
-interface PendingPlan {
-  title: string;
-  summary: string;
-}
-
-// Cards shown beneath Michelle's reply: the closest few distinct places this turn.
-interface PlaceCard {
-  name: string;
-  description?: string;
-  imageUrl?: string;
-  rating?: number;
-  walkMinutes?: number;
-}
-
-function toCards(places: NearbyPlace[]): PlaceCard[] {
-  const seen = new Set<string>();
-  return places
-    .filter((p) => {
-      const key = p.name.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .sort((a, b) => (a.walkMinutes ?? 999) - (b.walkMinutes ?? 999))
-    .slice(0, 3)
-    .map((p) => ({
-      name: p.name,
-      description: p.description,
-      imageUrl: p.imageUrl,
-      rating: p.rating,
-      walkMinutes: p.walkMinutes,
-    }));
-}
-
-interface ToolArgs {
-  keyword?: string;
-  type?: string;
-  title?: string;
-  summary?: string;
-}
-
-function safeParse(json: string): ToolArgs {
-  try {
-    return JSON.parse(json);
-  } catch {
-    return {};
   }
 }

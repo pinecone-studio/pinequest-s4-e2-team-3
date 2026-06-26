@@ -3,18 +3,18 @@ import { toFile } from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-async function chimegeStt(audioBuffer: ArrayBuffer): Promise<string> {
+async function chimegeStt(audioBuffer: ArrayBuffer, mimeType: string): Promise<string> {
   const token = process.env.CHIMEGE_STT_TOKEN!;
 
   const upload = await fetch("https://api.chimege.com/v1.2/stt-long", {
     method: "POST",
-    headers: { Token: token },
+    headers: { Token: token, "Content-Type": mimeType },
     body: audioBuffer,
   });
 
   const uploadText = await upload.text();
   if (!upload.ok || !uploadText.startsWith("{")) {
-    throw new Error(`Chimege STT: ${uploadText}`);
+    throw new Error(`Chimege STT upload failed: ${uploadText}`);
   }
 
   const { uuid } = JSON.parse(uploadText);
@@ -35,17 +35,24 @@ export async function POST(req: Request) {
   const audio = formData.get("audio") as Blob;
   const lang  = (formData.get("lang") as string) ?? "en";
 
+  const mimeType = audio.type || "audio/webm";
   const audioBuffer = await audio.arrayBuffer();
 
   if (lang === "mn") {
-    // Chimege STT for Mongolian — handles Cyrillic accurately
-    const text = await chimegeStt(audioBuffer);
-    return Response.json({ text, lang: "mn" });
+    try {
+      const text = await chimegeStt(audioBuffer, mimeType);
+      return Response.json({ text, lang: "mn" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[stt] Chimege error:", msg);
+      return Response.json({ error: msg }, { status: 500 });
+    }
   }
 
-  // Whisper for English
+  // Whisper for English — use correct extension so OpenAI accepts the file
+  const ext = mimeType.includes("mp4") ? "audio.mp4" : mimeType.includes("ogg") ? "audio.ogg" : "audio.webm";
   const buf  = Buffer.from(audioBuffer);
-  const file = await toFile(buf, "audio.webm", { type: "audio/webm" });
+  const file = await toFile(buf, ext, { type: mimeType });
   const result = await openai.audio.transcriptions.create({
     file,
     model: "whisper-1",
