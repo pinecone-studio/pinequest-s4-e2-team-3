@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MicIcon, SendIcon, SparklesIcon, StarIcon, WalkIcon } from "@/components/icons";
+import Link from "next/link";
+import { ChatIcon, MicIcon, SendIcon, SparklesIcon, StarIcon, WalkIcon } from "@/components/icons";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { aiQuickReplies, guide } from "@/lib/mockData";
 
@@ -25,10 +26,9 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   places?: PlaceCard[];
-  // Set when Nova has finished a plan: shows "Yes, save" / "No, add more".
   pendingPlan?: PendingPlan;
-  // Tracks the plan buttons once acted on, so they don't linger.
   planStatus?: "pending" | "saved" | "dismissed";
+  journeyLink?: boolean;
 }
 
 const WELCOME: Message = {
@@ -150,6 +150,7 @@ export default function AiPage() {
     content: string,
     places?: PlaceCard[],
     pendingPlan?: PendingPlan,
+    journeyLink?: boolean,
   ) {
     setMessages((current) => [
       ...current,
@@ -160,6 +161,7 @@ export default function AiPage() {
         places,
         pendingPlan,
         planStatus: pendingPlan ? "pending" : undefined,
+        journeyLink,
       },
     ]);
   }
@@ -179,9 +181,14 @@ export default function AiPage() {
       });
       const data = await response.json();
       if (data.saved) {
-        addAssistantReply("Saved this to your trips ✨");
+        // Write to localStorage so the Journey page can display it.
+        try {
+          const entry = { id: crypto.randomUUID(), title: plan.title, summary: plan.summary, savedAt: new Date().toISOString() };
+          const prev = JSON.parse(localStorage.getItem("polaris:saved-plans") ?? "[]");
+          localStorage.setItem("polaris:saved-plans", JSON.stringify([entry, ...prev]));
+        } catch { /* ignore storage quota issues */ }
+        addAssistantReply("Saved to your journey.", undefined, undefined, true);
       } else {
-        // Roll back the buttons so they can try again.
         setMessages((current) =>
           current.map((m) =>
             m.id === messageId ? { ...m, planStatus: "pending" } : m,
@@ -215,7 +222,7 @@ export default function AiPage() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-7rem)] flex-col lg:h-[calc(100dvh-5rem)]">
+    <div className="flex h-[calc(var(--device-h,100dvh)-7rem)] flex-col lg:h-[calc(var(--device-h,100dvh)-5rem)]">
       <ChatHeader />
 
       <div className="flex-1 space-y-3 overflow-y-auto py-4">
@@ -308,6 +315,16 @@ function MessageBubble({
             No, add more
           </button>
         </div>
+      ) : null}
+
+      {message.journeyLink ? (
+        <Link
+          href="/journey"
+          className="mt-2 flex items-center gap-1.5 rounded-full bg-primary-50 px-4 py-2 text-sm font-semibold text-primary-600 transition-colors hover:bg-primary-100"
+        >
+          <ChatIcon size={14} />
+          View your journey
+        </Link>
       ) : null}
     </div>
   );

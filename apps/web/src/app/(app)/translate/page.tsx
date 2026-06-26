@@ -8,7 +8,7 @@ type Turn = {
   spokenLang: "mn" | "en";
   spokenText: string;
   translatedText: string;
-  audioUrl?: string; // not persisted — blob URLs don't survive refresh
+  audioUrl?: string;
 };
 
 const STORAGE_KEY = "lumo_interpreter_turns";
@@ -22,43 +22,53 @@ function loadTurns(): Turn[] {
 }
 
 function saveTurns(turns: Turn[]) {
-  // strip audioUrl — blob URLs are session-only
   const clean = turns.map(({ audioUrl: _a, ...t }) => t);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(clean));
 }
 
 const LANG = {
-  mn: { label: "Mongolian", flag: "🇲🇳" },
-  en: { label: "English",   flag: "🇬🇧" },
+  mn: { label: "Mongolian" },
+  en: { label: "English" },
 };
 
+function FlagIcon({ lang, size = 18 }: { lang: "mn" | "en"; size?: number }) {
+  const w = Math.round(size * 1.5);
+  if (lang === "mn") {
+    return (
+      <svg width={w} height={size} viewBox="0 0 3 2" aria-label="Mongolia" className="rounded-sm overflow-hidden shrink-0">
+        <rect width="1" height="2" fill="#C4272F" />
+        <rect x="1" width="1" height="2" fill="#015197" />
+        <rect x="2" width="1" height="2" fill="#C4272F" />
+      </svg>
+    );
+  }
+  return (
+    <svg width={w} height={size} viewBox="0 0 60 30" aria-label="United Kingdom" className="rounded-sm overflow-hidden shrink-0">
+      <rect width="60" height="30" fill="#012169" />
+      <path d="M0 0l60 30M60 0L0 30" stroke="#fff" strokeWidth="7" />
+      <path d="M0 0l60 30M60 0L0 30" stroke="#C8102E" strokeWidth="4.5" />
+      <path d="M30 0v30M0 15h60" stroke="#fff" strokeWidth="11" />
+      <path d="M30 0v30M0 15h60" stroke="#C8102E" strokeWidth="7" />
+    </svg>
+  );
+}
+
 export default function TranslatePage() {
-  const recorderRef    = useRef<MediaRecorder | null>(null);
-  const chunksRef      = useRef<Blob[]>([]);
-  const activeLangRef  = useRef<"mn" | "en">("mn");
-  const bottomRef      = useRef<HTMLDivElement | null>(null);
+  const recorderRef   = useRef<MediaRecorder | null>(null);
+  const chunksRef     = useRef<Blob[]>([]);
+  const activeLangRef = useRef<"mn" | "en">("mn");
+  const bottomRef     = useRef<HTMLDivElement | null>(null);
 
   const [activeLang, setActiveLang] = useState<"mn" | "en" | null>(null);
   const [loading,    setLoading]    = useState(false);
   const [turns,      setTurns]      = useState<Turn[]>([]);
 
-  // Load saved conversation on mount
-  useEffect(() => {
-    setTurns(loadTurns());
-  }, []);
-
-  // Persist whenever turns change
-  useEffect(() => {
-    if (turns.length > 0) saveTurns(turns);
-  }, [turns]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [turns, loading]);
+  useEffect(() => { setTurns(loadTurns()); }, []);
+  useEffect(() => { if (turns.length > 0) saveTurns(turns); }, [turns]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [turns, loading]);
 
   const handleMicPress = async (lang: "mn" | "en") => {
     if (activeLang === lang) {
-      // stop this language's recording
       stopRecording();
     } else {
       activeLangRef.current = lang;
@@ -84,7 +94,6 @@ export default function TranslatePage() {
       setActiveLang(null);
       setLoading(true);
       try {
-        // 1. STT — send audio + language hint
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
         const fd   = new FormData();
         fd.append("audio", blob, "audio.webm");
@@ -94,7 +103,6 @@ export default function TranslatePage() {
         const { text } = await sttRes.json() as { text: string };
         if (!text?.trim()) { setLoading(false); return; }
 
-        // 2. Translate to the other language
         const targetLang: "mn" | "en" = lang === "mn" ? "en" : "mn";
         const transRes = await fetch("/api/translate", {
           method: "POST",
@@ -103,7 +111,6 @@ export default function TranslatePage() {
         });
         const { translation } = await transRes.json() as { translation: string };
 
-        // 3. Speak — OpenAI TTS for EN, Chimege for MN
         const ttsRes = await fetch("/api/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -126,16 +133,16 @@ export default function TranslatePage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] flex-col lg:h-[calc(100vh-5rem)]">
+    <div className="flex h-[calc(var(--device-h,100dvh)-7rem)] flex-col lg:h-[calc(var(--device-h,100dvh)-5rem)]">
       {/* Header */}
-      <header className="flex items-start justify-between">
+      <header className="flex items-start justify-between pb-4">
         <div>
-          <h1 className="font-serif text-4xl leading-none text-ink">Interpreter</h1>
-          <p className="mt-1 text-sm text-ink-muted">
-            Tap your flag, speak, tap again to translate.
+          <h1 className="font-serif text-4xl leading-none tracking-tight text-balance text-ink">Interpreter</h1>
+          <p className="mt-1.5 text-sm text-ink-muted">
+            Tap a flag, speak, tap again to translate.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 pt-1">
           {turns.length > 0 && (
             <button
               onClick={() => {
@@ -148,21 +155,29 @@ export default function TranslatePage() {
             </button>
           )}
           <div className="flex items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-bold text-ink shadow-ink-sm">
-            🇲🇳 MN
+            <FlagIcon lang="mn" size={14} />
+            <span>MN</span>
             <SwapIcon size={14} className="text-ink-muted" />
-            🇬🇧 EN
+            <FlagIcon lang="en" size={14} />
+            <span>EN</span>
           </div>
         </div>
       </header>
 
       {/* Conversation */}
-      <div className="flex-1 space-y-6 overflow-y-auto py-6">
+      <div className="flex-1 space-y-6 overflow-y-auto py-2">
         {turns.length === 0 && !loading && !activeLang && (
-          <div className="mt-16 flex flex-col items-center gap-3 text-center">
-            <div className="text-5xl">🎙️</div>
+          <div className="mt-12 flex flex-col items-center gap-3 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-50">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-primary-500">
+                <rect x="9" y="3" width="6" height="11" rx="3" />
+                <path d="M5 11a7 7 0 0 0 14 0" />
+                <path d="M12 18v3" />
+              </svg>
+            </div>
             <p className="font-serif text-xl text-ink">Ready to interpret</p>
             <p className="max-w-xs text-sm text-ink-muted">
-              Tap 🇲🇳 to speak Mongolian or 🇬🇧 to speak English. Tap again to stop.
+              Tap the Mongolian or English flag below, then speak. Tap again to stop and translate.
             </p>
           </div>
         )}
@@ -172,11 +187,13 @@ export default function TranslatePage() {
           const fromLeft = turn.spokenLang === "mn";
           return (
             <div key={turn.id} className="space-y-3">
-              {/* Original */}
               <div className={`flex flex-col ${fromLeft ? "items-start" : "items-end"}`}>
-                <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink-muted">
-                  {LANG[turn.spokenLang].flag} {LANG[turn.spokenLang].label}
-                </p>
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <FlagIcon lang={turn.spokenLang} size={12} />
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-ink-muted">
+                    {LANG[turn.spokenLang].label}
+                  </p>
+                </div>
                 <p className={[
                   "max-w-[80%] rounded-3xl px-4 py-3 text-base font-semibold",
                   fromLeft ? "rounded-tl-sm bg-white text-ink shadow-ink-sm" : "rounded-tr-sm bg-primary-600 text-white",
@@ -185,11 +202,13 @@ export default function TranslatePage() {
                 </p>
               </div>
 
-              {/* Translation */}
               <div className={`flex flex-col ${fromLeft ? "items-end" : "items-start"}`}>
-                <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-primary-600">
-                  {LANG[targetLang].flag} {LANG[targetLang].label} · played aloud
-                </p>
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <FlagIcon lang={targetLang} size={12} />
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-primary-600">
+                    {LANG[targetLang].label} · played aloud
+                  </p>
+                </div>
                 <p className={[
                   "max-w-[80%] rounded-3xl px-4 py-3 text-base font-semibold",
                   fromLeft ? "rounded-tr-sm bg-primary-600 text-white" : "rounded-tl-sm bg-white text-ink shadow-ink-sm",
@@ -218,7 +237,7 @@ export default function TranslatePage() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Two mic buttons */}
+      {/* Mic buttons */}
       <div className="py-4">
         <div className="flex items-end justify-around">
           {(["mn", "en"] as const).map((lang) => {
@@ -233,14 +252,14 @@ export default function TranslatePage() {
                   disabled={loading || (activeLang !== null && activeLang !== lang)}
                   aria-label={`Speak ${LANG[lang].label}`}
                   className={[
-                    "flex h-16 w-16 items-center justify-center rounded-full text-white shadow-lg transition-all",
+                    "flex h-16 w-16 items-center justify-center rounded-full shadow-lg transition-all",
                     "disabled:opacity-30",
                     isActive
                       ? "animate-pulse bg-red-500 shadow-red-500/30"
-                      : "bg-primary-600 shadow-primary-600/30 hover:bg-primary-700",
+                      : "bg-primary-600 shadow-primary-600/30 hover:bg-primary-700 active:scale-[0.97]",
                   ].join(" ")}
                 >
-                  <span className="text-2xl">{LANG[lang].flag}</span>
+                  <FlagIcon lang={lang} size={22} />
                 </button>
                 <p className="text-xs text-ink-muted">
                   {isActive ? "Tap to stop" : "Tap to speak"}
