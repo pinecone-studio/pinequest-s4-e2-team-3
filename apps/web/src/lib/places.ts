@@ -10,7 +10,10 @@ const PLACES_TTL_MS = 10 * 60_000;
 const roundCoord = (n: number) => Math.round(n * 1000) / 1000;
 
 export interface NearbyPlace {
+  id: string;
   name: string;
+  latitude: number;
+  longitude: number;
   rating?: number;
   address?: string;
   openNow?: boolean;
@@ -33,9 +36,11 @@ export interface BrowsePlace {
 }
 
 interface PlacesTextResult {
+  id?: string;
   displayName?: { text?: string };
   rating?: number;
   formattedAddress?: string;
+  location?: { latitude?: number; longitude?: number };
   currentOpeningHours?: { openNow?: boolean };
 }
 
@@ -63,7 +68,7 @@ export async function findNearbyPlaces(
             "Content-Type": "application/json",
             "X-Goog-Api-Key": GOOGLE_KEY,
             "X-Goog-FieldMask":
-              "places.displayName,places.rating,places.formattedAddress,places.currentOpeningHours.openNow",
+              "places.id,places.displayName,places.rating,places.formattedAddress,places.location,places.currentOpeningHours.openNow",
           },
           body: JSON.stringify({
             textQuery: type ? `${keyword} ${type}` : keyword,
@@ -82,12 +87,18 @@ export async function findNearbyPlaces(
 
       const data = await response.json();
       const places: PlacesTextResult[] = data.places ?? [];
-      return places.slice(0, 5).map((place) => ({
-        name: place.displayName?.text ?? "Unknown",
-        rating: place.rating,
-        address: place.formattedAddress,
-        openNow: place.currentOpeningHours?.openNow,
-      }));
+      return places
+        .filter((p) => p.location?.latitude != null && p.location?.longitude != null)
+        .slice(0, 5)
+        .map((place) => ({
+          id: place.id ?? `${place.location!.latitude},${place.location!.longitude}`,
+          name: place.displayName?.text ?? "Unknown",
+          latitude: place.location!.latitude!,
+          longitude: place.location!.longitude!,
+          rating: place.rating,
+          address: place.formattedAddress,
+          openNow: place.currentOpeningHours?.openNow,
+        }));
     });
   } catch {
     return [];

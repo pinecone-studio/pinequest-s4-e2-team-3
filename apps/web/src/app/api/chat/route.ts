@@ -4,6 +4,16 @@ import type {
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import { findNearbyPlaces } from "@/lib/places";
+import type { PlaceOption } from "@/types";
+
+// Classify a lookup so the UI can tell a bus station from a food spot.
+function placeKind(keyword = "", type = ""): PlaceOption["kind"] {
+  const q = `${keyword} ${type}`.toLowerCase();
+  if (/bus|station|transit|stop/.test(q)) return "transit";
+  if (/food|restaurant|cafe|coffee|eat|hungry|guanz|buuz|lunch|dinner|bakery/.test(q))
+    return "food";
+  return "place";
+}
 
 const SYSTEM_PROMPT =
   "You are Nova, a warm, knowledgeable AI travel guide for Mongolia (the Polaris app). " +
@@ -15,6 +25,10 @@ const SYSTEM_PROMPT =
   "if they're hungry → food; if they're tired or want to rest/relax/sit → calm spots " +
   "(parks, squares, plazas, fountains, viewpoints, gardens, or a quiet cafe — include free " +
   "public places, not only shops). " +
+  "TRANSPORT: if the traveller asks how to get somewhere or wants to travel by bus, " +
+  "briefly state the realistic options in Mongolia (usually bus or taxi — there's no metro), " +
+  "and if they want the bus, call find_nearby_places with keyword 'bus station' (type " +
+  "'bus_station') to surface the nearest stop so they can pick it. " +
   "CRITICAL GROUNDING RULES: " +
   "1) Recommend ONLY places returned by find_nearby_places. Never invent a place or name a " +
   "famous landmark from memory — the tool already returns the CLOSEST options first, so " +
@@ -88,21 +102,22 @@ export async function POST(req: Request) {
       ...messages.map((m) => ({ role: m.role, content: m.content })),
     ];
 
-    const reply = await runConversation(openai, conversation, location);
-    return Response.json({ reply });
+    const { reply, places } = await runConversation(openai, conversation, location);
+    return Response.json({ reply, places });
   } catch (error) {
     console.error("chat route error", error);
     return Response.json({ error: "Failed to get a reply" }, { status: 500 });
   }
 }
 
-// Runs the model, resolves any place lookups it requests, then returns the
-// final text. One tool round-trip is enough for "find me something nearby".
+// Runs the model, resolves any place lookups it requests, then returns the final
+// text PLUS the structured places it found — so the Live Guide can show them as
+// selectable buttons/markers. One tool round-trip is enough.
 async function runConversation(
   openai: OpenAI,
   conversation: ChatCompletionMessageParam[],
   location?: { lat: number; lng: number },
-): Promise<string> {
+): Promise<{ reply: string; places: PlaceOption[] }> {
   const first = await openai.chat.completions.create({
     model: "gpt-4o",
     messages: conversation,
@@ -111,27 +126,39 @@ async function runConversation(
   const message = first.choices[0]?.message;
 
   if (!message?.tool_calls?.length) {
-    return message?.content ?? "";
+    return { reply: message?.content ?? "", places: [] };
   }
 
+  const collected: PlaceOption[] = [];
   conversation.push(message);
   for (const call of message.tool_calls) {
     if (call.type !== "function") continue;
     const args = safeParse(call.function.arguments);
-    const places = location
+    const found = location
       ? await findNearbyPlaces(location.lat, location.lng, args.keyword ?? "place", args.type)
       : [];
+    const kind = placeKind(args.keyword, args.type);
+    for (const p of found) {
+      collected.push({
+        id: p.id,
+        name: p.name,
+        latitude: p.latitude,
+        longitude: p.longitude,
+        address: p.address,
+        kind,
+      });
+    }
     console.log(
       `[chat] location=${location ? `${location.lat},${location.lng}` : "NONE"} ` +
-        `keyword="${args.keyword}" type="${args.type ?? ""}" → ${places.length} places: ` +
-        places.map((p) => p.name).join(", "),
+        `keyword="${args.keyword}" type="${args.type ?? ""}" → ${found.length} places: ` +
+        found.map((p) => p.name).join(", "),
     );
     conversation.push({
       role: "tool",
       tool_call_id: call.id,
       content: JSON.stringify({
         locationKnown: Boolean(location),
-        places,
+        places: found,
       }),
     });
   }
@@ -140,7 +167,10 @@ async function runConversation(
     model: "gpt-4o",
     messages: conversation,
   });
-  return second.choices[0]?.message.content ?? "";
+
+  // De-dupe by id (the model may look up more than once).
+  const places = Array.from(new Map(collected.map((p) => [p.id, p])).values()).slice(0, 5);
+  return { reply: second.choices[0]?.message.content ?? "", places };
 }
 
 function safeParse(json: string): { keyword?: string; type?: string } {
