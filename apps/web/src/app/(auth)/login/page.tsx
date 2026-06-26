@@ -28,10 +28,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-      <div className="w-full max-w-md rounded-2xl border border-gray-100 bg-white p-8 shadow-sm">
-        <h1 className="mb-1 text-2xl font-bold text-primary-900">Sign In</h1>
-        <p className="mb-6 text-gray-500">Welcome back to AI Travel Guide</p>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 w-full max-w-md">
+        <h1 className="text-2xl font-bold text-primary-900 mb-1">Sign In</h1>
+        <p className="text-gray-500 mb-6">Welcome back to Polaris</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <input
