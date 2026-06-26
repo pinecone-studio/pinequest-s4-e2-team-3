@@ -133,7 +133,7 @@ export default function TranslatePage() {
   };
 
   return (
-    <div className="flex h-[calc(var(--device-h,100dvh)-7rem)] flex-col lg:h-[calc(var(--device-h,100dvh)-5rem)]">
+    <div className="flex h-[calc(100dvh-7rem)] flex-col lg:h-[calc(100dvh-5rem)]">
       {/* Header */}
       <header className="flex items-start justify-between pb-4">
         <div>

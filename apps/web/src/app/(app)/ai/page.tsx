@@ -222,7 +222,7 @@ export default function AiPage() {
   }
 
   return (
-    <div className="flex h-[calc(var(--device-h,100dvh)-7rem)] flex-col lg:h-[calc(var(--device-h,100dvh)-5rem)]">
+    <div className="flex h-[calc(100dvh-7rem)] flex-col lg:h-[calc(100dvh-5rem)]">
       <ChatHeader />
 
       <div className="flex-1 space-y-3 overflow-y-auto py-4">
