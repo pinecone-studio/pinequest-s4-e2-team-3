@@ -15,8 +15,8 @@ export default async function ExplorePage({
   return (
     <div className="space-y-5">
       <header>
-        <h1 className="font-serif text-4xl leading-none tracking-tight text-balance text-ink">
-          Explore Улаанбаатар
+        <h1 className="font-serif text-4xl leading-none text-ink">
+          Explore Ulaanbaatar
         </h1>
       </header>
 
@@ -34,7 +34,7 @@ function SearchBar() {
       <SearchIcon size={18} className="text-ink-muted" />
       <input
         type="text"
-        placeholder="Газар, хоол, арга хэмжээ хайх…"
+        placeholder="Search places, food, events…"
         className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-muted"
       />
     </div>
