@@ -15,8 +15,41 @@ export const sttSupported = (): boolean =>
 export interface SpeakOptions {
   lang?: string; // BCP-47, e.g. "en-US"
   rate?: number; // 0.1–10, default ~1
+  pitch?: number; // 0–2, default 1
   onStart?: () => void;
   onEnd?: () => void;
+}
+
+// Browser default voices sound robotic. These name hints match the natural /
+// neural voices shipped by Chrome (Google …), Edge/Windows (… Natural, Aria,
+// Jenny, Guy) and macOS (Samantha, Ava), in rough order of preference.
+const NATURAL_VOICE_HINT =
+  /natural|neural|google|aria|jenny|guy|libby|sonia|ava|samantha|enhanced|premium/i;
+
+// Pick the best-sounding installed voice for a language, falling back sensibly.
+function pickVoice(lang: string): SpeechSynthesisVoice | null {
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return null;
+
+  const base = lang.split("-")[0].toLowerCase();
+  const sameLang = voices.filter((v) => v.lang.toLowerCase().startsWith(base));
+  const pool = sameLang.length ? sameLang : voices;
+
+  return (
+    pool.find((v) => NATURAL_VOICE_HINT.test(v.name)) ?? // natural/neural voice
+    pool.find((v) => v.default) ?? // the OS default for the language
+    pool[0] ??
+    null
+  );
+}
+
+// Voices load asynchronously in some browsers — prime them on first import so a
+// good voice is ready by the time we narrate.
+if (typeof window !== "undefined" && "speechSynthesis" in window) {
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.addEventListener?.("voiceschanged", () => {
+    window.speechSynthesis.getVoices();
+  });
 }
 
 // Speak a string aloud. Cancels anything currently being spoken first so the
@@ -26,9 +59,16 @@ export function speak(text: string, opts: SpeakOptions = {}): void {
 
   window.speechSynthesis.cancel();
 
+  const lang = opts.lang ?? "en-US";
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = opts.lang ?? "en-US";
-  utterance.rate = opts.rate ?? 0.98;
+  utterance.lang = lang;
+  // Slightly slower + natural pitch reads as calmer and less robotic.
+  utterance.rate = opts.rate ?? 0.95;
+  utterance.pitch = opts.pitch ?? 1.05;
+
+  const voice = pickVoice(lang);
+  if (voice) utterance.voice = voice;
+
   if (opts.onStart) utterance.onstart = opts.onStart;
   if (opts.onEnd) {
     utterance.onend = opts.onEnd;

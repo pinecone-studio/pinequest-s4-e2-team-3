@@ -20,6 +20,7 @@ import { googleMapsDirectionsUrl } from "@/lib/maps";
 import { hasGoogleMapsKey } from "@/lib/googlemaps";
 import { hasPack, loadPack, savePack } from "@/lib/offline";
 import { useLiveGuide } from "@/hooks/useLiveGuide";
+import { weatherEmoji, weatherLabel, type WeatherNow } from "@/lib/weather";
 import { useLiveStore } from "@/stores/liveStore";
 import { useLocationStore } from "@/stores/locationStore";
 import { useLocation } from "@/hooks/useLocation";
@@ -267,13 +268,23 @@ function LiveExperience({
     isSpeaking,
     listening,
     thinking,
+    audioLoading,
     lastAnswer,
+    voiceError,
+    weather,
+    weatherTip,
     voiceInSupported,
     replay,
     pause,
     ask,
     startListening,
   } = guide;
+
+  // Narration shown on the card: the stop's text plus the live weather tip
+  // (Nova speaks the same combination on arrival). An AI answer replaces it.
+  const narrationText =
+    lastAnswer ??
+    [currentStop?.narration, weatherTip].filter(Boolean).join(" ");
 
   const arrived = currentStop ? arrivedStopIds.includes(currentStop.id) : false;
 
@@ -322,6 +333,7 @@ function LiveExperience({
       <JourneyPill
         currentName={currentStop?.name ?? ""}
         nextName={nextStop?.name}
+        weather={weather}
       />
 
       <div className="flex-1" />
@@ -353,9 +365,11 @@ function LiveExperience({
       <NarrationCard
         speaking={isSpeaking}
         thinking={thinking}
+        audioLoading={audioLoading}
         listening={listening}
-        text={lastAnswer ?? currentStop?.narration ?? ""}
+        text={narrationText}
         isAnswer={!!lastAnswer}
+        voiceError={voiceError}
         voiceInSupported={voiceInSupported}
         onReplay={replay}
         onPause={pause}
@@ -414,9 +428,11 @@ function TopBar({
 function JourneyPill({
   currentName,
   nextName,
+  weather,
 }: {
   currentName: string;
   nextName?: string;
+  weather: WeatherNow | null;
 }) {
   return (
     <div className="mt-3 flex items-center gap-3 rounded-2xl bg-ink/5 px-3 py-2.5 dark:bg-white/10">
@@ -438,6 +454,17 @@ function JourneyPill({
           </p>
         )}
       </div>
+
+      {weather && (
+        <div className="shrink-0 text-right">
+          <p className="text-sm font-bold leading-none">
+            {weatherEmoji(weather.weatherCode)} {weather.temperature}°
+          </p>
+          <p className="mt-1 text-[10px] font-semibold capitalize leading-none text-ink-muted dark:text-white/50">
+            {weatherLabel(weather.weatherCode)}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -521,9 +548,11 @@ function PresenterStrip({
 function NarrationCard({
   speaking,
   thinking,
+  audioLoading,
   listening,
   text,
   isAnswer,
+  voiceError,
   voiceInSupported,
   onReplay,
   onPause,
@@ -532,9 +561,11 @@ function NarrationCard({
 }: {
   speaking: boolean;
   thinking: boolean;
+  audioLoading: boolean;
   listening: boolean;
   text: string;
   isAnswer: boolean;
+  voiceError: string | null;
   voiceInSupported: boolean;
   onReplay: () => void;
   onPause: () => void;
@@ -548,15 +579,22 @@ function NarrationCard({
   // Re-collapse whenever the narration / answer changes.
   useEffect(() => setExpanded(false), [text]);
 
+  const loading = thinking || audioLoading; // working, no audio yet
+  // Nova is "busy" whenever she's thinking, preparing, or speaking — the user
+  // must pause her before they can talk (otherwise the voices overlap and lag).
+  const busy = loading || speaking;
+
   const status = listening
     ? "listening…"
     : thinking
       ? "thinking…"
-      : speaking
-        ? "speaking · live guide"
-        : isAnswer
-          ? "answer"
-          : "live guide";
+      : audioLoading
+        ? "preparing…"
+        : speaking
+          ? "speaking · live guide"
+          : isAnswer
+            ? "answer"
+            : "live guide";
 
   const submit = () => {
     if (!draft.trim()) return;
@@ -570,15 +608,27 @@ function NarrationCard({
         <span className="h-9 w-9 rounded-full bg-gradient-to-br from-primary-500 to-primary-700" />
         <div>
           <p className="font-bold">Nova</p>
-          <p className="text-xs text-ink-muted dark:text-white/60">{status}</p>
+          {voiceError ? (
+            <p className="text-xs font-semibold text-safety-critical">{voiceError}</p>
+          ) : (
+            <p className="text-xs text-ink-muted dark:text-white/60">{status}</p>
+          )}
         </div>
-        <BarsIcon
-          size={22}
-          className={[
-            "ml-auto transition-colors",
-            speaking ? "text-primary-500" : "text-ink-muted/50 dark:text-white/30",
-          ].join(" ")}
-        />
+        {loading ? (
+          <span
+            className="ml-auto h-5 w-5 animate-spin rounded-full border-2 border-primary-500/30 border-t-primary-500"
+            role="status"
+            aria-label="Nova is preparing"
+          />
+        ) : (
+          <BarsIcon
+            size={22}
+            className={[
+              "ml-auto transition-colors",
+              speaking ? "text-primary-500" : "text-ink-muted/50 dark:text-white/30",
+            ].join(" ")}
+          />
+        )}
       </div>
 
       <p
@@ -601,10 +651,20 @@ function NarrationCard({
       <div className="mt-5 flex items-center gap-3">
         <button
           onClick={speaking ? onPause : onReplay}
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white"
-          aria-label={speaking ? "Pause" : "Replay"}
+          disabled={loading}
+          className={[
+            "flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white transition-opacity",
+            loading ? "opacity-70" : "",
+          ].join(" ")}
+          aria-label={loading ? "Preparing" : speaking ? "Pause" : "Replay"}
         >
-          {speaking ? <PauseIcon size={20} /> : <PlayIcon size={18} />}
+          {loading ? (
+            <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+          ) : speaking ? (
+            <PauseIcon size={20} />
+          ) : (
+            <PlayIcon size={18} />
+          )}
         </button>
 
         {/* Ask by text — always available, robust on a noisy stage. */}
@@ -628,12 +688,16 @@ function NarrationCard({
         {voiceInSupported && (
           <button
             onClick={onMic}
-            aria-label="Talk to Nova"
+            disabled={busy}
+            aria-label={busy ? "Pause Nova to talk" : "Talk to Nova"}
+            title={busy ? "Pause Nova to talk" : "Talk to Nova"}
             className={[
-              "flex h-12 w-12 shrink-0 items-center justify-center rounded-full",
-              listening
-                ? "bg-safety-critical text-white"
-                : "bg-ink/5 text-ink dark:bg-white/10 dark:text-white",
+              "flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition-colors",
+              busy
+                ? "cursor-not-allowed bg-ink/5 text-ink-muted/40 dark:bg-white/5 dark:text-white/20"
+                : listening
+                  ? "bg-safety-critical text-white"
+                  : "bg-ink/5 text-ink dark:bg-white/10 dark:text-white",
             ].join(" ")}
           >
             <MicIcon size={20} />

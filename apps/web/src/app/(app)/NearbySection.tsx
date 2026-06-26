@@ -5,7 +5,6 @@ import Link from "next/link";
 import { Tag } from "@/components/Tag";
 import type { Tone } from "@/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const DEFAULT_LAT = 47.9077;
 const DEFAULT_LNG = 106.8832;
 
@@ -36,7 +35,7 @@ export function NearbySection() {
       Promise.all(
         CATEGORIES.map((cat) =>
           fetch(
-            `${API_URL}/api/v1/places?lat=${lat}&lng=${lng}&category=${cat}&limit=5`,
+            `/api/places?lat=${lat}&lng=${lng}&category=${cat}&limit=5`,
           )
             .then((r) => (r.ok ? r.json() : []))
             .catch(() => [] as NearbyPlace[]),

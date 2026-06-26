@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { loadGoogleMaps } from "@/lib/googleMaps";
+import { loadGoogleMaps } from "@/lib/googlemaps";
 
 const GOOGLE_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 

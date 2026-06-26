@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { ExploreCard } from "@/components/ExploreCard";
 import type { ExploreSpot } from "@/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const DEFAULT_LAT = 47.9077;
 const DEFAULT_LNG = 106.8832;
 
@@ -22,7 +21,7 @@ async function fetchCategory(
 ): Promise<ExploreSpot[]> {
   try {
     const res = await fetch(
-      `${API_URL}/api/v1/places?lat=${lat}&lng=${lng}&category=${category}&limit=${limit}`,
+      `/api/places?lat=${lat}&lng=${lng}&category=${category}&limit=${limit}`,
     );
     return res.ok ? res.json() : [];
   } catch {

@@ -1,27 +1,42 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
-import { aiService } from "@/services/ai";
 import { useLiveStore } from "@/stores/liveStore";
 import { useLocationStore } from "@/stores/locationStore";
 import { haversineMeters, hasArrived } from "@/lib/geo";
-import { speak, stopSpeaking, createListener, ttsSupported, sttSupported } from "@/lib/speech";
+import { speak, stopSpeaking } from "@/lib/tts";
+import { createListener, ttsSupported, sttSupported } from "@/lib/speech";
+import { useWeather } from "@/hooks/useWeather";
+import { weatherTip } from "@/lib/weather";
 import type { Coords, RouteStop } from "@/types";
 
-// Builds the context the AI needs so a free-form answer is grounded in where
-// the traveller is and what's next. Prepended to the user's question because the
-// backend currently forwards `message` verbatim.
+// A short situational prefix so the grounded /api/chat guide knows where the
+// traveller currently is. The route itself supplies the full Nova persona and
+// the live place-grounding, so we only add "where I am" here.
 function buildContext(current: RouteStop | null, next: RouteStop | null): string {
-  if (!current) return "You are an AI local travel guide for Mongolia.";
-  return [
-    "You are Nova, an AI local guide walking a foreign traveller through Mongolia.",
-    "Be warm, concise, practical and culturally aware. Two or three sentences.",
-    `The traveller is currently at: ${current.name} (${current.kind}).`,
-    current.context ? `Context: ${current.context}` : "",
-    next ? `Their next stop is: ${next.name}.` : "This is the final stop.",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  if (!current) return "";
+  const bits = [`I'm currently at ${current.name} (${current.kind}).`];
+  if (current.context) bits.push(current.context);
+  if (next) bits.push(`My next stop is ${next.name}.`);
+  return bits.join(" ");
+}
+
+// Turn a raw SpeechRecognition error code into something the traveller can act
+// on — the most common ones are a denied mic permission or an unsupported
+// browser, both of which otherwise fail silently.
+function friendlyVoiceError(code: string): string {
+  switch (code) {
+    case "not-allowed":
+    case "service-not-allowed":
+      return "Microphone blocked. Allow mic access, or type your question.";
+    case "no-speech":
+      return "Didn't catch that — tap the mic and try again.";
+    case "audio-capture":
+      return "No microphone found. You can type your question instead.";
+    case "network":
+      return "Network issue with voice. Try again, or type instead.";
+    default:
+      return "Voice input didn't work — type your question instead.";
+  }
 }
 
 // Offline / no-backend fallback so the demo never dead-ends on a question.
@@ -40,15 +55,19 @@ export function useLiveGuide() {
     arrivedStopIds,
     simulatedCoords,
     advanceStop,
+    goToStop,
     markArrived,
   } = useLiveStore();
   const realCoords = useLocationStore((s) => s.coordinates);
-  const { getToken } = useAuth();
 
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [listening, setListening] = useState(false);
   const [thinking, setThinking] = useState(false);
+  // True while the TTS audio is being generated/fetched, before playback starts
+  // — "Nova is preparing to speak". Drives the loading indicator.
+  const [audioLoading, setAudioLoading] = useState(false);
   const [lastAnswer, setLastAnswer] = useState<string | null>(null);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
 
   // Simulated position wins over real GPS (the on-stage demo control).
   const effectiveCoords: Coords | null = simulatedCoords ?? realCoords;
@@ -62,25 +81,69 @@ export function useLiveGuide() {
     return haversineMeters(effectiveCoords, currentStop);
   }, [effectiveCoords, currentStop]);
 
+  // Live weather for the current stop → a short condition-based tip Nova adds to
+  // the narration. Held in a ref so sayNarration always reads the latest tip
+  // without re-running the arrival effect.
+  const weather = useWeather(currentStop);
+  const tip =
+    weather && currentStop
+      ? weatherTip(
+          weather.weatherCode,
+          weather.temperature,
+          new Date().getHours(),
+          currentStop.kind,
+        )
+      : null;
+  const tipRef = useRef<string | null>(null);
+  tipRef.current = tip;
+
   const sayNarration = useCallback((stop: RouteStop) => {
-    speak(stop.narration, {
-      lang: "en-US",
-      onStart: () => setIsSpeaking(true),
-      onEnd: () => setIsSpeaking(false),
+    const tipText = tipRef.current;
+    const spoken = tipText ? `${stop.narration} ${tipText}` : stop.narration;
+    setAudioLoading(true); // "preparing…" until playback actually starts
+    void speak(spoken, {
+      lang: "en",
+      onStart: () => {
+        setAudioLoading(false);
+        setIsSpeaking(true);
+      },
+      onEnd: () => {
+        setIsSpeaking(false);
+        setAudioLoading(false);
+      },
     });
     setLastAnswer(null);
   }, []);
 
-  // Proactive trigger: when the traveller reaches the current stop, narrate it
-  // once.
+  // Proactive trigger: as the traveller moves, find the furthest stop they've
+  // reached (from the current one onward), advance the guide to it, and narrate
+  // it once. Scanning forward — not just checking the current stop — is what
+  // lets the guide progress automatically on real GPS as you walk the route,
+  // instead of only via the demo's "Walk to next" button. It also tolerates
+  // skipping or arriving at a later stop directly.
   useEffect(() => {
-    if (!currentStop || !effectiveCoords) return;
-    if (arrivedStopIds.includes(currentStop.id)) return;
-    if (hasArrived(effectiveCoords, currentStop)) {
-      markArrived(currentStop.id);
-      sayNarration(currentStop);
+    if (!effectiveCoords || stops.length === 0) return;
+
+    for (let i = stops.length - 1; i >= currentStopIndex; i--) {
+      if (!hasArrived(effectiveCoords, stops[i])) continue;
+
+      if (i > currentStopIndex) goToStop(i); // walked ahead → catch up
+      const stop = stops[i];
+      if (!arrivedStopIds.includes(stop.id)) {
+        markArrived(stop.id);
+        sayNarration(stop);
+      }
+      break; // furthest reached stop handled; stop scanning
     }
-  }, [currentStop, effectiveCoords, arrivedStopIds, markArrived, sayNarration]);
+  }, [
+    effectiveCoords,
+    currentStopIndex,
+    stops,
+    arrivedStopIds,
+    goToStop,
+    markArrived,
+    sayNarration,
+  ]);
 
   const replay = useCallback(() => {
     if (currentStop) sayNarration(currentStop);
@@ -89,40 +152,54 @@ export function useLiveGuide() {
   const pause = useCallback(() => {
     stopSpeaking();
     setIsSpeaking(false);
+    setAudioLoading(false);
   }, []);
 
-  // Free-form Q&A: send the question (with context) to the AI, speak the reply.
+  // Free-form Q&A: send the question (with situational context) to the grounded
+  // /api/chat route and speak the reply. Same-origin, so the Clerk session
+  // cookie authenticates it — no bearer token to thread through.
   const ask = useCallback(
     async (question: string): Promise<string> => {
       if (!question.trim()) return "";
       setThinking(true);
       stopSpeaking();
-      const message = `${buildContext(currentStop, nextStop)}\n\nThe traveller asks: ${question}`;
+      const context = buildContext(currentStop, nextStop);
+      const content = context ? `${context}\n\n${question}` : question;
       let reply: string;
       try {
-        const token = (await getToken()) ?? "";
-        const res = await aiService.askGuide(
-          {
-            message,
-            coordinates: effectiveCoords ?? undefined,
-            language: "en",
-          },
-          token,
-        );
-        reply = res.reply?.trim() || fallbackAnswer(currentStop);
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: [{ role: "user", content }],
+            location: effectiveCoords
+              ? { lat: effectiveCoords.latitude, lng: effectiveCoords.longitude }
+              : undefined,
+          }),
+        });
+        if (!res.ok) throw new Error(`chat ${res.status}`);
+        const data = (await res.json()) as { reply?: string };
+        reply = data.reply?.trim() || fallbackAnswer(currentStop);
       } catch {
         reply = fallbackAnswer(currentStop);
       }
       setThinking(false);
       setLastAnswer(reply);
-      speak(reply, {
-        lang: "en-US",
-        onStart: () => setIsSpeaking(true),
-        onEnd: () => setIsSpeaking(false),
+      setAudioLoading(true);
+      void speak(reply, {
+        lang: "en",
+        onStart: () => {
+          setAudioLoading(false);
+          setIsSpeaking(true);
+        },
+        onEnd: () => {
+          setIsSpeaking(false);
+          setAudioLoading(false);
+        },
       });
       return reply;
     },
-    [currentStop, nextStop, effectiveCoords, getToken],
+    [currentStop, nextStop, effectiveCoords],
   );
 
   const listenerRef = useRef<ReturnType<typeof createListener>>(null);
@@ -133,20 +210,32 @@ export function useLiveGuide() {
       listenerRef.current?.stop();
       return;
     }
+    // Don't let the user talk over Nova — it causes overlap/lag. They must pause
+    // her first (the mic button is also disabled while she's busy).
+    if (isSpeaking || audioLoading || thinking) return;
+    setVoiceError(null);
     const listener = createListener({
       lang: "en-US",
       onResult: (transcript) => {
         setListening(false);
         void ask(transcript);
       },
-      onError: () => setListening(false),
+      onError: (code) => {
+        setListening(false);
+        setVoiceError(friendlyVoiceError(code));
+      },
       onEnd: () => setListening(false),
     });
-    if (!listener) return; // unsupported — UI falls back to text input
+    if (!listener) {
+      // Browser has no SpeechRecognition (e.g. Firefox) — tell the user instead
+      // of doing nothing when they tap the mic.
+      setVoiceError("Voice input isn't supported here — use Chrome/Edge, or type.");
+      return;
+    }
     listenerRef.current = listener;
     setListening(true);
     listener.start();
-  }, [listening, ask]);
+  }, [listening, ask, isSpeaking, audioLoading, thinking]);
 
   useEffect(() => () => stopSpeaking(), []);
 
@@ -160,7 +249,11 @@ export function useLiveGuide() {
     isSpeaking,
     listening,
     thinking,
+    audioLoading,
     lastAnswer,
+    voiceError,
+    weather,
+    weatherTip: tip,
     voiceInSupported: sttSupported(),
     voiceOutSupported: ttsSupported(),
     advanceStop,
