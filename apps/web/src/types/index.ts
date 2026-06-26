@@ -123,6 +123,19 @@ export interface Coords {
   longitude: number;
 }
 
+// A place Nova suggests mid-journey (food spot, bus station, …). Returned by
+// /api/chat alongside the text reply so the Live Guide can show it as a
+// selectable button and a marker, then route to it on the map.
+export interface PlaceOption {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  address?: string;
+  // What kind of place it is, so the UI can distinguish e.g. a bus station.
+  kind?: "food" | "transit" | "place";
+}
+
 // How the traveller gets from the previous stop to this one — Nomad AI is an
 // advisory layer, so this is "what to do / what to ask", not turn-by-turn.
 export interface TransportTip {

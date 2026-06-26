@@ -5,8 +5,6 @@ import { AppService } from "./app.service";
 import { PrismaModule } from "./prisma/prisma.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { UsersModule } from "./modules/users/users.module";
-import { PlacesModule } from "./modules/places/places.module";
-import { GuideModule } from "./modules/guide/guide.module";
 import configuration from "./config/configuration";
 
 @Module({
@@ -18,8 +16,6 @@ import configuration from "./config/configuration";
     PrismaModule,
     AuthModule,
     UsersModule,
-    PlacesModule,
-    GuideModule,
   ],
   controllers: [AppController],
   providers: [AppService],

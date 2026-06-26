@@ -1,6 +1,6 @@
 "use client";
 import { create } from "zustand";
-import type { Coords, DemoRoute } from "@/types";
+import type { Coords, DemoRoute, PlaceOption } from "@/types";
 
 interface LiveState {
   activeRoute: DemoRoute | null;
@@ -9,6 +9,12 @@ interface LiveState {
   arrivedStopIds: string[];
   // When set, this overrides the real GPS (the on-stage "simulate" control).
   simulatedCoords: Coords | null;
+
+  // Places Nova suggested in the last answer (food spots, bus stations…) and the
+  // one the traveller picked — drives the selectable buttons + map markers and
+  // the ad-hoc route to it.
+  suggestions: PlaceOption[];
+  selectedPlace: PlaceOption | null;
 
   // Routes that have an offline pack saved, + a demo toggle to preview offline.
   offlineReadyIds: string[];
@@ -19,6 +25,8 @@ interface LiveState {
   advanceStop: () => void;
   markArrived: (stopId: string) => void;
   setSimulated: (coords: Coords | null) => void;
+  setSuggestions: (places: PlaceOption[]) => void;
+  selectPlace: (place: PlaceOption | null) => void;
   setOfflineReady: (routeId: string) => void;
   setForceOffline: (value: boolean) => void;
   reset: () => void;
@@ -29,6 +37,8 @@ export const useLiveStore = create<LiveState>((set) => ({
   currentStopIndex: 0,
   arrivedStopIds: [],
   simulatedCoords: null,
+  suggestions: [],
+  selectedPlace: null,
   offlineReadyIds: [],
   forceOffline: false,
 
@@ -38,6 +48,8 @@ export const useLiveStore = create<LiveState>((set) => ({
       currentStopIndex: 0,
       arrivedStopIds: [],
       simulatedCoords: null,
+      suggestions: [],
+      selectedPlace: null,
     }),
 
   goToStop: (currentStopIndex) => set({ currentStopIndex }),
@@ -57,6 +69,10 @@ export const useLiveStore = create<LiveState>((set) => ({
 
   setSimulated: (simulatedCoords) => set({ simulatedCoords }),
 
+  setSuggestions: (suggestions) => set({ suggestions, selectedPlace: null }),
+
+  selectPlace: (selectedPlace) => set({ selectedPlace }),
+
   setOfflineReady: (routeId) =>
     set((state) =>
       state.offlineReadyIds.includes(routeId)
@@ -72,5 +88,7 @@ export const useLiveStore = create<LiveState>((set) => ({
       currentStopIndex: 0,
       arrivedStopIds: [],
       simulatedCoords: null,
+      suggestions: [],
+      selectedPlace: null,
     }),
 }));

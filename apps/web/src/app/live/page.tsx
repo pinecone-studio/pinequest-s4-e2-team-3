@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { Moon, Sun } from "lucide-react";
@@ -17,14 +17,17 @@ import {
 } from "@/components/icons";
 import { demoRoutes } from "@/lib/routes";
 import { googleMapsDirectionsUrl } from "@/lib/maps";
-import { hasGoogleMapsKey } from "@/lib/googlemaps";
+import { GOOGLE_MAPS_KEY, hasGoogleMapsKey, loadGoogleMaps } from "@/lib/googlemaps";
+import { formatDistance, haversineMeters } from "@/lib/geo";
+import { resolvePosition } from "@/lib/position";
+import { buildRoutePath } from "@/lib/routePath";
 import { hasPack, loadPack, savePack } from "@/lib/offline";
 import { useLiveGuide } from "@/hooks/useLiveGuide";
 import { weatherEmoji, weatherLabel, type WeatherNow } from "@/lib/weather";
 import { useLiveStore } from "@/stores/liveStore";
 import { useLocationStore } from "@/stores/locationStore";
 import { useLocation } from "@/hooks/useLocation";
-import type { Coords, DemoRoute } from "@/types";
+import type { Coords, DemoRoute, PlaceOption } from "@/types";
 
 // Loaded lazily + client-only because the Google Maps SDK touches `window`.
 const RouteMap = dynamic(() => import("@/components/RouteMap"), { ssr: false });
@@ -101,7 +104,16 @@ export default function LiveGuidePage() {
     <div className={theme === "dark" ? "dark" : ""}>
       <div className="relative min-h-screen overflow-hidden bg-[#eef2fb] text-ink transition-colors dark:bg-[#0d1422] dark:text-white">
         {activeRoute ? <LiveBackground theme={theme} /> : <MapBackdrop />}
-        <div className="relative mx-auto flex min-h-screen w-full max-w-md flex-col px-5 pb-6 pt-6">
+        {/* When a route is live, let pointer events fall THROUGH the empty parts
+            of this column to the map behind it, so the map drags/pans like Google
+            Maps. The interactive pieces (bars, cards, buttons) re-enable
+            pointer-events on themselves. */}
+        <div
+          className={[
+            "relative mx-auto flex min-h-screen w-full max-w-md flex-col px-5 pb-6 pt-6",
+            activeRoute ? "pointer-events-none" : "",
+          ].join(" ")}
+        >
           {activeRoute ? (
             <LiveExperience theme={theme} onToggleTheme={toggleTheme} />
           ) : (
@@ -116,10 +128,10 @@ export default function LiveGuidePage() {
 // Decides what fills the screen behind the guide UI:
 //   real Mapbox route map → cached static snapshot (offline) → stylised backdrop.
 function LiveBackground({ theme }: { theme: Theme }) {
-  const { activeRoute, currentStopIndex, simulatedCoords, forceOffline } =
+  const { activeRoute, currentStopIndex, simulatedCoords, forceOffline, suggestions, selectedPlace } =
     useLiveStore();
   const realCoords = useLocationStore((s) => s.coordinates);
-  const position: Coords | null = simulatedCoords ?? realCoords;
+  const position: Coords | null = resolvePosition(simulatedCoords, realCoords, activeRoute);
 
   const [online, setOnline] = useState(true);
   const [mapFailed, setMapFailed] = useState(false);
@@ -150,6 +162,8 @@ function LiveBackground({ theme }: { theme: Theme }) {
           position={position}
           onError={() => setMapFailed(true)}
           theme={theme}
+          suggestions={suggestions}
+          selectedPlace={selectedPlace}
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#eef2fb]/40 via-transparent to-[#eef2fb]/90 dark:from-[#0d1422]/40 dark:via-transparent dark:to-[#0d1422]/90" />
       </div>
@@ -273,6 +287,9 @@ function LiveExperience({
     voiceError,
     weather,
     weatherTip,
+    suggestions,
+    selectedPlace,
+    selectPlace,
     voiceInSupported,
     replay,
     pause,
@@ -326,6 +343,82 @@ function LiveExperience({
     });
   };
 
+  // --- Auto-walk: animate the position ALONG THE ROAD so a demo "walks" the
+  // journey hands-free (the arrival logic narrates each stop as we pass it).
+  const simTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const simActiveRef = useRef(false); // survives the async path load / re-renders
+  const [simulating, setSimulating] = useState(false);
+
+  const STEP_MS = 1100; // a little slow, so the journey is easy to follow
+
+  const stopSimulation = () => {
+    simActiveRef.current = false;
+    if (simTimerRef.current) {
+      clearInterval(simTimerRef.current);
+      simTimerRef.current = null;
+    }
+    setSimulating(false);
+  };
+
+  const startSimulation = async () => {
+    if (!activeRoute || activeRoute.stops.length === 0 || simActiveRef.current) return;
+    simActiveRef.current = true;
+    setSimulating(true);
+
+    // Prefer real road geometry; fall back to straight legs if it can't load.
+    let pts: Coords[] = [];
+    try {
+      const google = await loadGoogleMaps(GOOGLE_MAPS_KEY);
+      pts = (await buildRoutePath(google, activeRoute.stops)).map((p) => ({
+        latitude: p.lat,
+        longitude: p.lng,
+      }));
+    } catch {
+      pts = [];
+    }
+    if (!simActiveRef.current) return; // user stopped while the path loaded
+
+    if (pts.length === 0) {
+      const stops = activeRoute.stops;
+      for (let i = 0; i < stops.length - 1; i++) {
+        const a = stops[i];
+        const b = stops[i + 1];
+        for (let s = 0; s < 12; s++) {
+          const t = s / 12;
+          pts.push({
+            latitude: a.latitude + (b.latitude - a.latitude) * t,
+            longitude: a.longitude + (b.longitude - a.longitude) * t,
+          });
+        }
+      }
+      const last = stops[stops.length - 1];
+      pts.push({ latitude: last.latitude, longitude: last.longitude });
+    }
+    if (pts.length === 0) {
+      stopSimulation();
+      return;
+    }
+
+    let i = 0;
+    setSimulated(pts[0]);
+    simTimerRef.current = setInterval(() => {
+      i += 1;
+      if (i >= pts.length) {
+        stopSimulation();
+        return;
+      }
+      setSimulated(pts[i]);
+    }, STEP_MS);
+  };
+
+  // Stop the timer if the screen unmounts (e.g. switching routes).
+  useEffect(() => {
+    return () => {
+      simActiveRef.current = false;
+      if (simTimerRef.current) clearInterval(simTimerRef.current);
+    };
+  }, []);
+
   return (
     <>
       <TopBar theme={theme} onToggleTheme={onToggleTheme} />
@@ -340,7 +433,7 @@ function LiveExperience({
 
       <button
         onClick={() => setShowExtras(!showExtras)}
-        className="mb-3 ml-auto flex items-center gap-1.5 rounded-full bg-ink/5 px-3 py-1.5 text-xs font-bold text-ink-muted backdrop-blur hover:bg-ink/10 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15"
+        className="pointer-events-auto mb-3 ml-auto flex items-center gap-1.5 rounded-full bg-ink/5 px-3 py-1.5 text-xs font-bold text-ink-muted backdrop-blur hover:bg-ink/10 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15"
       >
         {showExtras ? "Hide details" : "Tips & controls"}
         <ChevronRightIcon
@@ -359,6 +452,15 @@ function LiveExperience({
           offlineSaved={offlineSaved}
           saving={saving}
           onDownload={downloadPack}
+        />
+      )}
+
+      {suggestions.length > 0 && (
+        <SuggestionList
+          suggestions={suggestions}
+          selectedPlace={selectedPlace}
+          userCoords={effectiveCoords}
+          onSelect={selectPlace}
         />
       )}
 
@@ -384,8 +486,10 @@ function LiveExperience({
           nextName={nextStop?.name}
           offlineSaved={offlineSaved}
           offlinePreview={forceOffline}
+          simulating={simulating}
           onArrive={simulateArrival}
           onWalkNext={walkToNext}
+          onToggleSimulate={() => (simActiveRef.current ? stopSimulation() : startSimulation())}
           onTogglePreview={() => setForceOffline(!forceOffline)}
           onChangeRoute={reset}
         />
@@ -402,7 +506,7 @@ function TopBar({
   onToggleTheme: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="pointer-events-auto flex items-center gap-2">
       <Link
         href="/"
         aria-label="Back"
@@ -435,7 +539,7 @@ function JourneyPill({
   weather: WeatherNow | null;
 }) {
   return (
-    <div className="mt-3 flex items-center gap-3 rounded-2xl bg-ink/5 px-3 py-2.5 dark:bg-white/10">
+    <div className="pointer-events-auto mt-3 flex items-center gap-3 rounded-2xl bg-ink/5 px-3 py-2.5 dark:bg-white/10">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white">
         <MapPinIcon size={16} />
       </span>
@@ -478,8 +582,10 @@ function PresenterStrip({
   nextName,
   offlineSaved,
   offlinePreview,
+  simulating,
   onArrive,
   onWalkNext,
+  onToggleSimulate,
   onTogglePreview,
   onChangeRoute,
 }: {
@@ -488,34 +594,51 @@ function PresenterStrip({
   nextName?: string;
   offlineSaved: boolean;
   offlinePreview: boolean;
+  simulating: boolean;
   onArrive: () => void;
   onWalkNext: () => void;
+  onToggleSimulate: () => void;
   onTogglePreview: () => void;
   onChangeRoute: () => void;
 }) {
   return (
-    <div className="mt-3 flex items-center gap-1.5 rounded-2xl bg-ink/[0.04] p-1.5 dark:bg-white/[0.04]">
+    <div className="pointer-events-auto mt-3 flex flex-wrap items-center gap-1.5 rounded-2xl bg-ink/[0.04] p-1.5 dark:bg-white/[0.04]">
       <span className="pl-2 pr-0.5 text-[9px] font-bold uppercase tracking-wider text-ink-muted/60 dark:text-white/30">
         Demo
       </span>
 
+      {/* Auto-walk the whole route hands-free (the headline demo control). */}
+      <button
+        onClick={onToggleSimulate}
+        title="Auto-walk the route"
+        className={[
+          "flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-colors",
+          simulating
+            ? "bg-safety-safe text-white"
+            : "bg-primary-600 text-white hover:bg-primary-700",
+        ].join(" ")}
+      >
+        {simulating ? <PauseIcon size={14} /> : <PlayIcon size={14} />}
+        {simulating ? "Walking…" : "Auto-walk"}
+      </button>
+
       {!arrived ? (
         <button
           onClick={onArrive}
-          className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-ink/5 py-2 text-xs font-bold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15"
+          className="flex shrink-0 items-center gap-1.5 rounded-xl bg-ink/5 px-3 py-2 text-xs font-bold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15"
         >
-          <WalkIcon size={14} /> Simulate arrival
+          <WalkIcon size={14} /> Arrive
         </button>
       ) : nextName ? (
         <button
           onClick={onWalkNext}
-          className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-ink/5 py-2 text-xs font-bold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15"
+          className="flex shrink-0 items-center gap-1.5 rounded-xl bg-ink/5 px-3 py-2 text-xs font-bold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white/80 dark:hover:bg-white/15"
         >
-          <WalkIcon size={14} /> Walk to next
+          <WalkIcon size={14} /> Next
         </button>
       ) : (
-        <span className="flex min-w-0 flex-1 items-center justify-center truncate rounded-xl bg-ink/5 py-2 text-xs font-bold text-ink-muted dark:bg-white/5 dark:text-white/40">
-          Arrived · {currentName}
+        <span className="flex shrink-0 items-center gap-1.5 rounded-xl bg-ink/5 px-3 py-2 text-xs font-bold text-ink-muted dark:bg-white/5 dark:text-white/40">
+          Arrived
         </span>
       )}
 
@@ -541,6 +664,78 @@ function PresenterStrip({
       >
         Routes
       </button>
+    </div>
+  );
+}
+
+// Places Nova suggested (food spots, bus stations…) as selectable chips. Picking
+// one routes the map to it; a second tap clears the selection. When something is
+// selected, a Google Maps hand-off appears (transit directions for a bus stop).
+function SuggestionList({
+  suggestions,
+  selectedPlace,
+  userCoords,
+  onSelect,
+}: {
+  suggestions: PlaceOption[];
+  selectedPlace: PlaceOption | null;
+  userCoords: Coords | null;
+  onSelect: (place: PlaceOption | null) => void;
+}) {
+  const transit = suggestions.some((s) => s.kind === "transit");
+
+  return (
+    <div className="pointer-events-auto mt-3 rounded-3xl bg-white p-3 shadow-sm dark:bg-white/[0.07] dark:shadow-none">
+      <p className="px-1 pb-2 text-[11px] font-bold uppercase tracking-wide text-ink-muted dark:text-white/50">
+        {transit ? "Nearest stops — tap to route there" : "Nearby — tap to route there"}
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+        {suggestions.map((place) => {
+          const active = selectedPlace?.id === place.id;
+          const dist = userCoords
+            ? formatDistance(haversineMeters(userCoords, place))
+            : null;
+          return (
+            <button
+              key={place.id}
+              onClick={() => onSelect(active ? null : place)}
+              className={[
+                "flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold transition-colors",
+                active
+                  ? "bg-primary-600 text-white"
+                  : "bg-ink/5 text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15",
+              ].join(" ")}
+            >
+              <span>{place.kind === "transit" ? "🚌" : "📍"}</span>
+              <span className="max-w-[9rem] truncate">{place.name}</span>
+              {dist && (
+                <span className={active ? "text-white/70" : "text-ink-muted dark:text-white/50"}>
+                  · {dist}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {selectedPlace && (
+        <a
+          href={googleMapsDirectionsUrl(
+            selectedPlace,
+            userCoords,
+            selectedPlace.kind === "transit" ? "transit" : "walking",
+          )}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-3 flex items-center justify-center gap-2 rounded-full bg-primary-600 py-2.5 text-sm font-bold text-white"
+        >
+          <MapPinIcon size={16} />
+          {selectedPlace.kind === "transit"
+            ? "Bus directions in Google Maps"
+            : "Open in Google Maps"}
+        </a>
+      )}
     </div>
   );
 }
@@ -603,7 +798,7 @@ function NarrationCard({
   };
 
   return (
-    <div className="rounded-3xl bg-white p-5 shadow-sm backdrop-blur dark:bg-white/[0.07] dark:shadow-none">
+    <div className="pointer-events-auto rounded-3xl bg-white p-5 shadow-sm backdrop-blur dark:bg-white/[0.07] dark:shadow-none">
       <div className="flex items-center gap-3">
         <span className="h-9 w-9 rounded-full bg-gradient-to-br from-primary-500 to-primary-700" />
         <div>
@@ -727,7 +922,7 @@ function LocalTips({
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="mb-3 overflow-hidden rounded-2xl bg-ink/[0.04] dark:bg-white/[0.05]">
+    <div className="pointer-events-auto mb-3 overflow-hidden rounded-2xl bg-ink/[0.04] dark:bg-white/[0.05]">
       <button
         onClick={() => setOpen(!open)}
         className="flex w-full items-center gap-2 px-4 py-3 text-left"
