@@ -53,7 +53,7 @@ export function NearbySection() {
     function fetchNearby(lat: number, lng: number) {
       Promise.all(
         CATEGORIES.map((cat) =>
-          fetch(`${API_URL}/api/v1/places?lat=${lat}&lng=${lng}&category=${cat}&limit=5`)
+          fetch(`${API_URL}/api/places?lat=${lat}&lng=${lng}&category=${cat}&limit=5`)
             .then((r) => (r.ok ? r.json() : []))
             .catch(() => [] as NearbyPlace[]),
         ),
