@@ -39,7 +39,7 @@ async function fetchPlaces(
     return places.sort((a, b) => parseKm(a.distance) - parseKm(b.distance));
   }
 
-  // All: категори бүрээс 5 газар авч зайгаар эрэмбэлнэ
+  // "All": take 5 places from each category, then sort by distance.
   const results = await Promise.all(
     ALL_CATEGORIES.map((cat) => fetchCategory(lat, lng, cat, 5)),
   );
@@ -94,7 +94,7 @@ export function PlacesList({ category }: Props) {
   if (spots.length === 0) {
     return (
       <p className="py-8 text-center text-sm text-ink-muted">
-        Газар олдсонгүй.
+        No places found.
       </p>
     );
   }

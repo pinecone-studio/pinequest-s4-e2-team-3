@@ -31,7 +31,7 @@ export function NearbySection() {
 
   useEffect(() => {
     function fetchNearby(lat: number, lng: number) {
-      // Категори бүрээс 5 авч, давхардаагүй хамгийн ойрыг нь сонгоно
+      // Take 5 from each category, then pick the closest non-duplicate ones.
       Promise.all(
         CATEGORIES.map((cat) =>
           fetch(
@@ -45,7 +45,7 @@ export function NearbySection() {
         const all: NearbyPlace[] = [];
 
         for (const catPlaces of results) {
-          // Категори бүрээс давхардаагүй хамгийн ойрыг олно
+          // Find the closest place in this category we haven't used yet.
           const unique = (catPlaces as NearbyPlace[]).find((p) => !seen.has(p.id));
           if (unique) {
             seen.add(unique.id);
