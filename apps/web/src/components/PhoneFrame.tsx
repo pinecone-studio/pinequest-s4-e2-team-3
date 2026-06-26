@@ -38,6 +38,17 @@ function WifiIcon() {
   );
 }
 
+function FiveGBadge() {
+  return (
+    <span
+      aria-hidden="true"
+      style={{ fontSize: 12, fontWeight: 700, letterSpacing: "-0.3px", lineHeight: 1 }}
+    >
+      5G
+    </span>
+  );
+}
+
 function BatteryIcon({ level = 82 }: { level?: number }) {
   const fillW = Math.round((16 * level) / 100);
   return (
@@ -66,7 +77,10 @@ function StatusBar({ dark }: { dark: boolean }) {
     return () => clearInterval(id);
   }, []);
 
-  const fg = dark ? "#0a0a0a" : "#ffffff";
+  // The status bar always sits on the screen's #0a0a0a (near-black) background
+  // because the app content starts below it. We always use white icons, but honour
+  // the explicit "dark" prop in case the caller wants the older behaviour.
+  const fg = dark ? "#ffffff" : "#0a0a0a";
 
   return (
     <div
@@ -82,6 +96,8 @@ function StatusBar({ dark }: { dark: boolean }) {
         pointerEvents: "none",
         color: fg,
         userSelect: "none",
+        // Subtle gradient so the status bar reads clearly over any app background
+        background: "linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 100%)",
       }}
     >
       {/* Left: time */}
@@ -94,7 +110,7 @@ function StatusBar({ dark }: { dark: boolean }) {
       {/* Centre: spacer to leave room for Dynamic Island */}
       <div style={{ width: DI_W, flexShrink: 0 }} />
 
-      {/* Right: signal / wifi / battery */}
+      {/* Right: signal / 5G / wifi / battery */}
       <div
         style={{
           flex: 1,
@@ -106,6 +122,7 @@ function StatusBar({ dark }: { dark: boolean }) {
         }}
       >
         <SignalBars />
+        <FiveGBadge />
         <WifiIcon />
         <BatteryIcon level={82} />
       </div>
@@ -127,7 +144,7 @@ function HomeIndicator({ dark }: { dark: boolean }) {
         width: 134,
         height: 5,
         borderRadius: 9999,
-        background: dark ? "rgba(0,0,0,0.22)" : "rgba(255,255,255,0.5)",
+        background: dark ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.22)",
         zIndex: 60,
         pointerEvents: "none",
       }}
@@ -221,8 +238,8 @@ export interface PhoneFrameProps {
   scale?: number;
   /**
    * Status-bar and home-indicator colour mode.
-   * "dark" = dark icons on a light app background (default).
-   * "light" = light icons on a dark app background.
+   * "dark" = white icons (default, since the status bar sits on the black screen chrome).
+   * "light" = dark icons (only use if the status bar overlays a white/light surface).
    */
   statusBarTheme?: "dark" | "light";
   className?: string;
