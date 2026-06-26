@@ -33,6 +33,16 @@
   }
 }
 
+/* Hide scrollbars everywhere — this is a mobile-first app rendered inside a
+   phone frame. Scrollbars break the illusion. Scroll functionality is kept. */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
 /* Soft blue ambient glow over the warm sand base — the airy Lumo backdrop.
    Fixed so it stays put while content scrolls. */
 body {

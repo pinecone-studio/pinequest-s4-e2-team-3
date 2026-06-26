@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Tag } from "@/components/Tag";
 import {
@@ -17,6 +18,8 @@ import {
   trip,
   tripDays as initialTripDays,
 } from "@/lib/mockData";
+import { demoRoutes } from "@/lib/routes";
+import { useLiveStore } from "@/stores/liveStore";
 import type { JourneyStop, TripDay } from "@/types";
 
 interface SavedPlan {
@@ -34,6 +37,8 @@ function findCurrentDayIndex(days: TripDay[]): number {
 }
 
 export default function JourneyPage() {
+  const router = useRouter();
+  const setRoute = useLiveStore((s) => s.setRoute);
   const [days, setDays] = useState<TripDay[]>(initialTripDays);
   const [activeDayIdx, setActiveDayIdx] = useState(() =>
     findCurrentDayIndex(initialTripDays)
@@ -160,12 +165,16 @@ export default function JourneyPage() {
           </ol>
         )}
 
-        <Link
-          href="/live"
-          className="block rounded-full bg-primary-600 py-3.5 text-center text-sm font-bold text-white"
+        <button
+          onClick={() => {
+            const route = demoRoutes.find((r) => r.region === "ulaanbaatar") ?? demoRoutes[0];
+            setRoute(route);
+            router.push("/live");
+          }}
+          className="block w-full rounded-full bg-primary-600 py-3.5 text-center text-sm font-bold text-white"
         >
           Start the live guide
-        </Link>
+        </button>
       </div>
 
       {editingStop && (
