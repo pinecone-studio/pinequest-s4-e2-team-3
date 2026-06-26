@@ -80,6 +80,18 @@ export default function LoginPage() {
               {submitting ? "Signing in…" : "Sign in"}
             </button>
           </form>
+
+          {/* Presentation shortcut: skip the credentials form and jump straight
+              into the app demo. Handy when walking through the product live. */}
+          <div className="mt-6 border-t border-sand-200 pt-6">
+            <button
+              type="button"
+              onClick={() => router.push("/")}
+              className="w-full rounded-xl border border-primary-600 py-3 font-semibold text-primary-600 transition-colors hover:bg-primary-50 active:scale-[0.97]"
+            >
+              Enter demo →
+            </button>
+          </div>
         </div>
 
         <p className="mt-6 text-center text-sm text-ink-muted">

@@ -12,7 +12,7 @@ export default function PreviewPage() {
         padding: "40px 24px",
       }}
     >
-      <PhoneFrame src="/explore" scale={0.92} />
+      <PhoneFrame src="/" scale={0.92} />
     </main>
   );
 }
