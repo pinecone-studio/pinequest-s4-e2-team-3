@@ -6,7 +6,7 @@ import { ChatIcon, MicIcon, SendIcon, SparklesIcon, StarIcon, WalkIcon } from "@
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { aiQuickReplies, guide } from "@/lib/mockData";
 
-// A place Nova recommends, shown as a card under her reply.
+// A place Michelle recommends, shown as a card under her reply.
 interface PlaceCard {
   name: string;
   description?: string;
@@ -15,7 +15,7 @@ interface PlaceCard {
   walkMinutes?: number;
 }
 
-// A finished plan Nova proposes; the traveller confirms it with the buttons.
+// A finished plan Michelle proposes; the traveller confirms it with the buttons.
 interface PendingPlan {
   title: string;
   summary: string;
@@ -35,7 +35,7 @@ const WELCOME: Message = {
   id: "welcome",
   role: "assistant",
   content:
-    "Hi! I'm Nova, your guide in Mongolia. Ask me anything — places, food, getting around, or staying safe.",
+    "Hi! I'm Michelle, your guide in Mongolia. Ask me anything — places, food, getting around, or staying safe.",
 };
 
 // Conversation is kept on the device so it survives a refresh.
@@ -86,7 +86,7 @@ export default function AiPage() {
     }
   }, [messages, hydrated]);
 
-  // Warm up the device location so Nova can recommend real nearby places.
+  // Warm up the device location so Michelle can recommend real nearby places.
   useEffect(() => {
     requestLocation().then((loc) => {
       if (loc) setCoords(loc);
@@ -330,7 +330,7 @@ function MessageBubble({
   );
 }
 
-// A compact photo card for a place Nova recommends.
+// A compact photo card for a place Michelle recommends.
 function PlaceCardView({ place }: { place: PlaceCard }) {
   return (
     <div className="w-44 shrink-0 overflow-hidden rounded-2xl bg-white shadow-sm">
@@ -370,7 +370,7 @@ function PlaceCardView({ place }: { place: PlaceCard }) {
   );
 }
 
-// The "Nova is typing" indicator shown while awaiting a reply.
+// The "Michelle is typing" indicator shown while awaiting a reply.
 function TypingBubble() {
   return (
     <div className="flex justify-start">

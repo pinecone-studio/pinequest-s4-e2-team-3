@@ -1,5 +1,5 @@
 // Thin wrapper around the browser Web Speech API for the Live Guide.
-//   - speak():  text-to-speech (Nova narrating / answering)         [output]
+//   - speak():  text-to-speech (Michelle narrating / answering)         [output]
 //   - createListener(): speech-to-text (you talking back)           [input]
 //
 // Everything feature-detects and degrades gracefully so the UI can hide voice
