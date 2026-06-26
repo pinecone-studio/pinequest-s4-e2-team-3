@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { createServerSupabase } from "@/lib/supabaseServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 interface SaveTripRequest {
@@ -10,10 +10,14 @@ interface SaveTripRequest {
 // Only the plan title + summary lands in the DB; the conversation itself stays
 // on the device (localStorage), so this endpoint never sees the chat history.
 export async function POST(req: Request) {
-  const { userId } = await auth();
-  if (!userId) {
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
     return Response.json({ saved: false, error: "Not signed in" }, { status: 401 });
   }
+  const userId = user.id;
   if (!supabaseAdmin) {
     return Response.json(
       { saved: false, error: "Storage is not configured" },
