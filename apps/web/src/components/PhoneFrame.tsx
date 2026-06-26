@@ -96,8 +96,12 @@ function StatusBar({ dark }: { dark: boolean }) {
         pointerEvents: "none",
         color: fg,
         userSelect: "none",
-        // Subtle gradient so the status bar reads clearly over any app background
-        background: "linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 100%)",
+        // On the dark theme a subtle scrim keeps white icons legible over any app
+        // background. On the light theme the bar blends into the app's own
+        // surface (like a real edge-to-edge iPhone), so no scrim.
+        background: dark
+          ? "linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 100%)"
+          : "none",
       }}
     >
       {/* Left: time */}
@@ -242,6 +246,12 @@ export interface PhoneFrameProps {
    * "light" = dark icons (only use if the status bar overlays a white/light surface).
    */
   statusBarTheme?: "dark" | "light";
+  /**
+   * Background of the screen behind the app content. The status bar overlays the
+   * top STATUS_H px, so set this to the app's own background colour for a
+   * seamless edge-to-edge look (no black "forehead" band above the content).
+   */
+  screenBg?: string;
   className?: string;
 }
 
@@ -250,6 +260,7 @@ export function PhoneFrame({
   children,
   scale = 1,
   statusBarTheme = "dark",
+  screenBg = "#0a0a0a",
   className = "",
 }: PhoneFrameProps) {
   const deviceRef = useRef<HTMLDivElement>(null);
@@ -345,7 +356,7 @@ export function PhoneFrame({
               height: S_H,
               borderRadius: SCREEN_R,
               overflow: "hidden",
-              background: "#0a0a0a",
+              background: screenBg,
               // Subtle pressed-in look — thin dark ring around the screen
               boxShadow:
                 "inset 0 0 0 1px rgba(0,0,0,0.55), inset 0 2px 6px rgba(0,0,0,0.45)",
