@@ -3,24 +3,27 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useClerk, useUser } from "@clerk/nextjs";
+import { createClient } from "@/lib/supabase";
 
-// Top-right header cluster on the app screens: the SOS shortcut and the user
-// avatar. Tapping the avatar opens a menu with the account details and sign-out.
 export function HeaderActions() {
-  const { user } = useUser();
-  const { signOut } = useClerk();
   const router = useRouter();
-
+  const [email, setEmail] = useState("");
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const email = user?.primaryEmailAddress?.emailAddress ?? "";
-  const fullName =
-    (user?.unsafeMetadata?.fullName as string | undefined) ?? user?.fullName ?? null;
+  useEffect(() => {
+    createClient().auth.getUser().then(({ data }) => {
+      setEmail(data.user?.email ?? "");
+    });
+  }, []);
+
+  async function handleSignOut() {
+    await createClient().auth.signOut();
+    router.push("/login");
+  }
+
   const initial = (email.trim()[0] ?? "U").toUpperCase();
 
-  // Close the menu when clicking outside or pressing Escape.
   useEffect(() => {
     if (!open) return;
     function onPointer(e: MouseEvent) {
@@ -68,9 +71,6 @@ export function HeaderActions() {
             className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-2xl border border-ink/10 bg-white shadow-lg shadow-ink/10"
           >
             <div className="border-b border-ink/5 px-4 py-3">
-              {fullName && (
-                <p className="truncate text-sm font-semibold text-ink">{fullName}</p>
-              )}
               <p className="truncate text-xs text-ink-muted">{email || "Signed in"}</p>
             </div>
 
@@ -86,10 +86,7 @@ export function HeaderActions() {
             <button
               type="button"
               role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                signOut(() => router.push("/login"));
-              }}
+              onClick={() => { setOpen(false); handleSignOut(); }}
               className="block w-full px-4 py-2.5 text-left text-sm font-medium text-safety-critical hover:bg-sand-100"
             >
               Sign out

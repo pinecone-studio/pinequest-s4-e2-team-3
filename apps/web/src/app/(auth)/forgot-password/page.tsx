@@ -1,161 +1,82 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useSignIn } from "@clerk/nextjs/legacy";
-import { isClerkAPIResponseError } from "@clerk/nextjs/errors";
+import { createClient } from "@/lib/supabase";
 
 export default function ForgotPasswordPage() {
-  const { isLoaded, signIn, setActive } = useSignIn();
-  const router = useRouter();
-
   const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [password, setPassword] = useState("");
-  // After we email the reset code, swap the form for the reset step.
-  const [pendingReset, setPendingReset] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
 
-  function describeError(err: unknown): string {
-    return isClerkAPIResponseError(err)
-      ? (err.errors[0]?.longMessage ?? err.errors[0]?.message ?? "Something went wrong")
-      : "Something went wrong. Please try again.";
-  }
-
-  async function handleSendCode(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!isLoaded || submitting) return;
     setError(null);
     setSubmitting(true);
     try {
-      await signIn.create({
-        strategy: "reset_password_email_code",
-        identifier: email,
+      const supabase = createClient();
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
       });
-      setPendingReset(true);
-    } catch (err) {
-      setError(describeError(err));
+      if (error) { setError(error.message); return; }
+      setDone(true);
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleReset(e: React.FormEvent) {
-    e.preventDefault();
-    if (!isLoaded || submitting) return;
-    setError(null);
-    setSubmitting(true);
-    try {
-      const result = await signIn.attemptFirstFactor({
-        strategy: "reset_password_email_code",
-        code,
-        password,
-      });
-      if (result.status === "complete") {
-        await setActive({ session: result.createdSessionId });
-        router.push("/");
-      } else {
-        setError("Couldn't reset your password. Please try again.");
-      }
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setSubmitting(false);
-    }
+  if (done) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+        <div className="w-full max-w-md rounded-2xl border border-gray-100 bg-white p-8 shadow-sm text-center">
+          <div className="text-4xl mb-4">📬</div>
+          <h1 className="mb-1 text-2xl font-bold text-primary-900">Check your email</h1>
+          <p className="text-gray-500">
+            We sent a reset link to <span className="font-medium text-ink">{email}</span>.
+          </p>
+          <Link href="/login" className="mt-6 block text-sm font-medium text-primary-600 hover:underline">
+            Back to sign in
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 w-full max-w-md">
-        {!pendingReset ? (
-          <>
-            <h1 className="text-2xl font-bold text-primary-900 mb-1">Reset password</h1>
-            <p className="text-gray-500 mb-6">
-              Enter your email and we&apos;ll send you a reset code
-            </p>
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+      <div className="w-full max-w-md rounded-2xl border border-gray-100 bg-white p-8 shadow-sm">
+        <h1 className="mb-1 text-2xl font-bold text-primary-900">Reset password</h1>
+        <p className="mb-6 text-gray-500">Enter your email and we&apos;ll send you a reset link</p>
 
-            <form onSubmit={handleSendCode} className="space-y-4">
-              <input
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                autoComplete="email"
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500"
-              />
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            autoComplete="email"
+            className="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500"
+          />
 
-              {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
-              <button
-                type="submit"
-                disabled={!isLoaded || submitting}
-                className="w-full bg-primary-600 text-white rounded-xl py-3 font-semibold hover:bg-primary-700 transition-colors disabled:opacity-60"
-              >
-                {submitting ? "Sending…" : "Send reset code"}
-              </button>
-            </form>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full rounded-xl bg-primary-600 py-3 font-semibold text-white transition-colors hover:bg-primary-700 disabled:opacity-60"
+          >
+            {submitting ? "Sending…" : "Send reset link"}
+          </button>
+        </form>
 
-            <p className="text-center text-gray-500 mt-6 text-sm">
-              Remembered it?{" "}
-              <Link href="/login" className="text-primary-600 font-medium hover:underline">
-                Sign in
-              </Link>
-            </p>
-          </>
-        ) : (
-          <>
-            <h1 className="text-2xl font-bold text-primary-900 mb-1">Set a new password</h1>
-            <p className="text-gray-500 mb-6">
-              We sent a code to <span className="font-medium text-ink">{email}</span>
-            </p>
-
-            <form onSubmit={handleReset} className="space-y-4">
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="Reset code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                required
-                autoComplete="one-time-code"
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500"
-              />
-              <input
-                type="password"
-                placeholder="New password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="new-password"
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500"
-              />
-
-              {error && <p className="text-sm text-red-600">{error}</p>}
-
-              <button
-                type="submit"
-                disabled={!isLoaded || submitting}
-                className="w-full bg-primary-600 text-white rounded-xl py-3 font-semibold hover:bg-primary-700 transition-colors disabled:opacity-60"
-              >
-                {submitting ? "Resetting…" : "Reset password"}
-              </button>
-            </form>
-
-            <button
-              type="button"
-              onClick={() => {
-                setPendingReset(false);
-                setError(null);
-              }}
-              className="block w-full text-center text-gray-500 mt-6 text-sm hover:underline"
-            >
-              Use a different email
-            </button>
-          </>
-        )}
+        <p className="mt-6 text-center text-sm text-gray-500">
+          Remembered it?{" "}
+          <Link href="/login" className="font-medium text-primary-600 hover:underline">
+            Sign in
+          </Link>
+        </p>
       </div>
     </div>
   );
