@@ -17,7 +17,7 @@ type NavItem = {
   Icon: (props: { size?: number; className?: string }) => React.ReactNode;
 };
 
-// Order matches the Lumo bottom bar: Home · Explore · AI (centre) · Translate · Journey.
+// Order matches the Polaris bottom bar: Home · Explore · AI (centre) · Translate · Journey.
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Home", Icon: HomeIcon },
   { href: "/explore", label: "Explore", Icon: CompassIcon },
@@ -48,7 +48,7 @@ function DesktopSidebar({ pathname }: { pathname: string }) {
         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600 text-white">
           <SparklesIcon size={20} />
         </span>
-        <span className="text-xl font-bold text-ink">Lumo</span>
+        <span className="text-xl font-bold text-ink">Polaris</span>
       </Link>
 
       <nav className="flex flex-col gap-1">

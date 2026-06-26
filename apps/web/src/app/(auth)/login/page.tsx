@@ -44,7 +44,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 w-full max-w-md">
         <h1 className="text-2xl font-bold text-primary-900 mb-1">Sign In</h1>
-        <p className="text-gray-500 mb-6">Welcome back to AI Travel Guide</p>
+        <p className="text-gray-500 mb-6">Welcome back to Polaris</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <input
