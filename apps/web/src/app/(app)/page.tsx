@@ -1,4 +1,7 @@
+"use client";
+
 import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { HeaderActions } from "@/components/HeaderActions";
 import { LiveClock } from "@/components/LiveClock";
@@ -8,6 +11,27 @@ import { guide, todaysJourney, trip, weather } from "@/lib/mockData";
 import { NearbySection } from "./NearbySection";
 
 export default function HomePage() {
+  // The deployed root should immediately show the phone-frame demo (/preview),
+  // not the bare dashboard. The frame loads this same route in an iframe, so we
+  // detect whether we're inside it: at top level we hand off to /preview, and
+  // inside the frame we render the real dashboard. This also keeps the in-frame
+  // "Home" tab working without nesting a frame inside the frame.
+  const [framed, setFramed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const insideFrame = window.self !== window.top;
+    if (!insideFrame) {
+      window.location.replace("/preview");
+      return;
+    }
+    setFramed(true);
+  }, []);
+
+  if (framed !== true) {
+    // Top-level: redirecting to /preview. Match the frame backdrop to avoid a flash.
+    return <div style={{ minHeight: "100dvh", background: "#09090b" }} />;
+  }
+
   return (
     <div className="space-y-6">
       <Header />
