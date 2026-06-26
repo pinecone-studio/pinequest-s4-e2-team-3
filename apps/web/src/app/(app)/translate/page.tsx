@@ -57,6 +57,7 @@ export default function TranslatePage() {
   const recorderRef   = useRef<MediaRecorder | null>(null);
   const chunksRef     = useRef<Blob[]>([]);
   const activeLangRef = useRef<"mn" | "en">("mn");
+  const mimeTypeRef   = useRef<string>("audio/webm");
   const bottomRef     = useRef<HTMLDivElement | null>(null);
 
   const [activeLang, setActiveLang] = useState<"mn" | "en" | null>(null);
@@ -80,12 +81,15 @@ export default function TranslatePage() {
   };
 
   const startRecording = async () => {
-    // Retry up to 2 times — first tap may race with the browser permission popup
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         setMicError(null);
-        const recorder = new MediaRecorder(stream);
+        const mimeType = ["audio/webm", "audio/mp4", "audio/ogg"].find(
+          (t) => MediaRecorder.isTypeSupported(t),
+        ) ?? "audio/webm";
+        mimeTypeRef.current = mimeType;
+        const recorder = new MediaRecorder(stream, { mimeType });
         chunksRef.current = [];
         recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
         recorder.start();
@@ -93,7 +97,6 @@ export default function TranslatePage() {
         return;
       } catch (err) {
         if (attempt === 0) {
-          // Short pause then retry — permission may have just been granted
           await new Promise((r) => setTimeout(r, 300));
         } else {
           console.error("getUserMedia:", err);
@@ -106,18 +109,23 @@ export default function TranslatePage() {
 
   const stopRecording = () => {
     if (!recorderRef.current) return;
-    recorderRef.current.stop();
-    recorderRef.current.onstop = async () => {
+    const recorder = recorderRef.current;
+    recorder.onstop = async () => {
       const lang = activeLangRef.current;
       setActiveLang(null);
       setLoading(true);
       try {
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const mimeType = mimeTypeRef.current;
+        const blob = new Blob(chunksRef.current, { type: mimeType });
         const fd   = new FormData();
-        fd.append("audio", blob, "audio.webm");
+        fd.append("audio", blob, "recording");
         fd.append("lang", lang);
 
         const sttRes = await fetch("/api/stt", { method: "POST", body: fd });
+        if (!sttRes.ok) {
+          const err = await sttRes.json().catch(() => ({ error: "Speech recognition failed" }));
+          throw new Error(err.error ?? "Speech recognition failed");
+        }
         const { text } = await sttRes.json() as { text: string };
         if (!text?.trim()) { setLoading(false); return; }
 
@@ -144,10 +152,12 @@ export default function TranslatePage() {
         new Audio(audioUrl).play();
       } catch (err) {
         console.error(err);
+        setMicError(err instanceof Error ? err.message : "Translation failed. Please try again.");
       } finally {
         setLoading(false);
       }
     };
+    recorder.stop();
   };
 
   return (
