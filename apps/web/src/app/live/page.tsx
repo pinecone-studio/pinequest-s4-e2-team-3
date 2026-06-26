@@ -349,6 +349,11 @@ function LiveExperience({
   const simActiveRef = useRef(false); // survives the async path load / re-renders
   const [simulating, setSimulating] = useState(false);
 
+  // Pause the walk while Nova is talking/preparing, so she finishes narrating a
+  // stop before the marker moves on (otherwise it outruns the voice → overlap).
+  const busyRef = useRef(false);
+  busyRef.current = isSpeaking || audioLoading || thinking;
+
   const STEP_MS = 1100; // a little slow, so the journey is easy to follow
 
   const stopSimulation = () => {
@@ -402,6 +407,8 @@ function LiveExperience({
     let i = 0;
     setSimulated(pts[0]);
     simTimerRef.current = setInterval(() => {
+      // Hold position while Nova is speaking / preparing a narration.
+      if (busyRef.current) return;
       i += 1;
       if (i >= pts.length) {
         stopSimulation();
