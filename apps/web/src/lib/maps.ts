@@ -14,15 +14,19 @@ export function googleMapsPlaceUrl(coords: Coords, label?: string): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
 }
 
-// Walking/driving directions to a destination (optionally from an origin).
+// Directions to a destination (optionally from an origin). `travelMode` lets the
+// caller open transit (bus) directions for a bus station, or walking for a food
+// spot — anything else defaults to Google's choice.
 export function googleMapsDirectionsUrl(
   destination: Coords,
   origin?: Coords | null,
+  travelMode?: "walking" | "driving" | "transit" | "bicycling",
 ): string {
   const params = new URLSearchParams({
     api: "1",
     destination: `${destination.latitude},${destination.longitude}`,
   });
   if (origin) params.set("origin", `${origin.latitude},${origin.longitude}`);
+  if (travelMode) params.set("travelmode", travelMode);
   return `https://www.google.com/maps/dir/?${params.toString()}`;
 }

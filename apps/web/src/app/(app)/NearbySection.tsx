@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { Tag } from "@/components/Tag";
-import type { Tone } from "@/types";
+import { DirectionsSheet } from "@/components/DirectionsSheet";
+import type { ExploreSpot, Tone } from "@/types";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const DEFAULT_LAT = 47.9077;
 const DEFAULT_LNG = 106.8832;
 
@@ -19,10 +20,29 @@ interface NearbyPlace {
   distance: string;
   distanceKm: number;
   imageUrl: string;
+  rating: number;
+  latitude?: number;
+  longitude?: number;
 }
 
 function parseKm(distance: string): number {
   return parseFloat(distance.replace(" km", "")) || 999;
+}
+
+function toSpot(p: NearbyPlace): ExploreSpot {
+  return {
+    id: p.id,
+    title: p.title,
+    category: p.category,
+    categoryTone: p.categoryTone,
+    rating: p.rating ?? 4.0,
+    distance: p.distance,
+    walkTime: p.walkTime,
+    description: "",
+    imageUrl: p.imageUrl,
+    latitude: p.latitude,
+    longitude: p.longitude,
+  };
 }
 
 export function NearbySection() {
@@ -31,12 +51,9 @@ export function NearbySection() {
 
   useEffect(() => {
     function fetchNearby(lat: number, lng: number) {
-      // Take 5 from each category, then pick the closest non-duplicate ones.
       Promise.all(
         CATEGORIES.map((cat) =>
-          fetch(
-            `/api/places?lat=${lat}&lng=${lng}&category=${cat}&limit=5`,
-          )
+          fetch(`${API_URL}/api/places?lat=${lat}&lng=${lng}&category=${cat}&limit=5`)
             .then((r) => (r.ok ? r.json() : []))
             .catch(() => [] as NearbyPlace[]),
         ),
@@ -45,7 +62,6 @@ export function NearbySection() {
         const all: NearbyPlace[] = [];
 
         for (const catPlaces of results) {
-          // Find the closest place in this category we haven't used yet.
           const unique = (catPlaces as NearbyPlace[]).find((p) => !seen.has(p.id));
           if (unique) {
             seen.add(unique.id);
@@ -74,10 +90,7 @@ export function NearbySection() {
     return (
       <div className="flex gap-3 overflow-x-auto pb-1">
         {[1, 2, 3].map((i) => (
-          <div
-            key={i}
-            className="h-44 w-44 shrink-0 animate-pulse rounded-3xl bg-white/60"
-          />
+          <div key={i} className="h-44 w-44 shrink-0 animate-pulse rounded-3xl bg-white/60" />
         ))}
       </div>
     );
@@ -93,28 +106,28 @@ export function NearbySection() {
 }
 
 function NearbyCard({ spot }: { spot: NearbyPlace }) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <Link
-      href="/explore"
-      className="w-44 shrink-0 overflow-hidden rounded-3xl bg-white shadow-sm"
-    >
-      <div className="relative h-28">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={spot.imageUrl}
-          alt={spot.title}
-          className="h-full w-full object-cover"
-        />
-        <div className="absolute left-2 top-2">
-          <Tag label={spot.category} tone={spot.categoryTone} />
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="w-44 shrink-0 overflow-hidden rounded-3xl bg-white shadow-sm text-left active:scale-[0.98] transition-transform"
+      >
+        <div className="relative h-28">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={spot.imageUrl} alt={spot.title} className="h-full w-full object-cover" />
+          <div className="absolute left-2 top-2">
+            <Tag label={spot.category} tone={spot.categoryTone} />
+          </div>
         </div>
-      </div>
-      <div className="p-3">
-        <p className="line-clamp-2 text-sm font-bold text-ink">{spot.title}</p>
-        <p className="mt-1 text-xs text-ink-muted">
-          {spot.walkTime} · {spot.distance}
-        </p>
-      </div>
-    </Link>
+        <div className="p-3">
+          <p className="line-clamp-2 text-sm font-bold text-ink">{spot.title}</p>
+          <p className="mt-1 text-xs text-ink-muted">{spot.walkTime} · {spot.distance}</p>
+        </div>
+      </button>
+
+      {open && <DirectionsSheet spot={toSpot(spot)} onClose={() => setOpen(false)} />}
+    </>
   );
 }

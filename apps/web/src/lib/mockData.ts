@@ -1,4 +1,4 @@
-// Static sample content for the Lumo frontend.
+// Static sample content for the Polaris frontend.
 // Everything here is placeholder data so the screens can be built and reviewed
 // without a backend. Replace these with real API/store data later.
 

@@ -424,7 +424,7 @@ function MessageInput({
         type="text"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder={isListening ? "Listening…" : "Message Lumo…"}
+        placeholder={isListening ? "Listening…" : "Message Polaris…"}
         className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-muted"
       />
       {voiceSupported ? (

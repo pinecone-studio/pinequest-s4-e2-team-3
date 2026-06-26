@@ -8,7 +8,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Lumo brand blue (#2f6bff is the primary action colour in the design).
+        // Polaris brand blue (#2f6bff is the primary action colour in the design).
         primary: {
           50: "#eef3ff",
           100: "#dbe6ff",
@@ -21,7 +21,7 @@ const config: Config = {
           500: "#f59e0b",
           600: "#d97706",
         },
-        // Lumo warm "sand" surfaces — the calm cream background from the design.
+        // Polaris warm "sand" surfaces — the calm cream background from the design.
         sand: {
           DEFAULT: "#F3EEE6",
           50: "#FBF9F5",
@@ -43,7 +43,7 @@ const config: Config = {
       },
       fontFamily: {
         // Both provided by next/font in the root layout (see layout.tsx).
-        // sans = body/UI, serif = display headings (the Lumo signature look).
+        // sans = body/UI, serif = display headings (the Polaris signature look).
         sans: ["var(--font-jakarta)", "system-ui", "sans-serif"],
         serif: ["var(--font-instrument)", "Georgia", "serif"],
       },

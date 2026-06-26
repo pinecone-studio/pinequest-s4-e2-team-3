@@ -3,11 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveStore } from "@/stores/liveStore";
 import { useLocationStore } from "@/stores/locationStore";
 import { haversineMeters, hasArrived } from "@/lib/geo";
+import { resolvePosition } from "@/lib/position";
 import { speak, stopSpeaking } from "@/lib/tts";
 import { createListener, ttsSupported, sttSupported } from "@/lib/speech";
 import { useWeather } from "@/hooks/useWeather";
 import { weatherTip } from "@/lib/weather";
-import type { Coords, RouteStop } from "@/types";
+import type { Coords, PlaceOption, RouteStop } from "@/types";
 
 // A short situational prefix so the grounded /api/chat guide knows where the
 // traveller currently is. The route itself supplies the full Nova persona and
@@ -54,9 +55,13 @@ export function useLiveGuide() {
     currentStopIndex,
     arrivedStopIds,
     simulatedCoords,
+    suggestions,
+    selectedPlace,
     advanceStop,
     goToStop,
     markArrived,
+    setSuggestions,
+    selectPlace,
   } = useLiveStore();
   const realCoords = useLocationStore((s) => s.coordinates);
 
@@ -69,8 +74,13 @@ export function useLiveGuide() {
   const [lastAnswer, setLastAnswer] = useState<string | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
 
-  // Simulated position wins over real GPS (the on-stage demo control).
-  const effectiveCoords: Coords | null = simulatedCoords ?? realCoords;
+  // Simulated position wins; otherwise real GPS if near the route, else the
+  // route's first stop (so demos far from Mongolia still appear on the journey).
+  const effectiveCoords: Coords | null = resolvePosition(
+    simulatedCoords,
+    realCoords,
+    activeRoute,
+  );
 
   const stops = activeRoute?.stops ?? [];
   const currentStop = stops[currentStopIndex] ?? null;
@@ -178,10 +188,13 @@ export function useLiveGuide() {
           }),
         });
         if (!res.ok) throw new Error(`chat ${res.status}`);
-        const data = (await res.json()) as { reply?: string };
+        const data = (await res.json()) as { reply?: string; places?: PlaceOption[] };
         reply = data.reply?.trim() || fallbackAnswer(currentStop);
+        // Surface any places Nova found as selectable buttons/markers.
+        setSuggestions(data.places ?? []);
       } catch {
         reply = fallbackAnswer(currentStop);
+        setSuggestions([]);
       }
       setThinking(false);
       setLastAnswer(reply);
@@ -199,7 +212,7 @@ export function useLiveGuide() {
       });
       return reply;
     },
-    [currentStop, nextStop, effectiveCoords],
+    [currentStop, nextStop, effectiveCoords, setSuggestions],
   );
 
   const listenerRef = useRef<ReturnType<typeof createListener>>(null);
@@ -254,6 +267,9 @@ export function useLiveGuide() {
     voiceError,
     weather,
     weatherTip: tip,
+    suggestions,
+    selectedPlace,
+    selectPlace,
     voiceInSupported: sttSupported(),
     voiceOutSupported: ttsSupported(),
     advanceStop,

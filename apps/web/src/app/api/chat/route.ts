@@ -3,10 +3,20 @@ import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
-import { findNearbyPlaces, type NearbyPlace } from "@/lib/places";
+import { findNearbyPlaces } from "@/lib/places";
+import type { PlaceOption } from "@/types";
+
+// Classify a lookup so the UI can tell a bus station from a food spot.
+function placeKind(keyword = "", type = ""): PlaceOption["kind"] {
+  const q = `${keyword} ${type}`.toLowerCase();
+  if (/bus|station|transit|stop/.test(q)) return "transit";
+  if (/food|restaurant|cafe|coffee|eat|hungry|guanz|buuz|lunch|dinner|bakery/.test(q))
+    return "food";
+  return "place";
+}
 
 const SYSTEM_PROMPT =
-  "You are Nova, a warm, knowledgeable AI travel guide for Mongolia (the Lumo app). " +
+  "You are Nova, a warm, knowledgeable AI travel guide for Mongolia (the Polaris app). " +
   "The users are international visitors, so ALWAYS reply in English, even if they write " +
   "in another language. You may include a Mongolian word or phrase when it's useful, but " +
   "follow it with the English meaning. " +
@@ -157,26 +167,56 @@ export async function POST(req: Request) {
   }
 }
 
-// Max tool rounds — enough for a multi-stop day plan, capped to avoid runaway.
-const MAX_TOOL_ROUNDS = 4;
-
-// Runs the model and resolves any place lookups it requests, looping so it can
-// gather several categories (e.g. for a day plan) before writing the final text.
+// Runs the model, resolves any place lookups it requests, then returns the final
+// text PLUS the structured places it found — so the Live Guide can show them as
+// selectable buttons/markers. One tool round-trip is enough.
 async function runConversation(
   openai: OpenAI,
   conversation: ChatCompletionMessageParam[],
-  location: { lat: number; lng: number } | undefined,
-): Promise<{ reply: string; places: PlaceCard[]; pendingPlan: PendingPlan | null }> {
-  // Every place looked up this turn — the closest few become cards in the reply.
-  const collected: NearbyPlace[] = [];
-  // A finished plan the model wants the traveller to confirm before we save it.
-  let pendingPlan: PendingPlan | null = null;
+  location?: { lat: number; lng: number },
+): Promise<{ reply: string; places: PlaceOption[] }> {
+  const first = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: conversation,
+    tools: TOOLS,
+  });
+  const message = first.choices[0]?.message;
 
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: conversation,
-      tools: TOOLS,
+  if (!message?.tool_calls?.length) {
+    return { reply: message?.content ?? "", places: [] };
+  }
+
+  const collected: PlaceOption[] = [];
+  conversation.push(message);
+  for (const call of message.tool_calls) {
+    if (call.type !== "function") continue;
+    const args = safeParse(call.function.arguments);
+    const found = location
+      ? await findNearbyPlaces(location.lat, location.lng, args.keyword ?? "place", args.type)
+      : [];
+    const kind = placeKind(args.keyword, args.type);
+    for (const p of found) {
+      collected.push({
+        id: p.id,
+        name: p.name,
+        latitude: p.latitude,
+        longitude: p.longitude,
+        address: p.address,
+        kind,
+      });
+    }
+    console.log(
+      `[chat] location=${location ? `${location.lat},${location.lng}` : "NONE"} ` +
+        `keyword="${args.keyword}" type="${args.type ?? ""}" → ${found.length} places: ` +
+        found.map((p) => p.name).join(", "),
+    );
+    conversation.push({
+      role: "tool",
+      tool_call_id: call.id,
+      content: JSON.stringify({
+        locationKnown: Boolean(location),
+        places: found,
+      }),
     });
     const message = completion.choices[0]?.message;
     if (!message) break;

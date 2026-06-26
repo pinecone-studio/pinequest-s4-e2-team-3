@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useClerk } from "@clerk/nextjs";
+import { createClient } from "@/lib/supabase";
 import {
   ChatIcon,
   CompassIcon,
@@ -17,7 +17,7 @@ type NavItem = {
   Icon: (props: { size?: number; className?: string }) => React.ReactNode;
 };
 
-// Order matches the Lumo bottom bar: Home · Explore · AI (centre) · Translate · Journey.
+// Order matches the Polaris bottom bar: Home · Explore · AI (centre) · Translate · Journey.
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Home", Icon: HomeIcon },
   { href: "/explore", label: "Explore", Icon: CompassIcon },
@@ -39,8 +39,11 @@ export function AppNav() {
 
 // Left sidebar on large screens.
 function DesktopSidebar({ pathname }: { pathname: string }) {
-  const { signOut } = useClerk();
   const router = useRouter();
+  async function signOut() {
+    await createClient().auth.signOut();
+    router.push("/login");
+  }
 
   return (
     <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-sand-200 bg-sand-50 px-4 py-6 lg:flex">
@@ -48,7 +51,7 @@ function DesktopSidebar({ pathname }: { pathname: string }) {
         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600 text-white">
           <SparklesIcon size={20} />
         </span>
-        <span className="text-xl font-bold text-ink">Lumo</span>
+        <span className="text-xl font-bold text-ink">Polaris</span>
       </Link>
 
       <nav className="flex flex-col gap-1">
@@ -74,7 +77,7 @@ function DesktopSidebar({ pathname }: { pathname: string }) {
 
       <button
         type="button"
-        onClick={() => signOut(() => router.push("/login"))}
+        onClick={() => signOut()}
         className="mt-auto flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-ink-muted transition-colors hover:bg-sand-200 hover:text-ink"
       >
         <svg

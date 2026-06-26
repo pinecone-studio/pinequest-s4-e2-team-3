@@ -10,7 +10,10 @@ const PLACES_TTL_MS = 10 * 60_000;
 const roundCoord = (n: number) => Math.round(n * 1000) / 1000;
 
 export interface NearbyPlace {
+  id: string;
   name: string;
+  latitude: number;
+  longitude: number;
   rating?: number;
   address?: string;
   openNow?: boolean;
@@ -36,9 +39,11 @@ export interface BrowsePlace {
 }
 
 interface PlacesTextResult {
+  id?: string;
   displayName?: { text?: string };
   rating?: number;
   formattedAddress?: string;
+  location?: { latitude?: number; longitude?: number };
   currentOpeningHours?: { openNow?: boolean };
   location?: { latitude: number; longitude: number };
   photos?: { name: string }[];
