@@ -14,6 +14,25 @@
   }
 }
 
+/* Typing indicator: ease-in-out between stops so the dot lingers briefly at the top. */
+@keyframes typingDot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; animation-timing-function: ease-in-out; }
+  30% { transform: translateY(-5px); opacity: 1; animation-timing-function: ease-in-out; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Strip translate from the typing dot; keep opacity pulse so it still signals activity. */
+  @keyframes typingDot {
+    0%, 60%, 100% { opacity: 0.4; }
+    30% { opacity: 1; }
+  }
+  /* Remove slide/scale entry from modals; keep fade so they don't just snap in. */
+  .animate-slide-up,
+  .animate-scale-in {
+    animation: fadeIn 150ms ease-out both;
+  }
+}
+
 /* Soft blue ambient glow over the warm sand base — the airy Lumo backdrop.
    Fixed so it stays put while content scrolls. */
 body {

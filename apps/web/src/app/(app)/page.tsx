@@ -33,7 +33,7 @@ function Header() {
         <p className="text-sm font-semibold text-ink-muted">
           {trip.weekday} · {trip.city}
         </p>
-        <h1 className="mt-1 font-serif text-4xl leading-none text-ink">
+        <h1 className="mt-1 font-serif text-4xl leading-none tracking-tight text-balance text-ink">
           {trip.greeting}
         </h1>
       </div>
@@ -67,7 +67,7 @@ function StatCard({
   sub?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-ink/5 bg-white/70 p-3 backdrop-blur">
+    <div className="rounded-2xl bg-white p-3 shadow-ink-sm">
       <p className="text-[11px] font-bold uppercase tracking-wide text-ink-muted">
         {label}
       </p>
@@ -81,7 +81,7 @@ function StatCard({
 // Kept deliberately minimal — presence, name, one line, one action.
 function LiveGuideCard() {
   return (
-    <section className="relative overflow-hidden rounded-[26px] bg-[#0d1422] p-6 shadow-lg shadow-ink/20">
+    <section className="relative overflow-hidden rounded-3xl bg-primary-950 p-6 shadow-ink-lg">
       <div className="absolute inset-0 bg-[radial-gradient(120%_90%_at_80%_10%,#1f56e0_0%,#16233d_45%,#0d1422_75%)]" />
       <div className="relative flex flex-col gap-5">
         <div className="flex w-fit items-center gap-2 rounded-full bg-white/10 py-1.5 pl-2 pr-3 backdrop-blur">

@@ -113,8 +113,8 @@ function MobileTabBar({ pathname }: { pathname: string }) {
           if (isCenter) {
             return (
               <li key={href}>
-                <Link href={href} className="flex flex-col items-center gap-1">
-                  <span className="-mt-7 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-600 text-white shadow-lg shadow-primary-600/30">
+                <Link href={href} className="flex flex-col items-center gap-1 active:opacity-70">
+                  <span className="-mt-7 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-600 text-white shadow-lg shadow-primary-600/30 transition-transform active:scale-95">
                     <Icon size={26} />
                   </span>
                   <span className="text-[11px] font-semibold text-primary-600">
@@ -130,7 +130,7 @@ function MobileTabBar({ pathname }: { pathname: string }) {
               <Link
                 href={href}
                 className={[
-                  "flex flex-col items-center gap-1",
+                  "flex flex-col items-center gap-1 transition-opacity active:opacity-60",
                   isActive ? "text-primary-600" : "text-ink-muted",
                 ].join(" ")}
               >

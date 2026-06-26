@@ -94,7 +94,7 @@ export default function AiPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] flex-col lg:h-[calc(100vh-5rem)]">
+    <div className="flex h-[calc(100dvh-7rem)] flex-col lg:h-[calc(100dvh-5rem)]">
       <ChatHeader />
 
       <div className="flex-1 space-y-3 overflow-y-auto py-4">
@@ -140,7 +140,7 @@ function MessageBubble({ message }: { message: Message }) {
       <p
         className={[
           "max-w-[80%] whitespace-pre-wrap rounded-3xl px-4 py-3 text-sm",
-          isUser ? "bg-primary-600 text-white" : "bg-white text-ink shadow-sm",
+          isUser ? "bg-primary-600 text-white" : "bg-white text-ink shadow-ink-sm",
         ].join(" ")}
       >
         {message.content}
@@ -153,7 +153,7 @@ function MessageBubble({ message }: { message: Message }) {
 function TypingBubble() {
   return (
     <div className="flex justify-start">
-      <div className="flex gap-1 rounded-3xl bg-white px-4 py-4 shadow-sm">
+      <div className="flex gap-1 rounded-3xl bg-white px-4 py-4 shadow-ink-sm">
         <Dot delay="0ms" />
         <Dot delay="150ms" />
         <Dot delay="300ms" />
@@ -165,8 +165,8 @@ function TypingBubble() {
 function Dot({ delay }: { delay: string }) {
   return (
     <span
-      className="h-2 w-2 animate-bounce rounded-full bg-ink-muted"
-      style={{ animationDelay: delay }}
+      className="h-2 w-2 rounded-full bg-ink-muted"
+      style={{ animation: `typingDot 1.2s ease-out infinite`, animationDelay: delay }}
     />
   );
 }
@@ -185,7 +185,7 @@ function QuickReplies({
           key={reply}
           onClick={() => onPick(reply)}
           disabled={disabled}
-          className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-ink-muted shadow-sm hover:text-ink disabled:opacity-50"
+          className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-ink-muted shadow-ink-sm transition-colors hover:bg-sand-50 hover:text-ink disabled:opacity-50"
         >
           {reply}
         </button>
@@ -214,7 +214,7 @@ function MessageInput({
   return (
     <form
       onSubmit={onSubmit}
-      className="flex items-center gap-2 rounded-full bg-white px-4 py-2.5 shadow-sm"
+      className="flex items-center gap-2 rounded-full bg-white px-4 py-2.5 shadow-ink-sm"
     >
       <input
         type="text"
@@ -240,7 +240,7 @@ function MessageInput({
       <button
         type="submit"
         disabled={disabled || !value.trim()}
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-600 text-white disabled:opacity-50"
+        className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-600 text-white transition-colors hover:bg-primary-700 active:scale-[0.95] disabled:opacity-50"
         aria-label="Send message"
       >
         <SendIcon size={18} />

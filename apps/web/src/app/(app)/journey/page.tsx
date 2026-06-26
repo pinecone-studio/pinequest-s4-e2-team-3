@@ -69,7 +69,7 @@ export default function JourneyPage() {
           <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">
             Day {activeDay.dayNumber} of {days.length} · Adaptive
           </p>
-          <h1 className="mt-2 font-serif text-4xl leading-tight text-ink">
+          <h1 className="mt-2 font-serif text-4xl leading-tight tracking-tight text-balance text-ink">
             Your {trip.city} journey
           </h1>
           <p className="mt-1 text-sm text-ink-muted">{activeDay.label}</p>
@@ -149,7 +149,7 @@ function DaySelector({
               "relative shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-colors",
               isActive
                 ? "bg-primary-600 text-white"
-                : "bg-white text-ink-muted hover:text-ink",
+                : "bg-white text-ink-muted hover:bg-sand-100 hover:text-ink",
             ].join(" ")}
           >
             Day {day.dayNumber}
@@ -165,7 +165,7 @@ function DaySelector({
 
 function AdaptationNote() {
   return (
-    <div className="flex gap-3 rounded-3xl border border-safety-armed/20 bg-[#fdeede] p-4">
+    <div className="flex gap-3 rounded-3xl border border-safety-armed/20 bg-sand-amber p-4">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-safety-armed text-white">
         <SunIcon size={18} />
       </span>
@@ -205,7 +205,7 @@ function TimelineStop({
       <div
         className={["flex-1 pb-5", isSkipped ? "opacity-50" : ""].join(" ")}
       >
-        <article className="overflow-hidden rounded-3xl bg-white shadow-sm">
+        <article className="overflow-hidden rounded-3xl bg-white shadow-ink-sm">
           <div className="relative h-40">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -313,10 +313,10 @@ function EditModal({
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in"
         onClick={onClose}
       />
-      <div className="relative space-y-4 rounded-t-3xl bg-white p-6">
+      <div className="relative space-y-4 rounded-t-3xl bg-white p-6 animate-slide-up">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-ink">Edit stop</h2>
           <button
@@ -336,7 +336,7 @@ function EditModal({
               type="text"
               value={draft.time}
               onChange={(e) => update("time", e.target.value)}
-              className="mt-1 w-full rounded-xl border border-ink/10 bg-sand-50 px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-400"
+              className="mt-1 w-full rounded-xl border border-ink/10 bg-sand-50 px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
             />
           </label>
 
@@ -348,7 +348,7 @@ function EditModal({
               type="text"
               value={draft.title}
               onChange={(e) => update("title", e.target.value)}
-              className="mt-1 w-full rounded-xl border border-ink/10 bg-sand-50 px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-400"
+              className="mt-1 w-full rounded-xl border border-ink/10 bg-sand-50 px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
             />
           </label>
 
@@ -360,7 +360,7 @@ function EditModal({
               value={draft.note}
               onChange={(e) => update("note", e.target.value)}
               rows={3}
-              className="mt-1 w-full resize-none rounded-xl border border-ink/10 bg-sand-50 px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-400"
+              className="mt-1 w-full resize-none rounded-xl border border-ink/10 bg-sand-50 px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
             />
           </label>
 
@@ -373,7 +373,7 @@ function EditModal({
                 type="text"
                 value={draft.walk}
                 onChange={(e) => update("walk", e.target.value)}
-                className="mt-1 w-full rounded-xl border border-ink/10 bg-sand-50 px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-400"
+                className="mt-1 w-full rounded-xl border border-ink/10 bg-sand-50 px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
               />
             </label>
             <label className="block">
@@ -384,7 +384,7 @@ function EditModal({
                 type="text"
                 value={draft.dwell}
                 onChange={(e) => update("dwell", e.target.value)}
-                className="mt-1 w-full rounded-xl border border-ink/10 bg-sand-50 px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-400"
+                className="mt-1 w-full rounded-xl border border-ink/10 bg-sand-50 px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
               />
             </label>
           </div>
@@ -419,10 +419,10 @@ function DeleteConfirm({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in"
         onClick={onCancel}
       />
-      <div className="relative w-full max-w-sm space-y-4 rounded-3xl bg-white p-6 text-center">
+      <div className="relative w-full max-w-sm space-y-4 rounded-3xl bg-white p-6 text-center animate-scale-in">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50">
           <TrashIcon size={24} className="text-safety-critical" />
         </div>
