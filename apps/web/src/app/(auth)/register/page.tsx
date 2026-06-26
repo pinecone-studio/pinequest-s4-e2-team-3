@@ -1,193 +1,104 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useSignUp } from "@clerk/nextjs/legacy";
-import { isClerkAPIResponseError } from "@clerk/nextjs/errors";
+import { createClient } from "@/lib/supabase";
 
 export default function RegisterPage() {
-  const { isLoaded, signUp, setActive } = useSignUp();
-  const router = useRouter();
-
-  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [code, setCode] = useState("");
-  // After we send the email code, swap the form for the verification step.
-  const [pendingVerification, setPendingVerification] = useState(false);
+  const [fullName, setFullName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  function describeError(err: unknown): string {
-    return isClerkAPIResponseError(err)
-      ? (err.errors[0]?.longMessage ?? err.errors[0]?.message ?? "Something went wrong")
-      : "Something went wrong. Please try again.";
-  }
+  const [done, setDone] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!isLoaded || submitting) return;
-
     setError(null);
     setSubmitting(true);
     try {
-      await signUp.create({
-        emailAddress: email,
+      const supabase = createClient();
+      const { error } = await supabase.auth.signUp({
+        email,
         password,
-        unsafeMetadata: { fullName },
+        options: { data: { full_name: fullName } },
       });
-      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-      setPendingVerification(true);
-    } catch (err) {
-      setError(describeError(err));
+      if (error) { setError(error.message); return; }
+      setDone(true);
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleResend() {
-    if (!isLoaded || submitting) return;
-    setError(null);
-    try {
-      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-    } catch (err) {
-      setError(describeError(err));
-    }
-  }
-
-  async function handleVerify(e: React.FormEvent) {
-    e.preventDefault();
-    if (!isLoaded || submitting) return;
-
-    setError(null);
-    setSubmitting(true);
-    try {
-      const result = await signUp.attemptEmailAddressVerification({ code });
-      if (result.status === "complete") {
-        await setActive({ session: result.createdSessionId });
-        router.push("/");
-      } else {
-        setError("Couldn't verify that code. Please try again.");
-      }
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setSubmitting(false);
-    }
+  if (done) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+        <div className="w-full max-w-md rounded-2xl border border-gray-100 bg-white p-8 shadow-sm text-center">
+          <div className="text-4xl mb-4">✉️</div>
+          <h1 className="mb-1 text-2xl font-bold text-primary-900">Check your email</h1>
+          <p className="text-gray-500">
+            We sent a confirmation link to <span className="font-medium text-ink">{email}</span>. Click it to activate your account.
+          </p>
+          <Link href="/login" className="mt-6 block text-sm font-medium text-primary-600 hover:underline">
+            Back to sign in
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 w-full max-w-md">
-        {!pendingVerification ? (
-          <>
-            <h1 className="text-2xl font-bold text-primary-900 mb-1">Create Account</h1>
-            <p className="text-gray-500 mb-6">Start your travel journey</p>
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+      <div className="w-full max-w-md rounded-2xl border border-gray-100 bg-white p-8 shadow-sm">
+        <h1 className="mb-1 text-2xl font-bold text-primary-900">Create Account</h1>
+        <p className="mb-6 text-gray-500">Start your travel journey</p>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <input
-                type="text"
-                placeholder="Full Name"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-                autoComplete="name"
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500"
-              />
-              <input
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                autoComplete="email"
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500"
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="new-password"
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500"
-              />
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input
+            type="text"
+            placeholder="Full Name"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            required
+            autoComplete="name"
+            className="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500"
+          />
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            autoComplete="email"
+            className="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500"
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            autoComplete="new-password"
+            className="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500"
+          />
 
-              {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
-              {/* Clerk Smart CAPTCHA / bot-protection widget mounts here. */}
-              <div id="clerk-captcha" />
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full rounded-xl bg-primary-600 py-3 font-semibold text-white transition-colors hover:bg-primary-700 disabled:opacity-60"
+          >
+            {submitting ? "Creating…" : "Create Account"}
+          </button>
+        </form>
 
-              <button
-                type="submit"
-                disabled={!isLoaded || submitting}
-                className="w-full bg-primary-600 text-white rounded-xl py-3 font-semibold hover:bg-primary-700 transition-colors disabled:opacity-60"
-              >
-                {submitting ? "Creating…" : "Create Account"}
-              </button>
-            </form>
-
-            <p className="text-center text-gray-500 mt-6 text-sm">
-              Already have an account?{" "}
-              <Link href="/login" className="text-primary-600 font-medium hover:underline">
-                Sign in
-              </Link>
-            </p>
-          </>
-        ) : (
-          <>
-            <h1 className="text-2xl font-bold text-primary-900 mb-1">Verify your email</h1>
-            <p className="text-gray-500 mb-6">
-              We sent a code to <span className="font-medium text-ink">{email}</span>
-            </p>
-
-            <form onSubmit={handleVerify} className="space-y-4">
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="Verification code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                required
-                autoComplete="one-time-code"
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500"
-              />
-
-              {error && <p className="text-sm text-red-600">{error}</p>}
-
-              <button
-                type="submit"
-                disabled={!isLoaded || submitting}
-                className="w-full bg-primary-600 text-white rounded-xl py-3 font-semibold hover:bg-primary-700 transition-colors disabled:opacity-60"
-              >
-                {submitting ? "Verifying…" : "Verify & Continue"}
-              </button>
-            </form>
-
-            <div className="mt-6 flex items-center justify-center gap-4 text-sm">
-              <button
-                type="button"
-                onClick={handleResend}
-                disabled={submitting}
-                className="text-primary-600 font-medium hover:underline disabled:opacity-60"
-              >
-                Resend code
-              </button>
-              <span className="text-gray-300">·</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setPendingVerification(false);
-                  setError(null);
-                }}
-                className="text-gray-500 hover:underline"
-              >
-                Use a different email
-              </button>
-            </div>
-          </>
-        )}
+        <p className="mt-6 text-center text-sm text-gray-500">
+          Already have an account?{" "}
+          <Link href="/login" className="font-medium text-primary-600 hover:underline">
+            Sign in
+          </Link>
+        </p>
       </div>
     </div>
   );
