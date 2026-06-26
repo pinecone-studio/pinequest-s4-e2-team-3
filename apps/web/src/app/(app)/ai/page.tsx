@@ -1,14 +1,34 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MicIcon, SendIcon, SparklesIcon } from "@/components/icons";
+import { MicIcon, SendIcon, SparklesIcon, StarIcon, WalkIcon } from "@/components/icons";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { aiQuickReplies, guide } from "@/lib/mockData";
+
+// A place Nova recommends, shown as a card under her reply.
+interface PlaceCard {
+  name: string;
+  description?: string;
+  imageUrl?: string;
+  rating?: number;
+  walkMinutes?: number;
+}
+
+// A finished plan Nova proposes; the traveller confirms it with the buttons.
+interface PendingPlan {
+  title: string;
+  summary: string;
+}
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  places?: PlaceCard[];
+  // Set when Nova has finished a plan: shows "Yes, save" / "No, add more".
+  pendingPlan?: PendingPlan;
+  // Tracks the plan buttons once acted on, so they don't linger.
+  planStatus?: "pending" | "saved" | "dismissed";
 }
 
 const WELCOME: Message = {
@@ -18,20 +38,59 @@ const WELCOME: Message = {
     "Hi! I'm Nova, your guide in Mongolia. Ask me anything — places, food, getting around, or staying safe.",
 };
 
+// Conversation is kept on the device so it survives a refresh.
+const STORAGE_KEY = "lumo:chat";
+
+// Resolve the device location, returning null if it's blocked or unavailable.
+function requestLocation(): Promise<{ lat: number; lng: number } | null> {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+    );
+  });
+}
+
 export default function AiPage() {
   const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [hydrated, setHydrated] = useState(false);
   const scrollAnchor = useRef<HTMLDivElement>(null);
 
-  // Grab the device location so Nova can recommend real nearby places.
+  // Load any saved conversation from the device once on mount.
   useEffect(() => {
-    navigator.geolocation?.getCurrentPosition(
-      (pos) => setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => setCoords(null),
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      const parsed = saved ? (JSON.parse(saved) as Message[]) : null;
+      if (Array.isArray(parsed) && parsed.length) setMessages(parsed);
+    } catch {
+      // ignore corrupt storage
+    }
+    setHydrated(true);
+  }, []);
+
+  // Persist the conversation whenever it changes (after the initial load).
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    } catch {
+      // ignore storage limits
+    }
+  }, [messages, hydrated]);
+
+  // Warm up the device location so Nova can recommend real nearby places.
+  useEffect(() => {
+    requestLocation().then((loc) => {
+      if (loc) setCoords(loc);
+    });
   }, []);
 
   // Voice input: spoken words land in the text box, ready to edit and send.
@@ -61,18 +120,24 @@ export default function AiPage() {
     setInput("");
     setIsLoading(true);
 
+    // Make sure we have a location even on the very first quick message.
+    const location = coords ?? (await requestLocation());
+    if (location && !coords) setCoords(location);
+
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: history.map(({ role, content }) => ({ role, content })),
-          location: coords,
+          location,
         }),
       });
       const data = await response.json();
       addAssistantReply(
         data.reply || "Sorry, I couldn't reach the guide right now.",
+        data.places,
+        data.pendingPlan,
       );
     } catch {
       addAssistantReply("Something went wrong. Please try again.");
@@ -81,11 +146,67 @@ export default function AiPage() {
     }
   }
 
-  function addAssistantReply(content: string) {
+  function addAssistantReply(
+    content: string,
+    places?: PlaceCard[],
+    pendingPlan?: PendingPlan,
+  ) {
     setMessages((current) => [
       ...current,
-      { id: crypto.randomUUID(), role: "assistant", content },
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content,
+        places,
+        pendingPlan,
+        planStatus: pendingPlan ? "pending" : undefined,
+      },
     ]);
+  }
+
+  // "Yes, save" — persist just the plan summary to the DB, then confirm.
+  async function savePlan(messageId: string, plan: PendingPlan) {
+    setMessages((current) =>
+      current.map((m) =>
+        m.id === messageId ? { ...m, planStatus: "saved" } : m,
+      ),
+    );
+    try {
+      const response = await fetch("/api/trips", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(plan),
+      });
+      const data = await response.json();
+      if (data.saved) {
+        addAssistantReply("Saved this to your trips ✨");
+      } else {
+        // Roll back the buttons so they can try again.
+        setMessages((current) =>
+          current.map((m) =>
+            m.id === messageId ? { ...m, planStatus: "pending" } : m,
+          ),
+        );
+        addAssistantReply("Sorry, I couldn't save your plan. Please try again.");
+      }
+    } catch {
+      setMessages((current) =>
+        current.map((m) =>
+          m.id === messageId ? { ...m, planStatus: "pending" } : m,
+        ),
+      );
+      addAssistantReply("Something went wrong saving your plan. Please try again.");
+    }
+  }
+
+  // "No, add more" — dismiss the buttons and keep building the plan.
+  function addMoreToPlan(messageId: string) {
+    setMessages((current) =>
+      current.map((m) =>
+        m.id === messageId ? { ...m, planStatus: "dismissed" } : m,
+      ),
+    );
+    sendMessage("I'd like to add another stop to my plan.");
   }
 
   function handleSubmit(event: React.FormEvent) {
@@ -99,7 +220,13 @@ export default function AiPage() {
 
       <div className="flex-1 space-y-3 overflow-y-auto py-4">
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
+          <MessageBubble
+            key={message.id}
+            message={message}
+            onSavePlan={savePlan}
+            onAddMore={addMoreToPlan}
+            disabled={isLoading}
+          />
         ))}
         {isLoading ? <TypingBubble /> : null}
         <div ref={scrollAnchor} />
@@ -133,10 +260,20 @@ function ChatHeader() {
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({
+  message,
+  onSavePlan,
+  onAddMore,
+  disabled,
+}: {
+  message: Message;
+  onSavePlan: (messageId: string, plan: PendingPlan) => void;
+  onAddMore: (messageId: string) => void;
+  disabled: boolean;
+}) {
   const isUser = message.role === "user";
   return (
-    <div className={isUser ? "flex justify-end" : "flex justify-start"}>
+    <div className={isUser ? "flex flex-col items-end" : "flex flex-col items-start"}>
       <p
         className={[
           "max-w-[80%] whitespace-pre-wrap rounded-3xl px-4 py-3 text-sm",
@@ -145,6 +282,73 @@ function MessageBubble({ message }: { message: Message }) {
       >
         {message.content}
       </p>
+
+      {message.places?.length ? (
+        <div className="mt-2 flex w-full max-w-[90%] gap-3 overflow-x-auto pb-1">
+          {message.places.map((place) => (
+            <PlaceCardView key={place.name} place={place} />
+          ))}
+        </div>
+      ) : null}
+
+      {message.pendingPlan && message.planStatus === "pending" ? (
+        <div className="mt-2 flex gap-2">
+          <button
+            onClick={() => onSavePlan(message.id, message.pendingPlan!)}
+            disabled={disabled}
+            className="rounded-full bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50"
+          >
+            Yes, save
+          </button>
+          <button
+            onClick={() => onAddMore(message.id)}
+            disabled={disabled}
+            className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-ink-muted shadow-sm hover:text-ink disabled:opacity-50"
+          >
+            No, add more
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// A compact photo card for a place Nova recommends.
+function PlaceCardView({ place }: { place: PlaceCard }) {
+  return (
+    <div className="w-44 shrink-0 overflow-hidden rounded-2xl bg-white shadow-sm">
+      <div className="h-24 bg-sand-200">
+        {place.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={place.imageUrl}
+            alt={place.name}
+            className="h-full w-full object-cover"
+          />
+        ) : null}
+      </div>
+      <div className="p-3">
+        <p className="text-sm font-bold leading-tight text-ink">{place.name}</p>
+        <div className="mt-1 flex items-center gap-3 text-[11px] font-semibold text-ink-muted">
+          {place.rating ? (
+            <span className="flex items-center gap-1">
+              <StarIcon size={11} className="text-safety-armed" />
+              {place.rating}
+            </span>
+          ) : null}
+          {place.walkMinutes ? (
+            <span className="flex items-center gap-1">
+              <WalkIcon size={12} />
+              {place.walkMinutes} min
+            </span>
+          ) : null}
+        </div>
+        {place.description ? (
+          <p className="mt-1 line-clamp-2 text-xs text-ink-muted">
+            {place.description}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

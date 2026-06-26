@@ -17,6 +17,9 @@ export interface NearbyPlace {
   rating?: number;
   address?: string;
   openNow?: boolean;
+  walkMinutes?: number;
+  imageUrl?: string;
+  description?: string;
 }
 
 // Rich card shape for the Explore browse UI (matches the ExploreSpot type the
@@ -42,6 +45,9 @@ interface PlacesTextResult {
   formattedAddress?: string;
   location?: { latitude?: number; longitude?: number };
   currentOpeningHours?: { openNow?: boolean };
+  location?: { latitude: number; longitude: number };
+  photos?: { name: string }[];
+  editorialSummary?: { text?: string };
 }
 
 // Real places near a point, closest first, via the Places API (New) Text Search.
@@ -68,7 +74,7 @@ export async function findNearbyPlaces(
             "Content-Type": "application/json",
             "X-Goog-Api-Key": GOOGLE_KEY,
             "X-Goog-FieldMask":
-              "places.id,places.displayName,places.rating,places.formattedAddress,places.location,places.currentOpeningHours.openNow",
+              "places.displayName,places.rating,places.formattedAddress,places.currentOpeningHours.openNow,places.location,places.photos,places.editorialSummary",
           },
           body: JSON.stringify({
             textQuery: type ? `${keyword} ${type}` : keyword,
@@ -87,18 +93,27 @@ export async function findNearbyPlaces(
 
       const data = await response.json();
       const places: PlacesTextResult[] = data.places ?? [];
-      return places
-        .filter((p) => p.location?.latitude != null && p.location?.longitude != null)
-        .slice(0, 5)
-        .map((place) => ({
-          id: place.id ?? `${place.location!.latitude},${place.location!.longitude}`,
+      return places.slice(0, 5).map((place) => {
+        const distKm = place.location
+          ? haversineKm(latitude, longitude, place.location.latitude, place.location.longitude)
+          : undefined;
+        // ~83 m/min is an average walking pace.
+        const walkMinutes =
+          distKm !== undefined ? Math.max(1, Math.round((distKm * 1000) / 83)) : undefined;
+        const photoName = place.photos?.[0]?.name;
+        const imageUrl = photoName
+          ? `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&key=${GOOGLE_KEY}`
+          : undefined;
+        return {
           name: place.displayName?.text ?? "Unknown",
-          latitude: place.location!.latitude!,
-          longitude: place.location!.longitude!,
           rating: place.rating,
           address: place.formattedAddress,
           openNow: place.currentOpeningHours?.openNow,
-        }));
+          walkMinutes,
+          imageUrl,
+          description: place.editorialSummary?.text,
+        };
+      });
     });
   } catch {
     return [];
