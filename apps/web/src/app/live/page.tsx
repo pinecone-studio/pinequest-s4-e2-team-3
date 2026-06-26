@@ -230,7 +230,7 @@ function RoutePicker({
           <button
             key={route.id}
             onClick={() => start(route)}
-            className="w-full rounded-3xl bg-white p-5 text-left shadow-sm backdrop-blur transition-colors hover:bg-sand-50 dark:bg-white/[0.07] dark:shadow-none dark:hover:bg-white/[0.12]"
+            className="w-full rounded-3xl bg-white p-5 text-left shadow-ink-sm backdrop-blur transition-colors hover:bg-sand-50 dark:bg-white/[0.07] dark:shadow-none dark:hover:bg-white/[0.12]"
           >
             <p className="text-[11px] font-bold uppercase tracking-wide text-primary-600 dark:text-primary-500">
               {route.region} · {route.stops.length} stops

@@ -14,7 +14,7 @@ export default function AppLayout({
   return (
     <div className="min-h-screen overflow-x-hidden bg-sand lg:pl-64">
       <AppNav />
-      <main className="mx-auto w-full max-w-2xl px-5 pb-28 pt-6 lg:pb-12 lg:pt-10">
+      <main id="main-content" className="mx-auto w-full max-w-2xl px-5 pb-28 pt-6 lg:pb-12 lg:pt-10">
         {children}
       </main>
       {modal}

@@ -147,7 +147,7 @@ export default function TranslatePage() {
               Clear
             </button>
           )}
-          <div className="flex items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-bold text-ink shadow-sm">
+          <div className="flex items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-bold text-ink shadow-ink-sm">
             🇲🇳 MN
             <SwapIcon size={14} className="text-ink-muted" />
             🇬🇧 EN
@@ -179,7 +179,7 @@ export default function TranslatePage() {
                 </p>
                 <p className={[
                   "max-w-[80%] rounded-3xl px-4 py-3 text-base font-semibold",
-                  fromLeft ? "rounded-tl-sm bg-white text-ink shadow-sm" : "rounded-tr-sm bg-primary-600 text-white",
+                  fromLeft ? "rounded-tl-sm bg-white text-ink shadow-ink-sm" : "rounded-tr-sm bg-primary-600 text-white",
                 ].join(" ")}>
                   {turn.spokenText}
                 </p>
@@ -192,7 +192,7 @@ export default function TranslatePage() {
                 </p>
                 <p className={[
                   "max-w-[80%] rounded-3xl px-4 py-3 text-base font-semibold",
-                  fromLeft ? "rounded-tr-sm bg-primary-600 text-white" : "rounded-tl-sm bg-white text-ink shadow-sm",
+                  fromLeft ? "rounded-tr-sm bg-primary-600 text-white" : "rounded-tl-sm bg-white text-ink shadow-ink-sm",
                 ].join(" ")}>
                   {turn.translatedText}
                 </p>
@@ -207,10 +207,10 @@ export default function TranslatePage() {
         {loading && (
           <div className="flex flex-col items-start gap-2">
             <p className="text-[11px] font-bold uppercase tracking-wide text-ink-muted">Translating…</p>
-            <div className="flex items-center gap-1.5 rounded-3xl bg-white px-4 py-3 shadow-sm">
-              <span className="h-2 w-2 animate-bounce rounded-full bg-ink-muted [animation-delay:0ms]" />
-              <span className="h-2 w-2 animate-bounce rounded-full bg-ink-muted [animation-delay:150ms]" />
-              <span className="h-2 w-2 animate-bounce rounded-full bg-ink-muted [animation-delay:300ms]" />
+            <div className="flex items-center gap-1.5 rounded-3xl bg-white px-4 py-3 shadow-ink-sm">
+              <span className="h-2 w-2 rounded-full bg-ink-muted" style={{ animation: "typingDot 1.2s ease-out infinite", animationDelay: "0ms" }} />
+              <span className="h-2 w-2 rounded-full bg-ink-muted" style={{ animation: "typingDot 1.2s ease-out infinite", animationDelay: "150ms" }} />
+              <span className="h-2 w-2 rounded-full bg-ink-muted" style={{ animation: "typingDot 1.2s ease-out infinite", animationDelay: "300ms" }} />
             </div>
           </div>
         )}

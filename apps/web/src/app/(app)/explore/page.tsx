@@ -30,7 +30,7 @@ export default async function ExplorePage({
 
 function SearchBar() {
   return (
-    <div className="flex items-center gap-2 rounded-full bg-white px-4 py-3 shadow-sm">
+    <div className="flex items-center gap-2 rounded-full bg-white px-4 py-3 shadow-ink-sm">
       <SearchIcon size={18} className="text-ink-muted" />
       <input
         type="text"

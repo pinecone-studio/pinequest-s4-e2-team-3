@@ -112,7 +112,7 @@ function NearbyCard({ spot }: { spot: NearbyPlace }) {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="w-44 shrink-0 overflow-hidden rounded-3xl bg-white shadow-sm text-left active:scale-[0.98] transition-transform"
+        className="w-44 shrink-0 overflow-hidden rounded-3xl bg-white shadow-ink-sm text-left transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:shadow-ink-md active:translate-y-0 active:shadow-ink-sm"
       >
         <div className="relative h-28">
           {/* eslint-disable-next-line @next/next/no-img-element */}

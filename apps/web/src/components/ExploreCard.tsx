@@ -17,7 +17,7 @@ export function ExploreCard({ spot }: ExploreCardProps) {
     <>
       <article
         onClick={() => setOpen(true)}
-        className="cursor-pointer overflow-hidden rounded-3xl bg-white shadow-sm active:scale-[0.99] transition-transform"
+        className="cursor-pointer overflow-hidden rounded-3xl bg-white shadow-ink-sm transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:shadow-ink-md active:translate-y-0 active:shadow-ink-sm"
       >
         <div className="relative h-44">
           {/* eslint-disable-next-line @next/next/no-img-element */}
