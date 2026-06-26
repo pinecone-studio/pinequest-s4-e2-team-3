@@ -2,10 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --device-h: 100dvh;
-}
-
 /* SOS countdown ring: drains smoothly from full to empty over the countdown.
    With pathLength=1 the offset goes 0 -> 1 regardless of the circle's size, so
    it always empties exactly when the timer ends. */

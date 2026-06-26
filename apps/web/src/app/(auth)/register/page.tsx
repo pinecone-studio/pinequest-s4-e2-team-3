@@ -33,7 +33,7 @@ export default function RegisterPage() {
 
   if (done) {
     return (
-      <main className="flex min-h-[var(--device-h,100dvh)] items-center justify-center px-4 py-12">
+      <main className="flex min-h-[100dvh] items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
           <div className="mb-8 flex justify-center">
             <Link href="/" className="flex items-center gap-2.5">
@@ -60,7 +60,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="flex min-h-[var(--device-h,100dvh)] items-center justify-center px-4 py-12">
+    <main className="flex min-h-[100dvh] items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
         <div className="mb-8 flex justify-center">
           <Link href="/" className="flex items-center gap-2.5">
