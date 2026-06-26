@@ -368,7 +368,7 @@ export function PhoneFrame({
               <iframe
                 src={src}
                 title="App preview"
-                allow="microphone camera"
+                allow="microphone; camera"
                 style={{
                   position: "absolute",
                   top: STATUS_H,
