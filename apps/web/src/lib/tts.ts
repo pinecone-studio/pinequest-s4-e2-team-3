@@ -11,11 +11,20 @@ export interface NaturalSpeakOptions {
   onEnd?: () => void;
 }
 
-// Only one utterance plays at a time — track it so we can stop/replace cleanly.
+// Only one utterance plays at a time. The token guards against overlap: each
+// stopSpeaking() bumps it, so any speak() whose fetch is still in flight when a
+// newer one starts will see a stale token and bail instead of playing on top.
 let currentAudio: HTMLAudioElement | null = null;
 let currentUrl: string | null = null;
+let activeController: AbortController | null = null;
+let speakToken = 0;
 
 export function stopSpeaking(): void {
+  speakToken += 1; // invalidate any in-flight speak()
+  if (activeController) {
+    activeController.abort();
+    activeController = null;
+  }
   if (currentAudio) {
     currentAudio.pause();
     currentAudio.src = "";
@@ -35,17 +44,25 @@ export async function speak(
   opts: NaturalSpeakOptions = {},
 ): Promise<boolean> {
   if (!text) return false;
-  stopSpeaking();
+  stopSpeaking(); // bumps the token + aborts/clears whatever was playing
+  const myToken = speakToken;
+  const controller = new AbortController();
+  activeController = controller;
 
   try {
     const res = await fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, lang: opts.lang ?? "en" }),
+      signal: controller.signal,
     });
+    // A newer speak() (or stopSpeaking) superseded us while fetching — bail.
+    if (myToken !== speakToken) return false;
     if (!res.ok) throw new Error(`tts ${res.status}`);
 
     const blob = await res.blob();
+    if (myToken !== speakToken) return false;
+
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     currentAudio = audio;
@@ -71,8 +88,12 @@ export async function speak(
 
     await audio.play();
     return true;
-  } catch {
-    // Network/route/quota failure → don't go silent, use the browser voice.
+  } catch (err) {
+    // Superseded or deliberately aborted → stay silent (no fallback, no onEnd).
+    if (myToken !== speakToken) return false;
+    if (err instanceof DOMException && err.name === "AbortError") return false;
+
+    // Genuine network/route/quota failure → don't go silent, use browser voice.
     browserSpeak(text, {
       lang: opts.lang === "mn" ? "mn-MN" : "en-US",
       onStart: opts.onStart,
