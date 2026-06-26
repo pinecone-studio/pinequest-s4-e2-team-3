@@ -11,7 +11,7 @@ import { weatherTip } from "@/lib/weather";
 import type { Coords, PlaceOption, RouteStop } from "@/types";
 
 // A short situational prefix so the grounded /api/chat guide knows where the
-// traveller currently is. The route itself supplies the full Nova persona and
+// traveller currently is. The route itself supplies the full Michelle persona and
 // the live place-grounding, so we only add "where I am" here.
 function buildContext(current: RouteStop | null, next: RouteStop | null): string {
   if (!current) return "";
@@ -69,7 +69,7 @@ export function useLiveGuide() {
   const [listening, setListening] = useState(false);
   const [thinking, setThinking] = useState(false);
   // True while the TTS audio is being generated/fetched, before playback starts
-  // — "Nova is preparing to speak". Drives the loading indicator.
+  // — "Michelle is preparing to speak". Drives the loading indicator.
   const [audioLoading, setAudioLoading] = useState(false);
   const [lastAnswer, setLastAnswer] = useState<string | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
@@ -91,7 +91,7 @@ export function useLiveGuide() {
     return haversineMeters(effectiveCoords, currentStop);
   }, [effectiveCoords, currentStop]);
 
-  // Live weather for the current stop → a short condition-based tip Nova adds to
+  // Live weather for the current stop → a short condition-based tip Michelle adds to
   // the narration. Held in a ref so sayNarration always reads the latest tip
   // without re-running the arrival effect.
   const weather = useWeather(currentStop);
@@ -190,7 +190,7 @@ export function useLiveGuide() {
         if (!res.ok) throw new Error(`chat ${res.status}`);
         const data = (await res.json()) as { reply?: string; places?: PlaceOption[] };
         reply = data.reply?.trim() || fallbackAnswer(currentStop);
-        // Surface any places Nova found as selectable buttons/markers.
+        // Surface any places Michelle found as selectable buttons/markers.
         setSuggestions(data.places ?? []);
       } catch {
         reply = fallbackAnswer(currentStop);
@@ -223,7 +223,7 @@ export function useLiveGuide() {
       listenerRef.current?.stop();
       return;
     }
-    // Don't let the user talk over Nova — it causes overlap/lag. They must pause
+    // Don't let the user talk over Michelle — it causes overlap/lag. They must pause
     // her first (the mic button is also disabled while she's busy).
     if (isSpeaking || audioLoading || thinking) return;
     setVoiceError(null);

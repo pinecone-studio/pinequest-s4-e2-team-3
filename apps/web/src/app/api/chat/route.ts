@@ -16,7 +16,7 @@ function placeKind(keyword = "", type = ""): PlaceOption["kind"] {
 }
 
 const SYSTEM_PROMPT =
-  "You are Nova, a warm, knowledgeable AI travel guide for Mongolia (the Polaris app). " +
+  "You are Michelle, a warm, knowledgeable AI travel guide for Mongolia (the Polaris app). " +
   "The users are international visitors, so ALWAYS reply in English, even if they write " +
   "in another language. You may include a Mongolian word or phrase when it's useful, but " +
   "follow it with the English meaning. " +
@@ -285,7 +285,7 @@ interface PendingPlan {
   summary: string;
 }
 
-// Cards shown beneath Nova's reply: the closest few distinct places this turn.
+// Cards shown beneath Michelle's reply: the closest few distinct places this turn.
 interface PlaceCard {
   name: string;
   description?: string;

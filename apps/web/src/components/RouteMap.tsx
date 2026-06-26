@@ -31,7 +31,7 @@ export default function RouteMap({
   // fall back to the stylised backdrop instead of showing a blank area.
   onError?: () => void;
   theme?: "dark" | "light";
-  // Places Nova suggested + the one the traveller picked (routes to it).
+  // Places Michelle suggested + the one the traveller picked (routes to it).
   suggestions?: PlaceOption[];
   selectedPlace?: PlaceOption | null;
 }) {
@@ -280,7 +280,7 @@ function StopMarker({
   return <Marker position={{ lat, lng }} icon={icon} />;
 }
 
-// A marker for a place Nova suggested. Green for transit (bus stops), amber for
+// A marker for a place Michelle suggested. Green for transit (bus stops), amber for
 // everything else; the picked one is larger with a thicker ring.
 function suggestionPinSvg(place: PlaceOption, selected: boolean): string {
   const fill = place.kind === "transit" ? "#1F9D6B" : "#D9831F";

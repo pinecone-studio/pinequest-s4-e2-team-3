@@ -26,7 +26,7 @@ const PHOTO = {
 };
 
 export const guide = {
-  name: "Nova",
+  name: "Michelle",
   status: "Your local guide",
 };
 

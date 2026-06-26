@@ -62,12 +62,14 @@ export default function TranslatePage() {
   const [activeLang, setActiveLang] = useState<"mn" | "en" | null>(null);
   const [loading,    setLoading]    = useState(false);
   const [turns,      setTurns]      = useState<Turn[]>([]);
+  const [micError,   setMicError]   = useState<string | null>(null);
 
   useEffect(() => { setTurns(loadTurns()); }, []);
   useEffect(() => { if (turns.length > 0) saveTurns(turns); }, [turns]);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [turns, loading]);
 
   const handleMicPress = async (lang: "mn" | "en") => {
+    setMicError(null);
     if (activeLang === lang) {
       stopRecording();
     } else {
@@ -78,12 +80,28 @@ export default function TranslatePage() {
   };
 
   const startRecording = async () => {
-    const stream   = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const recorder = new MediaRecorder(stream);
-    chunksRef.current = [];
-    recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
-    recorder.start();
-    recorderRef.current = recorder;
+    // Retry up to 2 times — first tap may race with the browser permission popup
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        setMicError(null);
+        const recorder = new MediaRecorder(stream);
+        chunksRef.current = [];
+        recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+        recorder.start();
+        recorderRef.current = recorder;
+        return;
+      } catch (err) {
+        if (attempt === 0) {
+          // Short pause then retry — permission may have just been granted
+          await new Promise((r) => setTimeout(r, 300));
+        } else {
+          console.error("getUserMedia:", err);
+          setActiveLang(null);
+          setMicError("Could not access microphone. Please reload the page and allow microphone access when prompted.");
+        }
+      }
+    }
   };
 
   const stopRecording = () => {
@@ -163,6 +181,17 @@ export default function TranslatePage() {
           </div>
         </div>
       </header>
+
+      {/* Mic error */}
+      {micError && (
+        <div className="flex items-start justify-between gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{micError}</span>
+          <div className="flex shrink-0 gap-2">
+            <button onClick={() => window.location.reload()} className="font-semibold underline">Reload</button>
+            <button onClick={() => setMicError(null)} className="font-semibold">✕</button>
+          </div>
+        </div>
+      )}
 
       {/* Conversation */}
       <div className="flex-1 space-y-6 overflow-y-auto py-2">

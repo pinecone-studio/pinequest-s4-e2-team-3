@@ -124,7 +124,7 @@ export interface Coords {
   longitude: number;
 }
 
-// A place Nova suggests mid-journey (food spot, bus station, …). Returned by
+// A place Michelle suggests mid-journey (food spot, bus station, …). Returned by
 // /api/chat alongside the text reply so the Live Guide can show it as a
 // selectable button and a marker, then route to it on the map.
 export interface PlaceOption {
@@ -153,7 +153,7 @@ export interface RouteStop {
   longitude: number;
   // Distance (metres) within which we treat the traveller as "arrived".
   arrivalRadius: number;
-  // What Nova says aloud the moment you arrive (pre-written = works offline).
+  // What Michelle says aloud the moment you arrive (pre-written = works offline).
   narration: string;
   // Why this place matters / cultural context (shown under the narration).
   context?: string;

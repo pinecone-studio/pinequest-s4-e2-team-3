@@ -107,7 +107,7 @@ export default function JourneyPage() {
         {savedPlans.length > 0 && (
           <section className="space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">Plans from Nova</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">Plans from Michelle</p>
               <button
                 onClick={() => {
                   localStorage.removeItem("polaris:saved-plans");
@@ -141,14 +141,14 @@ export default function JourneyPage() {
             </div>
             <div>
               <p className="font-semibold text-ink">Nothing planned yet</p>
-              <p className="mt-1 text-sm text-ink-muted">Ask Nova to build your day, stop by stop.</p>
+              <p className="mt-1 text-sm text-ink-muted">Ask Michelle to build your day, stop by stop.</p>
             </div>
             <Link
               href="/ai"
               className="flex items-center gap-2 rounded-full bg-primary-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-primary-700"
             >
               <SparklesIcon size={14} />
-              Plan with Nova
+              Plan with Michelle
             </Link>
           </div>
         ) : (

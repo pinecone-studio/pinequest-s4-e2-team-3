@@ -31,7 +31,7 @@ export function weatherEmoji(code: number): string {
   return "☀️";
 }
 
-// A short, spoken-friendly line Nova adds on arrival, adapted to the live
+// A short, spoken-friendly line Michelle adds on arrival, adapted to the live
 // conditions and whether this stop is mostly outdoors. Kept deterministic (no
 // network/AI) so it's instant and works offline.
 export function weatherTip(

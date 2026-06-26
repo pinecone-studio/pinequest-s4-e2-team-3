@@ -10,7 +10,7 @@ interface LiveState {
   // When set, this overrides the real GPS (the on-stage "simulate" control).
   simulatedCoords: Coords | null;
 
-  // Places Nova suggested in the last answer (food spots, bus stations…) and the
+  // Places Michelle suggested in the last answer (food spots, bus stations…) and the
   // one the traveller picked — drives the selectable buttons + map markers and
   // the ad-hoc route to it.
   suggestions: PlaceOption[];

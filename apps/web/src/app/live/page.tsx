@@ -298,14 +298,14 @@ function LiveExperience({
   } = guide;
 
   // Narration shown on the card: the stop's text plus the live weather tip
-  // (Nova speaks the same combination on arrival). An AI answer replaces it.
+  // (Michelle speaks the same combination on arrival). An AI answer replaces it.
   const narrationText =
     lastAnswer ??
     [currentStop?.narration, weatherTip].filter(Boolean).join(" ");
 
   const arrived = currentStop ? arrivedStopIds.includes(currentStop.id) : false;
 
-  // Secondary panels (Local tips + demo controls) are hidden by default so Nova
+  // Secondary panels (Local tips + demo controls) are hidden by default so Michelle
   // stays the focus; one button reveals them.
   const [showExtras, setShowExtras] = useState(false);
 
@@ -349,7 +349,7 @@ function LiveExperience({
   const simActiveRef = useRef(false); // survives the async path load / re-renders
   const [simulating, setSimulating] = useState(false);
 
-  // Pause the walk while Nova is talking/preparing, so she finishes narrating a
+  // Pause the walk while Michelle is talking/preparing, so she finishes narrating a
   // stop before the marker moves on (otherwise it outruns the voice → overlap).
   const busyRef = useRef(false);
   busyRef.current = isSpeaking || audioLoading || thinking;
@@ -407,7 +407,7 @@ function LiveExperience({
     let i = 0;
     setSimulated(pts[0]);
     simTimerRef.current = setInterval(() => {
-      // Hold position while Nova is speaking / preparing a narration.
+      // Hold position while Michelle is speaking / preparing a narration.
       if (busyRef.current) return;
       i += 1;
       if (i >= pts.length) {
@@ -675,7 +675,7 @@ function PresenterStrip({
   );
 }
 
-// Places Nova suggested (food spots, bus stations…) as selectable chips. Picking
+// Places Michelle suggested (food spots, bus stations…) as selectable chips. Picking
 // one routes the map to it; a second tap clears the selection. When something is
 // selected, a Google Maps hand-off appears (transit directions for a bus stop).
 function SuggestionList({
@@ -782,7 +782,7 @@ function NarrationCard({
   useEffect(() => setExpanded(false), [text]);
 
   const loading = thinking || audioLoading; // working, no audio yet
-  // Nova is "busy" whenever she's thinking, preparing, or speaking — the user
+  // Michelle is "busy" whenever she's thinking, preparing, or speaking — the user
   // must pause her before they can talk (otherwise the voices overlap and lag).
   const busy = loading || speaking;
 
@@ -809,7 +809,7 @@ function NarrationCard({
       <div className="flex items-center gap-3">
         <span className="h-9 w-9 rounded-full bg-gradient-to-br from-primary-500 to-primary-700" />
         <div>
-          <p className="font-bold">Nova</p>
+          <p className="font-bold">Michelle</p>
           {voiceError ? (
             <p className="text-xs font-semibold text-safety-critical">{voiceError}</p>
           ) : (
@@ -820,7 +820,7 @@ function NarrationCard({
           <span
             className="ml-auto h-5 w-5 animate-spin rounded-full border-2 border-primary-500/30 border-t-primary-500"
             role="status"
-            aria-label="Nova is preparing"
+            aria-label="Michelle is preparing"
           />
         ) : (
           <BarsIcon
@@ -875,7 +875,7 @@ function NarrationCard({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()}
-            placeholder="Ask Nova…"
+            placeholder="Ask Michelle…"
             className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted dark:placeholder:text-white/40"
           />
           <button
@@ -891,8 +891,8 @@ function NarrationCard({
           <button
             onClick={onMic}
             disabled={busy}
-            aria-label={busy ? "Pause Nova to talk" : "Talk to Nova"}
-            title={busy ? "Pause Nova to talk" : "Talk to Nova"}
+            aria-label={busy ? "Pause Michelle to talk" : "Talk to Michelle"}
+            title={busy ? "Pause Michelle to talk" : "Talk to Michelle"}
             className={[
               "flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition-colors",
               busy
@@ -912,7 +912,7 @@ function NarrationCard({
 
 // Collapsible "Local tips" panel: the product content for the current stop —
 // transport, "ask a local" phrases, Google Maps hand-off, and the offline pack.
-// Collapsed by default so Nova's narration stays the hero.
+// Collapsed by default so Michelle's narration stays the hero.
 function LocalTips({
   stop,
   mapsUrl,
