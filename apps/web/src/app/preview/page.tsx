@@ -13,7 +13,7 @@ export default function PreviewPage() {
       }}
     >
       <PhoneFrame
-        src="/explore"
+        src="/register"
         scale={0.92}
         statusBarTheme="light"
         screenBg="#F3EEE6"

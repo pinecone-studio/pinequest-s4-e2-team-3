@@ -114,6 +114,17 @@ export default function RegisterPage() {
               {submitting ? "Creating…" : "Create account"}
             </button>
           </form>
+
+          {/* Presentation shortcut: skip sign-up and jump straight into the
+              project demo. Used when walking through the product live. */}
+          <div className="mt-6 border-t border-sand-200 pt-6">
+            <Link
+              href="/"
+              className="block w-full rounded-xl border border-primary-600 py-3 text-center font-semibold text-primary-600 transition-colors hover:bg-primary-50 active:scale-[0.97]"
+            >
+              Enter demo →
+            </Link>
+          </div>
         </div>
 
         <p className="mt-6 text-center text-sm text-ink-muted">
