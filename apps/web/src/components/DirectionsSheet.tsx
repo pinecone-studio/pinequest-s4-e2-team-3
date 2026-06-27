@@ -53,7 +53,7 @@ const GM_MODE: Record<TravelMode, string> = {
   transit: "transit",
 };
 
-interface Props { spot: ExploreSpot; onClose: () => void }
+interface Props { spot: ExploreSpot; onClose: () => void; origin?: LatLng }
 
 export function DirectionsSheet({ spot, onClose, origin: originProp }: Props) {
   const [geoOrigin, setGeoOrigin] = useState<LatLng | null>(null);

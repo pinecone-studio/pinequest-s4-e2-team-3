@@ -3,7 +3,6 @@ import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
-<<<<<<< Updated upstream
 import { findNearbyPlaces } from "@/lib/places";
 import type { PlaceOption } from "@/types";
 
@@ -14,9 +13,6 @@ function placeKind(keyword = "", type = ""): PlaceOption["kind"] {
     return "food";
   return "place";
 }
-=======
-import { findNearbyPlaces, type NearbyPlace } from "@/lib/places";
->>>>>>> Stashed changes
 
 const SYSTEM_PROMPT =
   "You are Michelle, a warm, knowledgeable AI travel guide for Mongolia (the Polaris app). " +
@@ -248,145 +244,3 @@ export async function POST(req: Request) {
     return Response.json({ error: "Failed to get a reply" }, { status: 500 });
   }
 }
-<<<<<<< Updated upstream
-=======
-
-// Runs the model and resolves any tool calls it makes, looping a few rounds so it
-// can look up places and/or finalise a plan before writing its reply. Returns the
-// final text PLUS the structured place cards it found and any plan awaiting the
-// traveller's Save / Add more decision.
-async function runConversation(
-  openai: OpenAI,
-  conversation: ChatCompletionMessageParam[],
-  location?: { lat: number; lng: number },
-): Promise<{ reply: string; places: PlaceCard[]; pendingPlan?: PendingPlan }> {
-  const collected: NearbyPlace[] = [];
-  let pendingPlan: PendingPlan | undefined;
-
-  // A handful of rounds is plenty: the model looks things up, we feed the
-  // results back, and it writes the reply.
-  const MAX_ROUNDS = 4;
-  for (let round = 0; round < MAX_ROUNDS; round++) {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: conversation,
-      tools: TOOLS,
-    });
-    const message = completion.choices[0]?.message;
-    if (!message) break;
-
-    // No more lookups needed — this is the answer.
-    if (!message.tool_calls?.length) {
-      return { reply: message.content ?? "", places: toCards(collected), pendingPlan };
-    }
-
-    conversation.push(message);
-    for (const call of message.tool_calls) {
-      if (call.type !== "function") continue;
-      const args = safeParse(call.function.arguments);
-
-      let result: unknown;
-      if (call.function.name === "finalize_trip_plan") {
-        // Don't save here — hand the plan to the UI so the traveller can confirm.
-        if (args.title && args.summary) {
-          pendingPlan = { title: args.title, summary: args.summary };
-        }
-        result = { presented: Boolean(pendingPlan) };
-      } else {
-        const places = location
-          ? await findNearbyPlaces(location.lat, location.lng, args.keyword ?? "place", args.type)
-          : [];
-        collected.push(...places);
-        console.log(
-          `[chat] location=${location ? "yes" : "NONE"} keyword="${args.keyword}" → ` +
-            `${places.length} places, ${places.filter((p) => p.imageUrl).length} with photos`,
-        );
-        // The model only needs names/ratings/walk time to choose and write text.
-        result = {
-          locationKnown: Boolean(location),
-          places: places.map((p) => ({
-            name: p.name,
-            rating: p.rating,
-            walkMinutes: p.walkMinutes,
-            openNow: p.openNow,
-          })),
-        };
-      }
-
-      conversation.push({
-        role: "tool",
-        tool_call_id: call.id,
-        content: JSON.stringify(result),
-      });
-    }
-  }
-
-  // Hit the round cap — make one final pass without tools to force a text reply.
-  const final = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: conversation,
-  });
-  return {
-    reply: final.choices[0]?.message.content ?? "",
-    places: toCards(collected),
-    pendingPlan,
-  };
-}
-
-// A finished plan awaiting the traveller's Save / Add more decision in the UI.
-interface PendingPlan {
-  title: string;
-  summary: string;
-}
-
-// Cards shown beneath Michelle's reply: the closest few distinct places this turn,
-// with their rating, review count and a snippet from the top review.
-interface PlaceCard {
-  name: string;
-  description?: string;
-  imageUrl?: string;
-  rating?: number;
-  walkMinutes?: number;
-  address?: string;
-  reviewCount?: number;
-  reviews?: { text: string; author?: string; rating?: number }[];
-}
-
-function toCards(places: NearbyPlace[]): PlaceCard[] {
-  const seen = new Set<string>();
-  return places
-    .filter((p) => {
-      const key = p.name.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .sort((a, b) => (a.walkMinutes ?? 999) - (b.walkMinutes ?? 999))
-    .slice(0, 3)
-    .map((p) => ({
-      name: p.name,
-      description: p.description,
-      imageUrl: p.imageUrl,
-      rating: p.rating,
-      walkMinutes: p.walkMinutes,
-      address: p.address,
-      reviewCount: p.reviewCount,
-      reviews: p.reviews,
-    }));
-}
-
-interface ToolArgs {
-  keyword?: string;
-  type?: string;
-  title?: string;
-  summary?: string;
-}
-
-function safeParse(json: string): ToolArgs {
-  try {
-    return JSON.parse(json);
-  } catch {
-    return {};
-  }
-}
->>>>>>> Stashed changes

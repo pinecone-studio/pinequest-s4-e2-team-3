@@ -43,6 +43,7 @@ export interface BrowsePlace {
 interface PlacesTextResult {
   id?: string;
   displayName?: { text?: string };
+  location?: { latitude?: number; longitude?: number };
   rating?: number;
   formattedAddress?: string;
   currentOpeningHours?: { openNow?: boolean };
