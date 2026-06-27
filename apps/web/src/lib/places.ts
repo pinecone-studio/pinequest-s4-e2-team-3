@@ -43,10 +43,10 @@ export interface BrowsePlace {
 interface PlacesTextResult {
   id?: string;
   displayName?: { text?: string };
-  location?: { latitude?: number; longitude?: number };
   rating?: number;
   formattedAddress?: string;
   currentOpeningHours?: { openNow?: boolean };
+  location?: { latitude?: number; longitude?: number };
   photos?: { name: string }[];
   editorialSummary?: { text?: string };
   userRatingCount?: number;
@@ -124,8 +124,8 @@ export async function findNearbyPlaces(
         return {
           id: place.id ?? crypto.randomUUID(),
           name: place.displayName?.text ?? "Unknown",
-          latitude: place.location?.latitude ?? latitude,
-          longitude: place.location?.longitude ?? longitude,
+          latitude: lat ?? latitude,
+          longitude: lng ?? longitude,
           rating: place.rating,
           address: place.formattedAddress,
           openNow: place.currentOpeningHours?.openNow,

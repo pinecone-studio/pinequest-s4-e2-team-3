@@ -3,16 +3,7 @@ import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
-import { findNearbyPlaces } from "@/lib/places";
-import type { PlaceOption } from "@/types";
-
-function placeKind(keyword = "", type = ""): PlaceOption["kind"] {
-  const q = `${keyword} ${type}`.toLowerCase();
-  if (/bus|station|transit|stop/.test(q)) return "transit";
-  if (/food|restaurant|cafe|coffee|eat|hungry|guanz|buuz|lunch|dinner|bakery/.test(q))
-    return "food";
-  return "place";
-}
+import { findNearbyPlaces, type NearbyPlace } from "@/lib/places";
 
 const SYSTEM_PROMPT =
   "You are Michelle, a warm, knowledgeable AI travel guide for Mongolia (the Polaris app). " +
@@ -69,16 +60,54 @@ const SYSTEM_PROMPT =
   "things like 'planning a trip', 'before I arrive', 'next month', 'thinking of visiting'). For " +
   "them, work ENTIRELY from your own knowledge of Mongolia — do NOT call find_nearby_places and " +
   "do NOT ask them to turn on location (their GPS is in their home country, not Mongolia, so it " +
-  "is useless here). First ask how many days they have, which season/month, and what they're " +
-  "after (city culture, countryside, desert, lakes, nomadic life). " +
-  "BUILD THE ITINERARY ONE DAY AT A TIME — never dump the whole multi-day plan in one message. " +
-  "Propose only Day 1 (real cities/regions like Ulaanbaatar, Kharkhorin, Gorkhi-Terelj, the Gobi, " +
-  "Lake Khövsgöl…, with what to do and rough travel times), then ask if it looks good or they'd " +
-  "like to adjust before you move on. Once they're happy with a day, recap the days settled so " +
-  "far as a short numbered list and propose the NEXT day the same way, so the trip unfolds day by " +
-  "day through the conversation. Keep each turn short and warm, and weave in practical tips (when " +
-  "to come, how to get around, what to pack) as they become relevant. Only switch to the nearby, " +
-  "walk-beside-them flow once they are actually in Mongolia with live location.";
+  "is useless here). " +
+  "TALK LIKE A REAL LOCAL GUIDE SITTING ACROSS FROM THEM — warm, curious and genuinely interested " +
+  "in THIS particular person, never a brochure or a checklist. Before you plan anything, GET TO " +
+  "KNOW THEM through a natural back-and-forth: ask only one or two questions at a time (never a " +
+  "long questionnaire), listen to the answer, then ask the next thing. " +
+  "ALWAYS ask EARLY — as one of your very first questions — whether they want to explore the city, " +
+  "Ulaanbaatar, and its culture, OR get out into the countryside and see nature. This single choice " +
+  "shapes the entire trip, so never skip it; phrase it warmly, e.g. 'Are you drawn more to " +
+  "Ulaanbaatar's city life and culture, or to getting out into the countryside and nature?' " +
+  "ALSO ask EARLY which month they're coming (if they haven't said), because Mongolia's seasons " +
+  "change everything. Once you know the month, tailor your suggestions to that season and gently " +
+  "steer them toward what's genuinely good then: summer (Jun–Aug) is best for the countryside, " +
+  "Gobi, lakes, Naadam and the green steppe; autumn (Sep–Oct) is golden, calm and great for " +
+  "photography; winter (Nov–Feb) is bitterly cold so favour Ulaanbaatar's indoor culture, the " +
+  "Ice Festival and short countryside trips, and warn that remote routes get hard; spring " +
+  "(Mar–May) is windy and unpredictable. If they pick something poorly suited to their month, " +
+  "kindly say so and offer a better-fitting alternative for that time of year. " +
+  "Then keep uncovering the rest over the next turns: what pace do they enjoy — relaxed and slow, " +
+  "or see-as-much-as-possible? what would make this trip feel special to THEM (history, nomadic " +
+  "life, landscapes, food, adventure, photography)? are they travelling solo, as a couple, with " +
+  "family or friends? any must-sees or places they've already saved? Keep the conversation going " +
+  "until you truly understand what they'd love. " +
+  "EVEN IF they give lots of detail up front (days, month, saved places), do NOT jump straight to a " +
+  "full itinerary — first reflect it back warmly and ask one or two follow-ups to make it personal. " +
+  "BUILD THE ITINERARY ONE DAY AT A TIME — NEVER dump the whole multi-day plan in a single message. " +
+  "Propose only the next single day, choosing from the FULL range of real Mongolian destinations " +
+  "(Ulaanbaatar, Gorkhi-Terelj, Tsonjin Boldog, Khustai, Kharkhorin & Erdene Zuu, the Gobi & " +
+  "Khongoryn Els, Lake Khövsgöl, Orkhon Valley & Tövkhön, Amarbayasgalant, Tsenkher hot springs, " +
+  "Bayanzag, Naiman Nuur, the Altai…). These are only examples — pick whatever genuinely fits THIS " +
+  "traveller's interests, season and chosen region, and DO NOT default to the same place for " +
+  "everyone (in particular, do NOT reach for Gorkhi-Terelj by habit — only suggest it when it " +
+  "actually fits). KEEP EACH DAY RELAXED AND UNHURRIED — at " +
+  "most 2-3 highlights, with realistic travel times and real breathing room to actually enjoy each " +
+  "place instead of racing through it. Tie every suggestion back to what they told you they care " +
+  "about. " +
+  "RESPECT GEOGRAPHY — Mongolia is huge and the regions are far apart, so NEVER bounce between " +
+  "distant areas on back-to-back days (e.g. the Gobi on Day 1 then Arkhangai on Day 2 is wrong — " +
+  "that's a punishing full day of driving each way). Instead, settle in ONE region at a time and " +
+  "give it the days it deserves: spend the day actually IN the Gobi enjoying whatever they like, " +
+  "and tell them the real things to see there (Khongoryn Els dunes, Yolyn Am, the Flaming Cliffs " +
+  "of Bayanzag…), letting them pick. Only move to a new region when it's geographically sensible " +
+  "and there's time, and group nearby places together. When days are short, suggest fewer regions " +
+  "done well rather than a rushed loop. " +
+  "Then ask if that day feels right or they'd like to tweak it before you move on. Once they " +
+  "are happy with a day, recap the days settled so far as a short numbered list and propose the " +
+  "NEXT day the same way, so the trip unfolds together through the conversation. Weave in practical " +
+  "tips (weather for their month, how to get around, what to pack) as they naturally come up. Only " +
+  "switch to the nearby, walk-beside-them flow once they are actually in Mongolia with live location.";
 
 const TOOLS: ChatCompletionTool[] = [
   {
@@ -145,74 +174,6 @@ interface ChatRequest {
   location?: { lat: number; lng: number };
 }
 
-interface ToolArgs {
-  keyword?: string;
-  type?: string;
-  title?: string;
-  summary?: string;
-}
-
-function safeParse(json: string): ToolArgs {
-  try {
-    return JSON.parse(json);
-  } catch {
-    return {};
-  }
-}
-
-async function runConversation(
-  openai: OpenAI,
-  conversation: ChatCompletionMessageParam[],
-  location?: { lat: number; lng: number },
-): Promise<{ reply: string; places: PlaceOption[]; pendingPlan?: { title: string; summary: string } }> {
-  const collected: PlaceOption[] = [];
-  let pendingPlan: { title: string; summary: string } | undefined;
-
-  for (let round = 0; round < 3; round++) {
-    const resp = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: conversation,
-      tools: round < 2 ? TOOLS : undefined,
-    });
-    const msg = resp.choices[0]?.message;
-    if (!msg) break;
-
-    if (!msg.tool_calls?.length) {
-      return { reply: msg.content ?? "", places: collected, pendingPlan };
-    }
-
-    conversation.push(msg);
-
-    for (const call of msg.tool_calls) {
-      if (call.type !== "function") continue;
-      const args = safeParse(call.function.arguments);
-      let result: unknown;
-
-      if (call.function.name === "finalize_trip_plan") {
-        if (args.title && args.summary) pendingPlan = { title: args.title, summary: args.summary };
-        result = { presented: Boolean(pendingPlan) };
-      } else {
-        const found = location
-          ? await findNearbyPlaces(location.lat, location.lng, args.keyword ?? "place", args.type)
-          : [];
-        const kind = placeKind(args.keyword, args.type);
-        for (const p of found) {
-          collected.push({ id: p.id, name: p.name, latitude: p.latitude, longitude: p.longitude, address: p.address, rating: p.rating, kind });
-        }
-        console.log(`[chat] keyword="${args.keyword}" → ${found.length} places`);
-        result = {
-          locationKnown: Boolean(location),
-          places: found.map((p) => ({ name: p.name, rating: p.rating, walkMinutes: p.walkMinutes, openNow: p.openNow })),
-        };
-      }
-      conversation.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
-    }
-  }
-
-  const final = await openai.chat.completions.create({ model: "gpt-4o", messages: conversation });
-  return { reply: final.choices[0]?.message.content ?? "", places: collected, pendingPlan };
-}
-
 export async function POST(req: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -242,5 +203,144 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("chat route error", error);
     return Response.json({ error: "Failed to get a reply" }, { status: 500 });
+  }
+}
+
+// Runs the model and resolves any tool calls it makes, looping a few rounds so it
+// can look up places and/or finalise a plan before writing its reply. Returns the
+// final text PLUS the structured place cards it found and any plan awaiting the
+// traveller's Save / Add more decision.
+async function runConversation(
+  openai: OpenAI,
+  conversation: ChatCompletionMessageParam[],
+  location?: { lat: number; lng: number },
+): Promise<{ reply: string; places: PlaceCard[]; pendingPlan?: PendingPlan }> {
+  const collected: NearbyPlace[] = [];
+  let pendingPlan: PendingPlan | undefined;
+
+  // A handful of rounds is plenty: the model looks things up, we feed the
+  // results back, and it writes the reply.
+  const MAX_ROUNDS = 4;
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: conversation,
+      tools: TOOLS,
+    });
+    const message = completion.choices[0]?.message;
+    if (!message) break;
+
+    // No more lookups needed — this is the answer.
+    if (!message.tool_calls?.length) {
+      return { reply: message.content ?? "", places: toCards(collected), pendingPlan };
+    }
+
+    conversation.push(message);
+    for (const call of message.tool_calls) {
+      if (call.type !== "function") continue;
+      const args = safeParse(call.function.arguments);
+
+      let result: unknown;
+      if (call.function.name === "finalize_trip_plan") {
+        // Don't save here — hand the plan to the UI so the traveller can confirm.
+        if (args.title && args.summary) {
+          pendingPlan = { title: args.title, summary: args.summary };
+        }
+        result = { presented: Boolean(pendingPlan) };
+      } else {
+        const places = location
+          ? await findNearbyPlaces(location.lat, location.lng, args.keyword ?? "place", args.type)
+          : [];
+        collected.push(...places);
+        console.log(
+          `[chat] location=${location ? "yes" : "NONE"} keyword="${args.keyword}" → ` +
+            `${places.length} places, ${places.filter((p) => p.imageUrl).length} with photos`,
+        );
+        // The model only needs names/ratings/walk time to choose and write text.
+        result = {
+          locationKnown: Boolean(location),
+          places: places.map((p) => ({
+            name: p.name,
+            rating: p.rating,
+            walkMinutes: p.walkMinutes,
+            openNow: p.openNow,
+          })),
+        };
+      }
+
+      conversation.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: JSON.stringify(result),
+      });
+    }
+  }
+
+  // Hit the round cap — make one final pass without tools to force a text reply.
+  const final = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: conversation,
+  });
+  return {
+    reply: final.choices[0]?.message.content ?? "",
+    places: toCards(collected),
+    pendingPlan,
+  };
+}
+
+// A finished plan awaiting the traveller's Save / Add more decision in the UI.
+interface PendingPlan {
+  title: string;
+  summary: string;
+}
+
+// Cards shown beneath Michelle's reply: the closest few distinct places this turn,
+// with their rating, review count and a snippet from the top review.
+interface PlaceCard {
+  name: string;
+  description?: string;
+  imageUrl?: string;
+  rating?: number;
+  walkMinutes?: number;
+  address?: string;
+  reviewCount?: number;
+  reviews?: { text: string; author?: string; rating?: number }[];
+}
+
+function toCards(places: NearbyPlace[]): PlaceCard[] {
+  const seen = new Set<string>();
+  return places
+    .filter((p) => {
+      const key = p.name.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => (a.walkMinutes ?? 999) - (b.walkMinutes ?? 999))
+    .slice(0, 3)
+    .map((p) => ({
+      name: p.name,
+      description: p.description,
+      imageUrl: p.imageUrl,
+      rating: p.rating,
+      walkMinutes: p.walkMinutes,
+      address: p.address,
+      reviewCount: p.reviewCount,
+      reviews: p.reviews,
+    }));
+}
+
+interface ToolArgs {
+  keyword?: string;
+  type?: string;
+  title?: string;
+  summary?: string;
+}
+
+function safeParse(json: string): ToolArgs {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return {};
   }
 }
