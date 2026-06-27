@@ -1,0 +1,74 @@
+[
+  {
+    "index": 0,
+    "file": "phrase-00.wav",
+    "en": "I am lost.",
+    "mn": "Би төөрчихлөө."
+  },
+  {
+    "index": 1,
+    "file": "phrase-01.wav",
+    "en": "Where is the nearest bus stop?",
+    "mn": "Ойрын автобусны буудал хаана байна вэ?"
+  },
+  {
+    "index": 2,
+    "file": "phrase-02.wav",
+    "en": "Where can I find WiFi?",
+    "mn": "Интернет хаана байдаг вэ?"
+  },
+  {
+    "index": 3,
+    "file": "phrase-03.wav",
+    "en": "How much does this cost?",
+    "mn": "Энэ хэд вэ?"
+  },
+  {
+    "index": 4,
+    "file": "phrase-04.wav",
+    "en": "Where is the toilet?",
+    "mn": "Жорлон хаана байна вэ?"
+  },
+  {
+    "index": 5,
+    "file": "phrase-05.wav",
+    "en": "Please help me.",
+    "mn": "Надад тусалж өгнө үү."
+  },
+  {
+    "index": 6,
+    "file": "phrase-06.wav",
+    "en": "I need a doctor.",
+    "mn": "Надад эмч хэрэгтэй байна."
+  },
+  {
+    "index": 7,
+    "file": "phrase-07.wav",
+    "en": "Where is the hotel?",
+    "mn": "Зочид буудал хаана байна вэ?"
+  },
+  {
+    "index": 8,
+    "file": "phrase-08.wav",
+    "en": "Do you speak English?",
+    "mn": "Та англиар ярьж чадах уу?"
+  },
+  {
+    "index": 9,
+    "file": "phrase-09.wav",
+    "en": "Thank you.",
+    "mn": "Баярлалаа."
+  },
+  {
+    "index": 10,
+    "file": "phrase-10.wav",
+    "en": "How do I get to the city center?",
+    "mn": "Хот төв рүү хэрхэн очих вэ?"
+  },
+  {
+    "index": 11,
+    "file": "phrase-11.wav",
+    "en": "Can you call a taxi for me?",
+    "mn": "Надад такси дуудаж өгнө үү."
+  }
+]
