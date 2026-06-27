@@ -220,6 +220,27 @@ export function PlayIcon(props: IconProps) {
   );
 }
 
+export function SpeakerIcon(props: IconProps) {
+  return (
+    <svg {...svgProps(props)}>
+      <path d="M4 9v6h4l5 4V5L8 9H4Z" />
+      <path d="M16.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M19 6a8 8 0 0 1 0 12" />
+    </svg>
+  );
+}
+
+export function TruckIcon(props: IconProps) {
+  return (
+    <svg {...svgProps(props)}>
+      <path d="M3 6h11v9H3V6Z" />
+      <path d="M14 9h4l3 3v3h-7V9Z" />
+      <circle cx="7" cy="17.5" r="1.8" />
+      <circle cx="17" cy="17.5" r="1.8" />
+    </svg>
+  );
+}
+
 export function SwapIcon(props: IconProps) {
   return (
     <svg {...svgProps(props)}>

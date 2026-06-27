@@ -9,6 +9,7 @@ import {
   PlusIcon,
   RunIcon,
   ShieldIcon,
+  SpeakerIcon,
   WarningIcon,
 } from "@/components/icons";
 import { softToneClass } from "@/lib/tone";
@@ -30,7 +31,7 @@ const OPTION_ICON: Record<string, (props: { size?: number }) => React.ReactNode>
 // How long the "getting help ready" countdown runs before showing the call screen.
 const COUNTDOWN_SECONDS = 5;
 
-type Step = "choose" | "countdown" | "ready";
+type Step = "choose" | "countdown" | "ready" | "calling";
 
 // The Emergency sheet (the white card only — the backdrop is supplied by the
 // caller). Tapping an option starts a short countdown that the user can cancel;
@@ -74,7 +75,14 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
         <CountdownView option={selected} secondsLeft={secondsLeft} onCancel={cancel} />
       ) : null}
       {step === "ready" && selected ? (
-        <ReadyView option={selected} location={location} />
+        <ReadyView
+          option={selected}
+          location={location}
+          onCall={() => setStep("calling")}
+        />
+      ) : null}
+      {step === "calling" && selected ? (
+        <CallView option={selected} location={location} onEnd={cancel} />
       ) : null}
     </div>
   );
@@ -228,9 +236,11 @@ function CountdownRing({ secondsLeft }: { secondsLeft: number }) {
 function ReadyView({
   option,
   location,
+  onCall,
 }: {
   option: SosOption;
   location: EmergencyLocation;
+  onCall: () => void;
 }) {
   return (
     <div>
@@ -249,18 +259,119 @@ function ReadyView({
         </div>
       </div>
 
-      <a
-        href={`tel:${option.serviceNumber}`}
-        className="mt-5 flex items-center justify-center gap-2 rounded-full bg-[#d96a5f] py-4 text-base font-bold text-white shadow-lg shadow-[#d96a5f]/30"
+      <button
+        onClick={onCall}
+        className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-[#d96a5f] py-4 text-base font-bold text-white shadow-lg shadow-[#d96a5f]/30"
       >
         <PhoneIcon size={20} />
         Call {option.serviceNumber} · {option.service}
-      </a>
+      </button>
       <p className="mt-3 text-center text-sm text-ink-muted">
         Your location is attached automatically
       </p>
     </div>
   );
+}
+
+// The in-app call screen (matches the Emergency mockup): a live "On call" banner
+// with a running timer, the operator-ready message shown in English and Mongolian,
+// and actions to read it aloud, watch help arrive, or end the call. The call runs
+// entirely inside the web app — it never hands off to the phone dialer.
+function CallView({
+  option,
+  location,
+  onEnd,
+}: {
+  option: SosOption;
+  location: EmergencyLocation;
+  onEnd: () => void;
+}) {
+  const [seconds, setSeconds] = useState(0);
+
+  // A simple call timer, ticking up from connection.
+  useEffect(() => {
+    const id = setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Stop any speech if the screen unmounts (e.g. the call ends mid-readout).
+  useEffect(() => {
+    return () => window.speechSynthesis?.cancel();
+  }, []);
+
+  const place = location.place ?? "your current location";
+  const coords = location.coords;
+  const englishLocation = `My location is ${place}.${coords ? ` Coordinates ${coords}.` : ""}`;
+  const mongolianLocation = `Миний байршил: ${place}.${coords ? ` Координат: ${coords}.` : ""}`;
+
+  function readAloud() {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(`${option.messageMn} ${mongolianLocation}`);
+    utterance.lang = "mn-MN";
+    window.speechSynthesis.speak(utterance);
+  }
+
+  return (
+    <div className="mt-4">
+      {/* Live call banner */}
+      <div className="flex items-center justify-between rounded-2xl bg-ink px-5 py-4 text-white">
+        <div className="flex items-start gap-3">
+          <span className="mt-1 h-2.5 w-2.5 rounded-full bg-safety-safe" />
+          <div>
+            <p className="font-bold leading-tight">
+              On call · {option.serviceNumber} {option.service}
+            </p>
+            <p className="text-sm text-white/60">Connected · operator speaks Mongolian</p>
+          </div>
+        </div>
+        <span className="font-mono text-xl font-bold tabular-nums">{formatDuration(seconds)}</span>
+      </div>
+
+      {/* The message the operator hears, in English and Mongolian */}
+      <div className="mt-4 rounded-3xl border border-ink/5 bg-sand-50 p-5">
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-ink-muted">
+            Your message
+          </p>
+          <span className="flex items-center gap-1.5 rounded-full bg-primary-50 px-3 py-1 text-xs font-bold text-primary-600">
+            EN <span aria-hidden>→</span> MN
+          </span>
+        </div>
+
+        <p className="mt-3 text-base leading-relaxed text-ink-muted">
+          {option.message} {englishLocation}
+        </p>
+
+        <div className="my-4 h-px bg-ink/10" />
+
+        <p className="text-lg font-bold leading-relaxed text-ink">{option.messageMn}</p>
+        <p className="mt-2 text-base leading-relaxed text-ink-muted">{mongolianLocation}</p>
+      </div>
+
+      <button
+        onClick={readAloud}
+        className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-primary-600 py-4 text-base font-bold text-white shadow-lg shadow-primary-600/30"
+      >
+        <SpeakerIcon size={20} />
+        Read aloud in Mongolian
+      </button>
+
+      <button
+        onClick={onEnd}
+        className="mt-3 w-full rounded-full bg-[#fbe9e7] py-4 text-base font-bold text-safety-critical"
+      >
+        End call
+      </button>
+    </div>
+  );
+}
+
+// Seconds → mm:ss for the call timer.
+function formatDuration(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
 // Shows the real device location: place name + coordinates once available, or a
