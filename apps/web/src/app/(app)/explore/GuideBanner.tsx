@@ -44,7 +44,11 @@ function getTimeMessage(hour: number, weatherCode: number, temp: number): string
   return `${temp}° & ${desc}. Late night — quiet and relaxing spots are highlighted.`;
 }
 
-export function GuideBanner() {
+interface Props {
+  onWeather?: (code: number, hour: number) => void;
+}
+
+export function GuideBanner({ onWeather }: Props) {
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,10 +62,12 @@ export function GuideBanner() {
           const code = data?.current?.weather_code ?? 0;
           const hour = new Date().getHours();
           setMessage(getTimeMessage(hour, code, temp));
+          onWeather?.(code, hour);
         })
         .catch(() => {
           const hour = new Date().getHours();
           setMessage(getTimeMessage(hour, 0, 20));
+          onWeather?.(0, hour);
         });
     }
 

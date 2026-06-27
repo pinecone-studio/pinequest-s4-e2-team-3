@@ -1,5 +1,7 @@
 export interface LatLng { lat: number; lng: number }
 
+export type TravelMode = "walking" | "driving" | "transit";
+
 export interface Review {
   relativePublishTimeDescription: string;
   rating: number;
