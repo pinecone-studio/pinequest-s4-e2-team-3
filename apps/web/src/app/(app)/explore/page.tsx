@@ -1,9 +1,10 @@
-import { SearchIcon } from "@/components/icons";
 import { CategoryChips } from "./CategoryChips";
-import { PlacesList } from "./PlacesList";
-import { GuideBanner } from "./GuideBanner";
+import { ExploreContent } from "./ExploreContent";
 
-const EXPLORE_CATEGORIES = ["All", "Food", "Viewpoints", "Culture", "History"];
+const EXPLORE_CATEGORIES = [
+  "All", "Food", "Coffee", "Viewpoints",
+  "Culture", "History", "Nature", "Shopping", "Nightlife", "Hotels",
+];
 
 export default async function ExplorePage({
   searchParams,
@@ -20,23 +21,8 @@ export default async function ExplorePage({
         </h1>
       </header>
 
-      <SearchBar />
       <CategoryChips categories={EXPLORE_CATEGORIES} selected={category} />
-      <GuideBanner />
-      <PlacesList category={category} />
-    </div>
-  );
-}
-
-function SearchBar() {
-  return (
-    <div className="flex items-center gap-2 rounded-full bg-white px-4 py-3 shadow-ink-sm">
-      <SearchIcon size={18} className="text-ink-muted" />
-      <input
-        type="text"
-        placeholder="Search places, food, events…"
-        className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-muted"
-      />
+      <ExploreContent category={category} />
     </div>
   );
 }
