@@ -20,6 +20,8 @@ export interface NearbyPlace {
   walkMinutes?: number;
   imageUrl?: string;
   description?: string;
+  reviewCount?: number;
+  reviews?: { text: string; author?: string; rating?: number }[];
 }
 
 // Rich card shape for the Explore browse UI (matches the ExploreSpot type the
@@ -43,10 +45,15 @@ interface PlacesTextResult {
   displayName?: { text?: string };
   rating?: number;
   formattedAddress?: string;
-  location?: { latitude?: number; longitude?: number };
   currentOpeningHours?: { openNow?: boolean };
   photos?: { name: string }[];
   editorialSummary?: { text?: string };
+  userRatingCount?: number;
+  reviews?: {
+    rating?: number;
+    text?: { text?: string };
+    authorAttribution?: { displayName?: string };
+  }[];
 }
 
 // Real places near a point, closest first, via the Places API (New) Text Search.
@@ -73,7 +80,7 @@ export async function findNearbyPlaces(
             "Content-Type": "application/json",
             "X-Goog-Api-Key": GOOGLE_KEY,
             "X-Goog-FieldMask":
-              "places.displayName,places.rating,places.formattedAddress,places.currentOpeningHours.openNow,places.location,places.photos,places.editorialSummary",
+              "places.id,places.displayName,places.rating,places.formattedAddress,places.currentOpeningHours.openNow,places.location,places.photos,places.editorialSummary,places.userRatingCount,places.reviews",
           },
           body: JSON.stringify({
             textQuery: type ? `${keyword} ${type}` : keyword,
@@ -105,17 +112,32 @@ export async function findNearbyPlaces(
         const imageUrl = photoName
           ? `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&key=${GOOGLE_KEY}`
           : undefined;
+        const reviews = (place.reviews ?? [])
+          .filter((r) => r.text?.text)
+          .slice(0, 5)
+          .map((r) => ({
+            text: r.text!.text!,
+            author: r.authorAttribution?.displayName,
+            rating: r.rating,
+          }));
         return {
           id: place.id ?? crypto.randomUUID(),
           name: place.displayName?.text ?? "Unknown",
+<<<<<<< Updated upstream
           latitude: lat ?? latitude,
           longitude: lng ?? longitude,
+=======
+          latitude: place.location?.latitude ?? latitude,
+          longitude: place.location?.longitude ?? longitude,
+>>>>>>> Stashed changes
           rating: place.rating,
           address: place.formattedAddress,
           openNow: place.currentOpeningHours?.openNow,
           walkMinutes,
           imageUrl,
           description: place.editorialSummary?.text,
+          reviewCount: place.userRatingCount,
+          reviews,
         };
       });
     });
