@@ -13,6 +13,9 @@ interface PlaceCard {
   imageUrl?: string;
   rating?: number;
   walkMinutes?: number;
+  address?: string;
+  reviewCount?: number;
+  reviews?: { text: string; author?: string; rating?: number }[];
 }
 
 // A finished plan Michelle proposes; the traveller confirms it with the buttons.
@@ -330,10 +333,22 @@ function MessageBubble({
   );
 }
 
-// A compact photo card for a place Michelle recommends.
+// A compact photo card for a place Michelle recommends. Tapping it expands the
+// card in place to reveal its address and more reviews.
 function PlaceCardView({ place }: { place: PlaceCard }) {
+  const [expanded, setExpanded] = useState(false);
+  const reviews = place.reviews ?? [];
+  const shownReviews = expanded ? reviews : reviews.slice(0, 1);
+  const canExpand = reviews.length > 1 || Boolean(place.address);
+
   return (
-    <div className="w-44 shrink-0 overflow-hidden rounded-2xl bg-white shadow-sm">
+    <button
+      type="button"
+      onClick={() => canExpand && setExpanded((v) => !v)}
+      className={`shrink-0 overflow-hidden rounded-2xl bg-white text-left shadow-sm transition ${
+        expanded ? "w-60" : "w-44"
+      } ${canExpand ? "hover:shadow-md active:scale-[0.99]" : "cursor-default"}`}
+    >
       <div className="h-24 bg-sand-200">
         {place.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -351,6 +366,11 @@ function PlaceCardView({ place }: { place: PlaceCard }) {
             <span className="flex items-center gap-1">
               <StarIcon size={11} className="text-safety-armed" />
               {place.rating}
+              {place.reviewCount ? (
+                <span className="font-normal text-ink-muted/70">
+                  ({place.reviewCount})
+                </span>
+              ) : null}
             </span>
           ) : null}
           {place.walkMinutes ? (
@@ -360,13 +380,45 @@ function PlaceCardView({ place }: { place: PlaceCard }) {
             </span>
           ) : null}
         </div>
-        {place.description ? (
+
+        {expanded && place.address ? (
+          <p className="mt-2 text-[11px] leading-snug text-ink-muted">
+            📍 {place.address}
+          </p>
+        ) : null}
+
+        {shownReviews.length > 0 ? (
+          <div className="mt-2 space-y-1.5">
+            {shownReviews.map((review, i) => (
+              <div key={i} className="rounded-lg bg-sand-100 p-2">
+                <p
+                  className={`text-[11px] italic leading-snug text-ink-muted ${
+                    expanded ? "" : "line-clamp-3"
+                  }`}
+                >
+                  “{review.text}”
+                </p>
+                {review.author ? (
+                  <p className="mt-1 text-[10px] font-semibold text-ink-muted/70">
+                    — {review.author}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : place.description ? (
           <p className="mt-1 line-clamp-2 text-xs text-ink-muted">
             {place.description}
           </p>
         ) : null}
+
+        {canExpand ? (
+          <span className="mt-2 inline-block text-[11px] font-semibold text-primary-600">
+            {expanded ? "Show less ▲" : "More details ▼"}
+          </span>
+        ) : null}
       </div>
-    </div>
+    </button>
   );
 }
 
