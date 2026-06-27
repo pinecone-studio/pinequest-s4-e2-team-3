@@ -45,6 +45,7 @@ interface PlacesTextResult {
   displayName?: { text?: string };
   rating?: number;
   formattedAddress?: string;
+  location?: { latitude?: number; longitude?: number };
   currentOpeningHours?: { openNow?: boolean };
   location?: { latitude?: number; longitude?: number };
   photos?: { name: string }[];
@@ -192,9 +193,9 @@ export async function searchPlacesByText(
         },
         body: JSON.stringify({
           textQuery: query,
-          maxResultCount: 10,
+          maxResultCount: 20,
           locationBias: {
-            circle: { center: { latitude, longitude }, radius: 15000 },
+            circle: { center: { latitude, longitude }, radius: 10000 },
           },
           languageCode: "en",
         }),
@@ -202,30 +203,34 @@ export async function searchPlacesByText(
       if (!res.ok) throw new Error(`searchText ${res.status}`);
 
       const data = await res.json() as { places?: TextApiPlace[] };
-      return (data.places ?? []).map((p) => {
-        const lat = p.location?.latitude ?? latitude;
-        const lng = p.location?.longitude ?? longitude;
-        const distKm = haversineKm(latitude, longitude, lat, lng);
-        const walkMinutes = Math.max(1, Math.round((distKm * 1000) / 83));
-        const photoName = p.photos?.[0]?.name;
-        const imageUrl = photoName
-          ? `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=600&key=${GOOGLE_KEY}`
-          : `https://picsum.photos/seed/${(p.id ?? "x").slice(-4)}/600/400`;
-        const { label, tone } = guessCategory(p.types);
-        return {
-          id: p.id ?? crypto.randomUUID(),
-          title: p.displayName?.text ?? "Unknown",
-          category: label,
-          categoryTone: tone,
-          rating: p.rating ?? 4.0,
-          distance: `${distKm.toFixed(1)} km`,
-          walkTime: `${walkMinutes} min`,
-          description: p.formattedAddress ?? "",
-          imageUrl,
-          latitude: lat,
-          longitude: lng,
-        } satisfies BrowsePlace;
-      });
+      return (data.places ?? [])
+        .map((p) => {
+          const lat = p.location?.latitude ?? latitude;
+          const lng = p.location?.longitude ?? longitude;
+          const distKm = haversineKm(latitude, longitude, lat, lng);
+          const walkMinutes = Math.max(1, Math.round((distKm * 1000) / 83));
+          const photoName = p.photos?.[0]?.name;
+          const imageUrl = photoName
+            ? `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=600&key=${GOOGLE_KEY}`
+            : `https://picsum.photos/seed/${(p.id ?? "x").slice(-4)}/600/400`;
+          const { label, tone } = guessCategory(p.types);
+          return {
+            id: p.id ?? crypto.randomUUID(),
+            title: p.displayName?.text ?? "Unknown",
+            category: label,
+            categoryTone: tone,
+            rating: p.rating ?? 4.0,
+            distance: `${distKm.toFixed(1)} km`,
+            walkTime: `${walkMinutes} min`,
+            description: p.formattedAddress ?? "",
+            imageUrl,
+            latitude: lat,
+            longitude: lng,
+            _distKm: distKm,
+          } satisfies BrowsePlace & { _distKm: number };
+        })
+        .filter((p) => p._distKm <= 20)
+        .map(({ _distKm: _, ...rest }) => rest);
     });
   } catch {
     return [];

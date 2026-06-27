@@ -2,8 +2,14 @@
 
 import { useState } from "react";
 import { Stars } from "./Stars";
-import type { PlaceDetails, Review } from "./types";
+import type { PlaceDetails, Review, TravelMode } from "./types";
 import type { ExploreSpot } from "@/types";
+
+const MODE_LABEL: Record<TravelMode, string> = {
+  walking: "walk",
+  driving: "drive",
+  transit: "bus",
+};
 
 const TODAY_IDX = (new Date().getDay() + 6) % 7;
 
@@ -43,9 +49,11 @@ interface Props {
   details: PlaceDetails | null;
   googleMapsUrl: string | null;
   onClose: () => void;
+  routeDuration?: string | null;
+  mode?: TravelMode;
 }
 
-export function PlaceInfoCard({ spot, details, googleMapsUrl, onClose }: Props) {
+export function PlaceInfoCard({ spot, details, googleMapsUrl, onClose, routeDuration, mode = "walking" }: Props) {
   const [tab, setTab] = useState<"overview" | "reviews">("overview");
   const [hoursOpen, setHoursOpen] = useState(false);
 
@@ -77,7 +85,9 @@ export function PlaceInfoCard({ spot, details, googleMapsUrl, onClose }: Props) 
             {todayTime && <span className="text-ink-muted"> · {todayTime}</span>}
           </p>
         )}
-        <p className="mt-0.5 mb-3 text-sm text-ink-muted">{spot.walkTime} walk · {spot.distance}</p>
+        <p className="mt-0.5 mb-3 text-sm text-ink-muted">
+          {routeDuration ?? spot.walkTime} {MODE_LABEL[mode]} · {spot.distance}
+        </p>
       </div>
 
       <div className="h-px bg-ink/8" />
