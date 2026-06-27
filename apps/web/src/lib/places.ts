@@ -143,19 +143,21 @@ const GOOGLE_TYPES: Record<string, string[]> = {
   museum:     ["museum", "art_gallery"],
   nature:     ["park", "national_park"],
   shopping:   ["shopping_mall", "department_store"],
+  transit:    ["bus_station", "transit_station", "light_rail_station"],
 };
 
 const CATEGORY_TONE: Record<string, BrowsePlace["categoryTone"]> = {
   all: "blue", food: "amber", viewpoints: "green", culture: "purple",
   history: "blue", attraction: "blue", restaurant: "amber",
   hotel: "purple", museum: "green", nature: "green", shopping: "amber",
+  transit: "blue",
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
   all: "Attraction", food: "Food", viewpoints: "Viewpoint",
   culture: "Culture", history: "History", attraction: "Attraction",
   restaurant: "Restaurant", hotel: "Hotel", museum: "Museum",
-  nature: "Nature", shopping: "Shopping",
+  nature: "Nature", shopping: "Shopping", transit: "Bus stop",
 };
 
 interface NearbyApiPlace {

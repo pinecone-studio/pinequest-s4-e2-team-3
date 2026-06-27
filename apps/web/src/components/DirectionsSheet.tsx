@@ -10,10 +10,11 @@ import type { ExploreSpot } from "@/types";
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 const DEFAULT = { lat: 47.9077, lng: 106.8832 };
 
-interface Props { spot: ExploreSpot; onClose: () => void }
+interface Props { spot: ExploreSpot; onClose: () => void; origin?: LatLng }
 
-export function DirectionsSheet({ spot, onClose }: Props) {
-  const [origin, setOrigin] = useState<LatLng | null>(null);
+export function DirectionsSheet({ spot, onClose, origin: originProp }: Props) {
+  const [geoOrigin, setGeoOrigin] = useState<LatLng | null>(null);
+  const origin = originProp ?? geoOrigin; // caller's position wins (instant)
   const [details, setDetails] = useState<PlaceDetails | null>(null);
 
   // Lock body scroll
@@ -22,16 +23,17 @@ export function DirectionsSheet({ spot, onClose }: Props) {
     return () => { document.body.style.overflow = ""; };
   }, []);
 
-  // Real-time location
+  // Only fall back to device GPS when the caller didn't supply an origin.
   useEffect(() => {
-    if (!navigator.geolocation) { setOrigin(DEFAULT); return; }
+    if (originProp) return;
+    if (!navigator.geolocation) { setGeoOrigin(DEFAULT); return; }
     const id = navigator.geolocation.watchPosition(
-      (p) => setOrigin({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      () => setOrigin(DEFAULT),
-      { enableHighAccuracy: true, maximumAge: 0 },
+      (p) => setGeoOrigin({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => setGeoOrigin(DEFAULT),
+      { enableHighAccuracy: true, maximumAge: 30000 },
     );
     return () => navigator.geolocation.clearWatch(id);
-  }, []);
+  }, [originProp]);
 
   // Fetch place details (hours, reviews, phone, website)
   useEffect(() => {

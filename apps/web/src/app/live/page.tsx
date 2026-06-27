@@ -13,6 +13,7 @@ import {
   PauseIcon,
   PlayIcon,
   SendIcon,
+  SparklesIcon,
   WalkIcon,
 } from "@/components/icons";
 import { demoRoutes } from "@/lib/routes";
@@ -27,10 +28,30 @@ import { weatherEmoji, weatherLabel, type WeatherNow } from "@/lib/weather";
 import { useLiveStore } from "@/stores/liveStore";
 import { useLocationStore } from "@/stores/locationStore";
 import { useLocation } from "@/hooks/useLocation";
-import type { Coords, DemoRoute, PlaceOption } from "@/types";
+import { DirectionsSheet } from "@/components/DirectionsSheet";
+import type { Coords, DemoRoute, ExploreSpot, PlaceOption, RouteStop } from "@/types";
 
 // Loaded lazily + client-only because the Google Maps SDK touches `window`.
 const RouteMap = dynamic(() => import("@/components/RouteMap"), { ssr: false });
+
+// Map a suggested place onto the ExploreSpot shape DirectionsSheet expects; it
+// fetches the rest (hours, photo, reviews) from the place id.
+function placeToSpot(p: PlaceOption, userCoords: Coords | null): ExploreSpot {
+  const m = userCoords ? haversineMeters(userCoords, p) : null;
+  return {
+    id: p.id,
+    title: p.name,
+    category: p.kind === "transit" ? "Bus stop" : "Place",
+    categoryTone: "blue",
+    rating: p.rating ?? 0,
+    distance: m != null ? formatDistance(m) : "",
+    walkTime: m != null ? `${Math.max(1, Math.round(m / 83))} min` : "",
+    description: p.address ?? "",
+    imageUrl: "",
+    latitude: p.latitude,
+    longitude: p.longitude,
+  };
+}
 
 type Theme = "dark" | "light";
 
@@ -128,7 +149,7 @@ export default function LiveGuidePage() {
 // Decides what fills the screen behind the guide UI:
 //   real Mapbox route map → cached static snapshot (offline) → stylised backdrop.
 function LiveBackground({ theme }: { theme: Theme }) {
-  const { activeRoute, currentStopIndex, simulatedCoords, forceOffline, suggestions, selectedPlace } =
+  const { activeRoute, currentStopIndex, simulatedCoords, forceOffline, suggestions, selectedPlace, returnTarget } =
     useLiveStore();
   const realCoords = useLocationStore((s) => s.coordinates);
   const position: Coords | null = resolvePosition(simulatedCoords, realCoords, activeRoute);
@@ -164,6 +185,7 @@ function LiveBackground({ theme }: { theme: Theme }) {
           theme={theme}
           suggestions={suggestions}
           selectedPlace={selectedPlace}
+          returnTarget={returnTarget}
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#eef2fb]/40 via-transparent to-[#eef2fb]/90 dark:from-[#0d1422]/40 dark:via-transparent dark:to-[#0d1422]/90" />
       </div>
@@ -270,6 +292,8 @@ function LiveExperience({
     setSimulated,
     advanceStop,
     reset,
+    setSuggestions,
+    setReturnTarget,
     setOfflineReady,
     setForceOffline,
   } = useLiveStore();
@@ -294,6 +318,7 @@ function LiveExperience({
     replay,
     pause,
     ask,
+    announce,
     startListening,
   } = guide;
 
@@ -308,6 +333,8 @@ function LiveExperience({
   // Secondary panels (Local tips + demo controls) are hidden by default so Michelle
   // stays the focus; one button reveals them.
   const [showExtras, setShowExtras] = useState(false);
+  // Plan-stop chooser, opened from "Back to my plan".
+  const [planOpen, setPlanOpen] = useState(false);
 
   // --- Offline pack ---
   const offlineSaved = activeRoute ? offlineReadyIds.includes(activeRoute.id) : false;
@@ -438,9 +465,12 @@ function LiveExperience({
 
       <div className="flex-1" />
 
+      {/* Scrollable bottom cluster — keeps the demo controls (Routes, Auto-walk)
+          reachable when suggestions/tips push the stack past the screen. */}
+      <div className="pointer-events-auto flex max-h-[58vh] shrink-0 flex-col overflow-y-auto">
       <button
         onClick={() => setShowExtras(!showExtras)}
-        className="pointer-events-auto mb-3 ml-auto flex items-center gap-1.5 rounded-full bg-ink/5 px-3 py-1.5 text-xs font-bold text-ink-muted backdrop-blur hover:bg-ink/10 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15"
+        className="mb-3 ml-auto flex items-center gap-1.5 rounded-full bg-ink/5 px-3 py-1.5 text-xs font-bold text-ink-muted backdrop-blur hover:bg-ink/10 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15"
       >
         {showExtras ? "Hide details" : "Tips & controls"}
         <ChevronRightIcon
@@ -468,8 +498,36 @@ function LiveExperience({
           selectedPlace={selectedPlace}
           userCoords={effectiveCoords}
           onSelect={selectPlace}
+          onDismiss={() => setSuggestions([])}
+          onBackToPlan={() => {
+            setSuggestions([]); // hide the list + clear the detour
+            setPlanOpen(true); // let the traveller pick which stop to head to
+          }}
+          onGo={(place) => {
+            const m = effectiveCoords ? haversineMeters(effectiveCoords, place) : null;
+            const min = m != null ? Math.max(1, Math.round(m / 83)) : null;
+            const name = place.name.split(",")[0];
+            announce(
+              `Heading to ${name}${min ? `, about ${min} minute${min === 1 ? "" : "s"} away` : ""}. ` +
+                `I'll keep your plan ready — tap "Back to my plan" whenever you want to continue.`,
+            );
+          }}
         />
       )}
+
+      <BusExplorer userCoords={effectiveCoords} />
+
+      <PlanStops
+        open={planOpen}
+        stops={activeRoute?.stops ?? []}
+        currentStopId={currentStop?.id ?? null}
+        onClose={() => setPlanOpen(false)}
+        onGo={(stop) => {
+          setReturnTarget({ latitude: stop.latitude, longitude: stop.longitude });
+          announce(`Heading to ${stop.name}.`);
+          setPlanOpen(false);
+        }}
+      />
 
       <NarrationCard
         speaking={isSpeaking}
@@ -501,6 +559,7 @@ function LiveExperience({
           onChangeRoute={reset}
         />
       )}
+      </div>
     </>
   );
 }
@@ -683,19 +742,37 @@ function SuggestionList({
   selectedPlace,
   userCoords,
   onSelect,
+  onDismiss,
+  onBackToPlan,
+  onGo,
 }: {
   suggestions: PlaceOption[];
   selectedPlace: PlaceOption | null;
   userCoords: Coords | null;
   onSelect: (place: PlaceOption | null) => void;
+  onDismiss: () => void;
+  onBackToPlan: () => void;
+  onGo: (place: PlaceOption) => void;
 }) {
   const transit = suggestions.some((s) => s.kind === "transit");
+  const selMeters =
+    selectedPlace && userCoords ? haversineMeters(userCoords, selectedPlace) : null;
+  const [sheetSpot, setSheetSpot] = useState<ExploreSpot | null>(null);
 
   return (
-    <div className="pointer-events-auto mt-3 rounded-3xl bg-white p-3 shadow-sm dark:bg-white/[0.07] dark:shadow-none">
-      <p className="px-1 pb-2 text-[11px] font-bold uppercase tracking-wide text-ink-muted dark:text-white/50">
-        {transit ? "Nearest stops — tap to route there" : "Nearby — tap to route there"}
-      </p>
+    <>
+    <div className="animate-rise pointer-events-auto mt-3 rounded-3xl bg-white p-3 shadow-sm dark:bg-white/[0.07] dark:shadow-none">
+      <div className="flex items-center justify-between px-1 pb-2">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-ink-muted dark:text-white/50">
+          {suggestions.length} {transit ? "stops" : "places"} nearby — tap to route there
+        </p>
+        <button
+          onClick={onDismiss}
+          className="text-xs font-semibold text-ink-muted dark:text-white/50"
+        >
+          Hide
+        </button>
+      </div>
 
       <div className="flex flex-wrap gap-2">
         {suggestions.map((place) => {
@@ -706,7 +783,10 @@ function SuggestionList({
           return (
             <button
               key={place.id}
-              onClick={() => onSelect(active ? null : place)}
+              onClick={() => {
+                onSelect(place); // highlight + route on the map behind
+                setSheetSpot(placeToSpot(place, userCoords)); // open the detail sheet
+              }}
               className={[
                 "flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold transition-colors",
                 active
@@ -727,22 +807,184 @@ function SuggestionList({
       </div>
 
       {selectedPlace && (
-        <a
-          href={googleMapsDirectionsUrl(
-            selectedPlace,
-            userCoords,
-            selectedPlace.kind === "transit" ? "transit" : "walking",
+        <div className="animate-rise mt-3">
+          {selMeters != null && (
+            <p className="mb-2 flex items-center gap-1.5 px-1 text-xs font-semibold text-ink dark:text-white">
+              <WalkIcon size={14} className="shrink-0 text-primary-500" />
+              <span className="truncate">
+                Walk to {selectedPlace.name.split(",")[0]} · {formatDistance(selMeters)} · ~
+                {Math.max(1, Math.round(selMeters / 83))} min
+              </span>
+            </p>
           )}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-3 flex items-center justify-center gap-2 rounded-full bg-primary-600 py-2.5 text-sm font-bold text-white"
-        >
-          <MapPinIcon size={16} />
-          {selectedPlace.kind === "transit"
-            ? "Bus directions in Google Maps"
-            : "Open in Google Maps"}
-        </a>
+          {/* Confirm the detour → Michelle says she's taking you there. */}
+          <button
+            onClick={() => onGo(selectedPlace)}
+            className="flex w-full items-center justify-center gap-2 rounded-full bg-safety-safe py-2.5 text-sm font-bold text-white"
+          >
+            <WalkIcon size={16} /> Let&apos;s go
+          </button>
+          <div className="mt-2 flex gap-2">
+            <button
+              onClick={() => setSheetSpot(placeToSpot(selectedPlace, userCoords))}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-ink/5 py-2 text-xs font-bold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+            >
+              <MapPinIcon size={14} /> Details
+            </button>
+            {/* Clears the list + detour, draws the blue guide line to the next
+                stop, and Michelle says she's continuing the plan. */}
+            <button
+              onClick={onBackToPlan}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-ink/5 py-2 text-xs font-bold text-ink-muted hover:bg-ink/10 dark:bg-white/10 dark:text-white/60 dark:hover:bg-white/15"
+            >
+              <ChevronLeftIcon size={14} /> Back to plan
+            </button>
+          </div>
+        </div>
       )}
+
+    </div>
+
+      {/* Rendered OUTSIDE the animate-rise card: a transform ancestor would make
+          the fixed full-screen sheet size to the card instead of the viewport. */}
+      {sheetSpot && (
+        <DirectionsSheet
+          spot={sheetSpot}
+          origin={userCoords ? { lat: userCoords.latitude, lng: userCoords.longitude } : undefined}
+          onClose={() => setSheetSpot(null)}
+        />
+      )}
+    </>
+  );
+}
+
+// One-tap "bus stops near me": fetches nearby stations via the existing browse
+// route, lists them, and opens DirectionsSheet for the picked one (how to get
+// to it + onward via the sheet's Google Maps transit link).
+function BusExplorer({ userCoords }: { userCoords: Coords | null }) {
+  const [stations, setStations] = useState<ExploreSpot[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [sheetSpot, setSheetSpot] = useState<ExploreSpot | null>(null);
+
+  const load = async () => {
+    if (loading) return;
+    setLoading(true);
+    const lat = userCoords?.latitude ?? 47.9077;
+    const lng = userCoords?.longitude ?? 106.8832;
+    try {
+      const res = await fetch(`/api/places?lat=${lat}&lng=${lng}&category=transit&limit=6`);
+      setStations(res.ok ? ((await res.json()) as ExploreSpot[]) : []);
+    } catch {
+      setStations([]);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="pointer-events-auto mt-3">
+      {!stations ? (
+        <button
+          onClick={load}
+          disabled={loading}
+          className="flex w-full items-center justify-center gap-2 rounded-full bg-ink/5 py-2.5 text-sm font-bold text-ink hover:bg-ink/10 disabled:opacity-60 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+        >
+          🚌 {loading ? "Finding bus stops…" : "Bus stops near me"}
+        </button>
+      ) : (
+        <div className="animate-rise rounded-3xl bg-white p-3 shadow-sm dark:bg-white/[0.07] dark:shadow-none">
+          <div className="flex items-center justify-between px-1 pb-2">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-ink-muted dark:text-white/50">
+              {stations.length} bus stops nearby
+            </p>
+            <button
+              onClick={() => setStations(null)}
+              className="text-xs font-semibold text-ink-muted dark:text-white/50"
+            >
+              Hide
+            </button>
+          </div>
+          {stations.length === 0 ? (
+            <p className="px-1 pb-1 text-sm text-ink-muted dark:text-white/60">
+              No bus stops found nearby.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {stations.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => setSheetSpot(s)}
+                  className="flex items-center gap-2 rounded-xl bg-ink/5 px-3 py-2 text-left text-sm font-semibold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                >
+                  🚌 <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                  <span className="shrink-0 text-xs text-ink-muted dark:text-white/50">
+                    {s.distance}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {sheetSpot && (
+        <DirectionsSheet
+          spot={sheetSpot}
+          origin={userCoords ? { lat: userCoords.latitude, lng: userCoords.longitude } : undefined}
+          onClose={() => setSheetSpot(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Plan-stop chooser, opened from "Back to my plan". Picking a stop draws the
+// blue guide line to it and Michelle announces. Going to a plan stop continues
+// the journey (not a side detour) — the arrival scan advances once you reach it.
+function PlanStops({
+  open,
+  stops,
+  currentStopId,
+  onGo,
+  onClose,
+}: {
+  open: boolean;
+  stops: RouteStop[];
+  currentStopId: string | null;
+  onGo: (stop: RouteStop) => void;
+  onClose: () => void;
+}) {
+  if (!open || stops.length === 0) return null;
+
+  return (
+    <div className="pointer-events-auto animate-rise mt-3 rounded-3xl bg-white p-3 shadow-sm dark:bg-white/[0.07] dark:shadow-none">
+      <div className="flex items-center justify-between px-1 pb-2">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-ink-muted dark:text-white/50">
+          Where to next? — tap a stop
+        </p>
+        <button
+          onClick={onClose}
+          className="text-xs font-semibold text-ink-muted dark:text-white/50"
+        >
+          Hide
+        </button>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {stops.map((s, i) => (
+          <button
+            key={s.id}
+            onClick={() => onGo(s)}
+            className="flex items-center gap-2 rounded-xl bg-ink/5 px-3 py-2 text-left text-sm font-semibold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+          >
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary-600 text-[10px] text-white">
+              {i + 1}
+            </span>
+            <span className="min-w-0 flex-1 truncate">{s.name}</span>
+            {s.id === currentStopId && (
+              <span className="shrink-0 text-xs font-bold text-primary-500">now</span>
+            )}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -793,10 +1035,19 @@ function NarrationCard({
       : audioLoading
         ? "preparing…"
         : speaking
-          ? "speaking · live guide"
+          ? "speaking…"
           : isAnswer
             ? "answer"
-            : "live guide";
+            : "your guide";
+
+  // Status dot colour — matches the state at a glance.
+  const dotColor = listening
+    ? "bg-safety-critical"
+    : loading
+      ? "bg-safety-armed"
+      : speaking
+        ? "bg-safety-safe"
+        : "bg-ink-muted/40 dark:bg-white/30";
 
   const submit = () => {
     if (!draft.trim()) return;
@@ -807,13 +1058,23 @@ function NarrationCard({
   return (
     <div className="pointer-events-auto rounded-3xl bg-white p-5 shadow-sm backdrop-blur dark:bg-white/[0.07] dark:shadow-none">
       <div className="flex items-center gap-3">
-        <span className="h-9 w-9 rounded-full bg-gradient-to-br from-primary-500 to-primary-700" />
-        <div>
+        <span
+          className={[
+            "flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white",
+            speaking ? "animate-pulse" : "",
+          ].join(" ")}
+        >
+          <SparklesIcon size={18} />
+        </span>
+        <div className="min-w-0">
           <p className="font-bold">Michelle</p>
           {voiceError ? (
             <p className="text-xs font-semibold text-safety-critical">{voiceError}</p>
           ) : (
-            <p className="text-xs text-ink-muted dark:text-white/60">{status}</p>
+            <p className="flex items-center gap-1.5 text-xs text-ink-muted dark:text-white/60">
+              <span className={["h-1.5 w-1.5 rounded-full", dotColor].join(" ")} />
+              {status}
+            </p>
           )}
         </div>
         {loading ? (
@@ -834,8 +1095,9 @@ function NarrationCard({
       </div>
 
       <p
+        key={text}
         className={[
-          "mt-4 text-lg leading-snug",
+          "animate-rise mt-4 text-lg leading-snug",
           !expanded && isLong ? "line-clamp-3" : "",
         ].join(" ")}
       >
@@ -870,7 +1132,7 @@ function NarrationCard({
         </button>
 
         {/* Ask by text — always available, robust on a noisy stage. */}
-        <div className="flex flex-1 items-center gap-2 rounded-full bg-ink/5 px-4 py-2 dark:bg-white/10">
+        <div className="flex flex-1 items-center gap-2 rounded-full bg-ink/5 px-4 py-2 ring-primary-500/40 transition-shadow focus-within:ring-2 dark:bg-white/10">
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -881,7 +1143,11 @@ function NarrationCard({
           <button
             onClick={submit}
             aria-label="Send"
-            className="text-ink-muted hover:text-ink dark:text-white/70 dark:hover:text-white"
+            className={
+              draft.trim()
+                ? "text-primary-600 dark:text-primary-400"
+                : "text-ink-muted dark:text-white/40"
+            }
           >
             <SendIcon size={18} />
           </button>

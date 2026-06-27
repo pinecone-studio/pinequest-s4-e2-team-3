@@ -15,6 +15,8 @@ interface LiveState {
   // the ad-hoc route to it.
   suggestions: PlaceOption[];
   selectedPlace: PlaceOption | null;
+  // After a detour, the next stop to guide the traveller back to (blue line).
+  returnTarget: Coords | null;
 
   // Routes that have an offline pack saved, + a demo toggle to preview offline.
   offlineReadyIds: string[];
@@ -27,6 +29,7 @@ interface LiveState {
   setSimulated: (coords: Coords | null) => void;
   setSuggestions: (places: PlaceOption[]) => void;
   selectPlace: (place: PlaceOption | null) => void;
+  setReturnTarget: (coords: Coords | null) => void;
   setOfflineReady: (routeId: string) => void;
   setForceOffline: (value: boolean) => void;
   reset: () => void;
@@ -39,6 +42,7 @@ export const useLiveStore = create<LiveState>((set) => ({
   simulatedCoords: null,
   suggestions: [],
   selectedPlace: null,
+  returnTarget: null,
   offlineReadyIds: [],
   forceOffline: false,
 
@@ -50,6 +54,7 @@ export const useLiveStore = create<LiveState>((set) => ({
       simulatedCoords: null,
       suggestions: [],
       selectedPlace: null,
+      returnTarget: null,
     }),
 
   goToStop: (currentStopIndex) => set({ currentStopIndex }),
@@ -69,9 +74,12 @@ export const useLiveStore = create<LiveState>((set) => ({
 
   setSimulated: (simulatedCoords) => set({ simulatedCoords }),
 
-  setSuggestions: (suggestions) => set({ suggestions, selectedPlace: null }),
+  setSuggestions: (suggestions) =>
+    set({ suggestions, selectedPlace: null, returnTarget: null }),
 
   selectPlace: (selectedPlace) => set({ selectedPlace }),
+
+  setReturnTarget: (returnTarget) => set({ returnTarget }),
 
   setOfflineReady: (routeId) =>
     set((state) =>
@@ -90,5 +98,6 @@ export const useLiveStore = create<LiveState>((set) => ({
       simulatedCoords: null,
       suggestions: [],
       selectedPlace: null,
+      returnTarget: null,
     }),
 }));

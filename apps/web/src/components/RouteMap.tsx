@@ -23,6 +23,7 @@ export default function RouteMap({
   theme = "dark",
   suggestions = [],
   selectedPlace = null,
+  returnTarget = null,
 }: {
   route: DemoRoute;
   currentIndex: number;
@@ -34,6 +35,8 @@ export default function RouteMap({
   // Places Michelle suggested + the one the traveller picked (routes to it).
   suggestions?: PlaceOption[];
   selectedPlace?: PlaceOption | null;
+  // After a detour: guide line from here back to the next stop (blue).
+  returnTarget?: Coords | null;
 }) {
   const path = useMemo(
     () => route.stops.map((s) => ({ lat: s.latitude, lng: s.longitude })),
@@ -54,8 +57,8 @@ export default function RouteMap({
         style={{ width: "100%", height: "100%" }}
       >
         <RouteLine path={path} />
-        {/* Fit to the whole journey, unless the traveller is routing to a pick. */}
-        {selectedPlace ? null : <FitBounds path={path} />}
+        {/* Fit to the whole journey, unless we're routing to a pick / back to plan. */}
+        {selectedPlace || returnTarget ? null : <FitBounds path={path} />}
 
         {route.stops.map((stop, i) => (
           <StopMarker
@@ -79,6 +82,11 @@ export default function RouteMap({
         {/* When a place is picked, draw a road route from here to it + zoom in. */}
         {selectedPlace && (
           <DetourLine origin={position} destination={selectedPlace} />
+        )}
+
+        {/* After a detour: blue guide line from here back to the next stop. */}
+        {!selectedPlace && returnTarget && (
+          <DetourLine origin={position} destination={returnTarget} color="#2f6bff" />
         )}
 
         {position && (
@@ -185,9 +193,11 @@ function RouteLine({ path }: { path: google.maps.LatLngLiteral[] }) {
 function DetourLine({
   origin,
   destination,
+  color = "#D9831F",
 }: {
   origin: Coords | null;
-  destination: PlaceOption;
+  destination: { latitude: number; longitude: number };
+  color?: string;
 }) {
   const map = useMap();
   const mapsLib = useMapsLibrary("maps");
@@ -203,7 +213,7 @@ function DetourLine({
 
     let cancelled = false;
     let drawn: google.maps.Polyline[] = [];
-    drawRoadPath(map, mapsLib, routesLib, points, "#D9831F", () => cancelled).then(
+    drawRoadPath(map, mapsLib, routesLib, points, color, () => cancelled).then(
       (p) => {
         if (cancelled) p.forEach((l) => l.setMap(null));
         else drawn = p;
@@ -226,7 +236,7 @@ function DetourLine({
     // Intentionally keyed on the destination only — we don't want to redraw the
     // detour (and re-hit Directions) on every position update.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, mapsLib, routesLib, coreLib, destination.id]);
+  }, [map, mapsLib, routesLib, coreLib, destination.latitude, destination.longitude, color]);
 
   return null;
 }
