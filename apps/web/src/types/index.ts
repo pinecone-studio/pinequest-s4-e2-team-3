@@ -133,6 +133,7 @@ export interface PlaceOption {
   latitude: number;
   longitude: number;
   address?: string;
+  rating?: number;
   // What kind of place it is, so the UI can distinguish e.g. a bus station.
   kind?: "food" | "transit" | "place";
 }

@@ -123,13 +123,8 @@ export async function findNearbyPlaces(
         return {
           id: place.id ?? crypto.randomUUID(),
           name: place.displayName?.text ?? "Unknown",
-<<<<<<< Updated upstream
-          latitude: lat ?? latitude,
-          longitude: lng ?? longitude,
-=======
           latitude: place.location?.latitude ?? latitude,
           longitude: place.location?.longitude ?? longitude,
->>>>>>> Stashed changes
           rating: place.rating,
           address: place.formattedAddress,
           openNow: place.currentOpeningHours?.openNow,

@@ -55,8 +55,9 @@ const GM_MODE: Record<TravelMode, string> = {
 
 interface Props { spot: ExploreSpot; onClose: () => void }
 
-export function DirectionsSheet({ spot, onClose }: Props) {
-  const [origin, setOrigin] = useState<LatLng | null>(null);
+export function DirectionsSheet({ spot, onClose, origin: originProp }: Props) {
+  const [geoOrigin, setGeoOrigin] = useState<LatLng | null>(null);
+  const origin = originProp ?? geoOrigin; // caller's position wins (instant)
   const [details, setDetails] = useState<PlaceDetails | null>(null);
   const [mode, setMode] = useState<TravelMode>("walking");
 
@@ -65,15 +66,17 @@ export function DirectionsSheet({ spot, onClose }: Props) {
     return () => { document.body.style.overflow = ""; };
   }, []);
 
+  // Only fall back to device GPS when the caller didn't supply an origin.
   useEffect(() => {
-    if (!navigator.geolocation) { setOrigin(DEFAULT); return; }
+    if (originProp) return;
+    if (!navigator.geolocation) { setGeoOrigin(DEFAULT); return; }
     const id = navigator.geolocation.watchPosition(
-      (p) => setOrigin({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      () => setOrigin(DEFAULT),
-      { enableHighAccuracy: true, maximumAge: 0 },
+      (p) => setGeoOrigin({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => setGeoOrigin(DEFAULT),
+      { enableHighAccuracy: true, maximumAge: 30000 },
     );
     return () => navigator.geolocation.clearWatch(id);
-  }, []);
+  }, [originProp]);
 
   useEffect(() => {
     if (!spot.id || !API_KEY) return;

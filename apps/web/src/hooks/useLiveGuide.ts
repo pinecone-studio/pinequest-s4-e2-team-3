@@ -62,6 +62,7 @@ export function useLiveGuide() {
     markArrived,
     setSuggestions,
     selectPlace,
+    setReturnTarget,
   } = useLiveStore();
   const realCoords = useLocationStore((s) => s.coordinates);
 
@@ -125,6 +126,23 @@ export function useLiveGuide() {
     setLastAnswer(null);
   }, []);
 
+  // Speak a one-off line (e.g. confirming a detour) and show it on Michelle's card.
+  const announce = useCallback((text: string) => {
+    setLastAnswer(text);
+    setAudioLoading(true);
+    void speak(text, {
+      lang: "en",
+      onStart: () => {
+        setAudioLoading(false);
+        setIsSpeaking(true);
+      },
+      onEnd: () => {
+        setIsSpeaking(false);
+        setAudioLoading(false);
+      },
+    });
+  }, []);
+
   // Proactive trigger: as the traveller moves, find the furthest stop they've
   // reached (from the current one onward), advance the guide to it, and narrate
   // it once. Scanning forward — not just checking the current stop — is what
@@ -143,6 +161,7 @@ export function useLiveGuide() {
         markArrived(stop.id);
         sayNarration(stop);
       }
+      setReturnTarget(null); // back on the route — drop the "return" guide line
       break; // furthest reached stop handled; stop scanning
     }
   }, [
@@ -153,6 +172,7 @@ export function useLiveGuide() {
     goToStop,
     markArrived,
     sayNarration,
+    setReturnTarget,
   ]);
 
   const replay = useCallback(() => {
@@ -276,6 +296,7 @@ export function useLiveGuide() {
     replay,
     pause,
     ask,
+    announce,
     startListening,
   };
 }

@@ -201,7 +201,7 @@ async function runConversation(
           : [];
         const kind = placeKind(args.keyword, args.type);
         for (const p of found) {
-          collected.push({ id: p.id, name: p.name, latitude: p.latitude, longitude: p.longitude, address: p.address, kind });
+          collected.push({ id: p.id, name: p.name, latitude: p.latitude, longitude: p.longitude, address: p.address, rating: p.rating, kind });
         }
         console.log(`[chat] keyword="${args.keyword}" → ${found.length} places`);
         result = {

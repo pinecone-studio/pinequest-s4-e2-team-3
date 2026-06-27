@@ -20,6 +20,13 @@
   30% { transform: translateY(-5px); opacity: 1; animation-timing-function: ease-in-out; }
 }
 
+/* Calm entrance for live-guide cards/suggestions: brief fade + small rise. */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-rise { animation: rise 0.22s ease-out both; }
+
 @media (prefers-reduced-motion: reduce) {
   /* Strip translate from the typing dot; keep opacity pulse so it still signals activity. */
   @keyframes typingDot {
@@ -28,7 +35,8 @@
   }
   /* Remove slide/scale entry from modals; keep fade so they don't just snap in. */
   .animate-slide-up,
-  .animate-scale-in {
+  .animate-scale-in,
+  .animate-rise {
     animation: fadeIn 150ms ease-out both;
   }
 }
