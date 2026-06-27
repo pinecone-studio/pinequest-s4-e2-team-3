@@ -107,8 +107,10 @@ export interface SosOption {
   title: string;
   subtitle: string;
   tone: Tone;
-  // The message prepared for the operator and the service that gets called.
+  // The message prepared for the operator (English) and its Mongolian translation
+  // read aloud to the operator during the in-app call, plus the service called.
   message: string;
+  messageMn: string;
   service: string;
   serviceNumber: string;
 }
