@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useMap, useMapsLibrary } from "@vis.gl/react-google-maps";
-import type { LatLng } from "./types";
+import type { LatLng, TravelMode } from "./types";
 
 const svgUrl = (content: string) =>
   "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(content);
@@ -17,7 +17,21 @@ const YOU_DOT = svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="20" heigh
   <circle cx="10" cy="10" r="6" fill="#4F46E5" stroke="white" stroke-width="2"/>
 </svg>`);
 
-export function RouteLayer({ origin, destination }: { origin: LatLng; destination: LatLng }) {
+const POLYLINE_COLOR: Record<TravelMode, string> = {
+  walking: "#4F46E5",
+  driving: "#3B82F6",
+  transit: "#10B981",
+};
+
+export function RouteLayer({
+  origin,
+  destination,
+  mode,
+}: {
+  origin: LatLng;
+  destination: LatLng;
+  mode: TravelMode;
+}) {
   const map = useMap();
   const routesLib = useMapsLibrary("routes");
   const youRef = useRef<google.maps.Marker | null>(null);
@@ -25,35 +39,79 @@ export function RouteLayer({ origin, destination }: { origin: LatLng; destinatio
   useEffect(() => {
     if (!map || !routesLib) return;
 
+    const gmMode =
+      mode === "driving" ? routesLib.TravelMode.DRIVING
+      : mode === "transit" ? routesLib.TravelMode.TRANSIT
+      : routesLib.TravelMode.WALKING;
+
+    const polylineOptions: google.maps.PolylineOptions =
+      mode === "walking"
+        ? {
+            strokeOpacity: 0,
+            icons: [
+              {
+                icon: {
+                  path: google.maps.SymbolPath.CIRCLE,
+                  fillColor: POLYLINE_COLOR.walking,
+                  fillOpacity: 1,
+                  strokeOpacity: 0,
+                  scale: 3.5,
+                },
+                offset: "0",
+                repeat: "14px",
+              },
+            ],
+          }
+        : {
+            strokeColor: POLYLINE_COLOR[mode],
+            strokeWeight: 4,
+            strokeOpacity: 0.9,
+          };
+
     const renderer = new routesLib.DirectionsRenderer({
       map,
       suppressMarkers: true,
-      polylineOptions: { strokeColor: "#4F46E5", strokeWeight: 4, strokeOpacity: 0.9 },
+      polylineOptions,
     });
 
     new routesLib.DirectionsService().route(
-      { origin, destination, travelMode: routesLib.TravelMode.WALKING },
+      { origin, destination, travelMode: gmMode },
       (result, status) => {
         if (status === "OK" && result) renderer.setDirections(result);
       },
     );
 
     new google.maps.Marker({
-      position: destination, map,
-      icon: { url: DEST_PIN, scaledSize: new google.maps.Size(22, 30), anchor: new google.maps.Point(11, 30) },
+      position: destination,
+      map,
+      icon: {
+        url: DEST_PIN,
+        scaledSize: new google.maps.Size(22, 30),
+        anchor: new google.maps.Point(11, 30),
+      },
     });
 
     youRef.current = new google.maps.Marker({
-      position: origin, map,
-      icon: { url: YOU_DOT, scaledSize: new google.maps.Size(20, 20), anchor: new google.maps.Point(10, 10) },
+      position: origin,
+      map,
+      icon: {
+        url: YOU_DOT,
+        scaledSize: new google.maps.Size(20, 20),
+        anchor: new google.maps.Point(10, 10),
+      },
     });
+
+    // Traffic layer — always visible so congestion is clear
+    const trafficLayer = new google.maps.TrafficLayer();
+    trafficLayer.setMap(map);
 
     return () => {
       renderer.setMap(null);
       youRef.current?.setMap(null);
+      trafficLayer.setMap(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, routesLib]);
+  }, [map, routesLib, mode]);
 
   useEffect(() => { youRef.current?.setPosition(origin); }, [origin]);
 

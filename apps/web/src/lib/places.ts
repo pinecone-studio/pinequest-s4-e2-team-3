@@ -20,6 +20,8 @@ export interface NearbyPlace {
   walkMinutes?: number;
   imageUrl?: string;
   description?: string;
+  reviewCount?: number;
+  reviews?: { text: string; author?: string; rating?: number }[];
 }
 
 // Rich card shape for the Explore browse UI (matches the ExploreSpot type the
@@ -43,10 +45,15 @@ interface PlacesTextResult {
   displayName?: { text?: string };
   rating?: number;
   formattedAddress?: string;
-  location?: { latitude?: number; longitude?: number };
   currentOpeningHours?: { openNow?: boolean };
   photos?: { name: string }[];
   editorialSummary?: { text?: string };
+  userRatingCount?: number;
+  reviews?: {
+    rating?: number;
+    text?: { text?: string };
+    authorAttribution?: { displayName?: string };
+  }[];
 }
 
 // Real places near a point, closest first, via the Places API (New) Text Search.
@@ -73,7 +80,7 @@ export async function findNearbyPlaces(
             "Content-Type": "application/json",
             "X-Goog-Api-Key": GOOGLE_KEY,
             "X-Goog-FieldMask":
-              "places.displayName,places.rating,places.formattedAddress,places.currentOpeningHours.openNow,places.location,places.photos,places.editorialSummary",
+              "places.id,places.displayName,places.rating,places.formattedAddress,places.currentOpeningHours.openNow,places.location,places.photos,places.editorialSummary,places.userRatingCount,places.reviews",
           },
           body: JSON.stringify({
             textQuery: type ? `${keyword} ${type}` : keyword,
@@ -105,18 +112,118 @@ export async function findNearbyPlaces(
         const imageUrl = photoName
           ? `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&key=${GOOGLE_KEY}`
           : undefined;
+        const reviews = (place.reviews ?? [])
+          .filter((r) => r.text?.text)
+          .slice(0, 5)
+          .map((r) => ({
+            text: r.text!.text!,
+            author: r.authorAttribution?.displayName,
+            rating: r.rating,
+          }));
         return {
           id: place.id ?? crypto.randomUUID(),
           name: place.displayName?.text ?? "Unknown",
-          latitude: lat ?? latitude,
-          longitude: lng ?? longitude,
+          latitude: place.location?.latitude ?? latitude,
+          longitude: place.location?.longitude ?? longitude,
           rating: place.rating,
           address: place.formattedAddress,
           openNow: place.currentOpeningHours?.openNow,
           walkMinutes,
           imageUrl,
           description: place.editorialSummary?.text,
+          reviewCount: place.userRatingCount,
+          reviews,
         };
+      });
+    });
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Text search — powers the search bar. Uses Places (New) searchText so any
+// query ("KFC", "coffee", "Zaisan") works, not just preset categories.
+// ---------------------------------------------------------------------------
+
+interface TextApiPlace {
+  id: string;
+  displayName?: { text?: string };
+  rating?: number;
+  location?: { latitude?: number; longitude?: number };
+  photos?: { name: string }[];
+  formattedAddress?: string;
+  types?: string[];
+}
+
+function guessCategory(types: string[] = []): { label: string; tone: BrowsePlace["categoryTone"] } {
+  if (types.some((t) => ["restaurant","cafe","bakery","fast_food_restaurant","meal_takeaway","food"].includes(t)))
+    return { label: "Food", tone: "amber" };
+  if (types.some((t) => ["museum","art_gallery","cultural_center"].includes(t)))
+    return { label: "Culture", tone: "purple" };
+  if (types.some((t) => ["park","national_park"].includes(t)))
+    return { label: "Nature", tone: "green" };
+  if (types.some((t) => ["historical_landmark","monument"].includes(t)))
+    return { label: "History", tone: "blue" };
+  if (types.some((t) => ["tourist_attraction","observation_deck"].includes(t)))
+    return { label: "Viewpoint", tone: "green" };
+  return { label: "Place", tone: "blue" };
+}
+
+export async function searchPlacesByText(
+  latitude: number,
+  longitude: number,
+  query: string,
+): Promise<BrowsePlace[]> {
+  if (!GOOGLE_KEY || !query.trim()) return [];
+
+  const cacheKey = `search:${roundCoord(latitude)},${roundCoord(longitude)}:${query.toLowerCase().trim()}`;
+
+  try {
+    return await cached(cacheKey, PLACES_TTL_MS, async () => {
+      const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": GOOGLE_KEY,
+          "X-Goog-FieldMask":
+            "places.id,places.displayName,places.rating,places.photos,places.location,places.formattedAddress,places.types",
+        },
+        body: JSON.stringify({
+          textQuery: query,
+          maxResultCount: 10,
+          locationBias: {
+            circle: { center: { latitude, longitude }, radius: 15000 },
+          },
+          languageCode: "en",
+        }),
+      });
+      if (!res.ok) throw new Error(`searchText ${res.status}`);
+
+      const data = await res.json() as { places?: TextApiPlace[] };
+      return (data.places ?? []).map((p) => {
+        const lat = p.location?.latitude ?? latitude;
+        const lng = p.location?.longitude ?? longitude;
+        const distKm = haversineKm(latitude, longitude, lat, lng);
+        const walkMinutes = Math.max(1, Math.round((distKm * 1000) / 83));
+        const photoName = p.photos?.[0]?.name;
+        const imageUrl = photoName
+          ? `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=600&key=${GOOGLE_KEY}`
+          : `https://picsum.photos/seed/${(p.id ?? "x").slice(-4)}/600/400`;
+        const { label, tone } = guessCategory(p.types);
+        return {
+          id: p.id ?? crypto.randomUUID(),
+          title: p.displayName?.text ?? "Unknown",
+          category: label,
+          categoryTone: tone,
+          rating: p.rating ?? 4.0,
+          distance: `${distKm.toFixed(1)} km`,
+          walkTime: `${walkMinutes} min`,
+          description: p.formattedAddress ?? "",
+          imageUrl,
+          latitude: lat,
+          longitude: lng,
+        } satisfies BrowsePlace;
       });
     });
   } catch {
@@ -133,31 +240,27 @@ const NEARBY_URL = "https://places.googleapis.com/v1/places:searchNearby";
 
 const GOOGLE_TYPES: Record<string, string[]> = {
   all:        ["tourist_attraction", "museum", "restaurant"],
-  food:       ["restaurant", "cafe", "bakery"],
+  food:       ["restaurant", "fast_food_restaurant", "bakery"],
+  coffee:     ["cafe", "coffee_shop"],
   viewpoints: ["tourist_attraction", "observation_deck"],
   culture:    ["museum", "art_gallery", "cultural_center"],
   history:    ["historical_landmark", "monument", "museum"],
-  attraction: ["tourist_attraction"],
-  restaurant: ["restaurant", "cafe"],
-  hotel:      ["lodging", "hotel"],
-  museum:     ["museum", "art_gallery"],
   nature:     ["park", "national_park"],
-  shopping:   ["shopping_mall", "department_store"],
-  transit:    ["bus_station", "transit_station", "light_rail_station"],
+  shopping:   ["shopping_mall", "department_store", "market"],
+  nightlife:  ["bar", "night_club", "karaoke"],
+  hotels:     ["lodging", "hotel", "motel"],
 };
 
 const CATEGORY_TONE: Record<string, BrowsePlace["categoryTone"]> = {
-  all: "blue", food: "amber", viewpoints: "green", culture: "purple",
-  history: "blue", attraction: "blue", restaurant: "amber",
-  hotel: "purple", museum: "green", nature: "green", shopping: "amber",
-  transit: "blue",
+  all: "blue", food: "amber", coffee: "amber", viewpoints: "green",
+  culture: "purple", history: "blue", nature: "green",
+  shopping: "amber", nightlife: "purple", hotels: "blue",
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
-  all: "Attraction", food: "Food", viewpoints: "Viewpoint",
-  culture: "Culture", history: "History", attraction: "Attraction",
-  restaurant: "Restaurant", hotel: "Hotel", museum: "Museum",
-  nature: "Nature", shopping: "Shopping", transit: "Bus stop",
+  all: "Attraction", food: "Food", coffee: "Coffee", viewpoints: "Viewpoint",
+  culture: "Culture", history: "History", nature: "Nature",
+  shopping: "Shopping", nightlife: "Nightlife", hotels: "Hotel",
 };
 
 interface NearbyApiPlace {

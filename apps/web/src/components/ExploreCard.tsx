@@ -43,6 +43,25 @@ export function ExploreCard({ spot }: ExploreCardProps) {
 
         <div className="p-4">
           <h3 className="text-lg font-bold text-ink">{spot.title}</h3>
+
+          {/* Star rating */}
+          <div className="mt-1 flex items-center gap-1.5">
+            <span className="text-sm font-bold text-amber-500">{spot.rating.toFixed(1)}</span>
+            <div className="flex items-center gap-0.5">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <StarIcon
+                  key={i}
+                  size={12}
+                  className={
+                    i < Math.floor(spot.rating) ? "text-amber-400"
+                    : i === Math.floor(spot.rating) && spot.rating % 1 >= 0.5 ? "text-amber-300"
+                    : "text-ink/20"
+                  }
+                />
+              ))}
+            </div>
+          </div>
+
           <div className="mt-2 flex items-center gap-4 text-xs font-semibold text-ink-muted">
             <span className="flex items-center gap-1">
               <MapPinIcon size={14} />
