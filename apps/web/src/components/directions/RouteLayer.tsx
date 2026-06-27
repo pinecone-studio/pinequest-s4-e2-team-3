@@ -27,10 +27,12 @@ export function RouteLayer({
   origin,
   destination,
   mode,
+  onDuration,
 }: {
   origin: LatLng;
   destination: LatLng;
   mode: TravelMode;
+  onDuration?: (duration: string) => void;
 }) {
   const map = useMap();
   const routesLib = useMapsLibrary("routes");
@@ -77,7 +79,11 @@ export function RouteLayer({
     new routesLib.DirectionsService().route(
       { origin, destination, travelMode: gmMode },
       (result, status) => {
-        if (status === "OK" && result) renderer.setDirections(result);
+        if (status === "OK" && result) {
+          renderer.setDirections(result);
+          const leg = result.routes[0]?.legs[0];
+          if (leg?.duration?.text) onDuration?.(leg.duration.text);
+        }
       },
     );
 

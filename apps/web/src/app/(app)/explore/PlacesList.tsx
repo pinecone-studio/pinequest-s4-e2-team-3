@@ -120,7 +120,9 @@ interface Props {
 
 export function PlacesList({ category, weather }: Props) {
   const [spots, setSpots] = useState<ExploreSpot[]>([]);
+  const [searchResults, setSearchResults] = useState<ExploreSpot[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   const [userLatLng, setUserLatLng] = useState({ lat: DEFAULT_LAT, lng: DEFAULT_LNG });
 
@@ -128,6 +130,8 @@ export function PlacesList({ category, weather }: Props) {
   useEffect(() => {
     setLoading(true);
     setSpots([]);
+    setSearchResults(null);
+    setQuery("");
 
     function load(lat: number, lng: number) {
       setUserLatLng({ lat, lng });
@@ -145,31 +149,43 @@ export function PlacesList({ category, weather }: Props) {
     );
   }, [category]);
 
-  // Debounced text search — hits Google directly when query is typed
+  // Search: client-side first, fallback to API if < 2 local matches
   useEffect(() => {
-    if (!query.trim()) return;
-    setLoading(true);
+    const q = query.trim();
+    if (!q) { setSearchResults(null); return; }
+
+    // Instant client-side filter
+    const local = spots.filter((s) =>
+      s.title.toLowerCase().includes(q.toLowerCase()) ||
+      s.category.toLowerCase().includes(q.toLowerCase()) ||
+      s.description.toLowerCase().includes(q.toLowerCase()),
+    );
+
+    if (local.length >= 2) {
+      setSearchResults(local);
+      return;
+    }
+
+    // Not enough local matches — call API after debounce
+    setSearching(true);
     const t = setTimeout(() => {
-      fetch(`/api/places?lat=${userLatLng.lat}&lng=${userLatLng.lng}&q=${encodeURIComponent(query)}`)
-        .then((r) => (r.ok ? r.json() : []))
-        .then((data: ExploreSpot[]) => { setSpots(data); setLoading(false); })
-        .catch(() => setLoading(false));
+      fetch(`/api/places?lat=${userLatLng.lat}&lng=${userLatLng.lng}&q=${encodeURIComponent(q)}`)
+        .then((r) => r.ok ? r.json() : [])
+        .then((data: ExploreSpot[]) => {
+          setSearchResults(data.length > 0 ? data : local);
+          setSearching(false);
+        })
+        .catch(() => { setSearchResults(local); setSearching(false); });
     }, 400);
     return () => clearTimeout(t);
-  }, [query, userLatLng]);
+  }, [query, spots, userLatLng]);
 
-  // When query is cleared, reload category results
-  useEffect(() => {
-    if (query.trim()) return;
-    setLoading(true);
-    fetchPlaces(userLatLng.lat, userLatLng.lng, category).then((data) => {
-      setSpots(data);
-      setLoading(false);
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
-
-  const filtered = weather && !query.trim() ? applyWeatherBoost(spots, weather, category) : spots;
+  const q = query.trim().toLowerCase();
+  const filtered = (() => {
+    if (q && searchResults !== null) return searchResults;
+    const base = weather && !q ? applyWeatherBoost(spots, weather, category) : spots;
+    return base;
+  })();
 
   return (
     <div className="space-y-3">
@@ -184,11 +200,13 @@ export function PlacesList({ category, weather }: Props) {
           className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-muted"
         />
         {query && (
-          <button onClick={() => setQuery("")} className="text-ink-muted hover:text-ink">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="M18 6 6 18M6 6l12 12"/>
-            </svg>
-          </button>
+          searching
+            ? <span className="h-3 w-3 animate-spin rounded-full border-2 border-ink/20 border-t-ink/60 shrink-0" />
+            : <button onClick={() => setQuery("")} className="text-ink-muted hover:text-ink shrink-0">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <path d="M18 6 6 18M6 6l12 12"/>
+                </svg>
+              </button>
         )}
       </div>
 
