@@ -1,6 +1,7 @@
 "use client";
 import { create } from "zustand";
 import type { Coords, DemoRoute, PlaceOption } from "@/types";
+import type { BusLeg } from "@/lib/transit";
 
 interface LiveState {
   activeRoute: DemoRoute | null;
@@ -17,6 +18,13 @@ interface LiveState {
   selectedPlace: PlaceOption | null;
   // After a detour, the next stop to guide the traveller back to (blue line).
   returnTarget: Coords | null;
+  // How the guide line to returnTarget is drawn: solid road (drive/taxi),
+  // dashed road (walk), or a transit (bus) route.
+  returnMode: "drive" | "transit" | "walk";
+  // Real bus route legs to draw (walk dashed, bus colored) from the Hamuga API.
+  busLegs: BusLeg[] | null;
+  // Map base layer: standard roads vs satellite imagery (with labels).
+  mapType: "roadmap" | "hybrid";
 
   // Routes that have an offline pack saved, + a demo toggle to preview offline.
   offlineReadyIds: string[];
@@ -29,7 +37,9 @@ interface LiveState {
   setSimulated: (coords: Coords | null) => void;
   setSuggestions: (places: PlaceOption[]) => void;
   selectPlace: (place: PlaceOption | null) => void;
-  setReturnTarget: (coords: Coords | null) => void;
+  setReturnTarget: (coords: Coords | null, mode?: "drive" | "transit" | "walk") => void;
+  setBusLegs: (legs: BusLeg[] | null) => void;
+  toggleMapType: () => void;
   setOfflineReady: (routeId: string) => void;
   setForceOffline: (value: boolean) => void;
   reset: () => void;
@@ -43,6 +53,9 @@ export const useLiveStore = create<LiveState>((set) => ({
   suggestions: [],
   selectedPlace: null,
   returnTarget: null,
+  returnMode: "drive",
+  busLegs: null,
+  mapType: "roadmap",
   offlineReadyIds: [],
   forceOffline: false,
 
@@ -55,6 +68,7 @@ export const useLiveStore = create<LiveState>((set) => ({
       suggestions: [],
       selectedPlace: null,
       returnTarget: null,
+      busLegs: null,
     }),
 
   goToStop: (currentStopIndex) => set({ currentStopIndex }),
@@ -75,11 +89,17 @@ export const useLiveStore = create<LiveState>((set) => ({
   setSimulated: (simulatedCoords) => set({ simulatedCoords }),
 
   setSuggestions: (suggestions) =>
-    set({ suggestions, selectedPlace: null, returnTarget: null }),
+    set({ suggestions, selectedPlace: null, returnTarget: null, busLegs: null }),
 
   selectPlace: (selectedPlace) => set({ selectedPlace }),
 
-  setReturnTarget: (returnTarget) => set({ returnTarget }),
+  setReturnTarget: (returnTarget, mode = "drive") =>
+    set({ returnTarget, returnMode: mode }),
+
+  setBusLegs: (busLegs) => set({ busLegs }),
+
+  toggleMapType: () =>
+    set((state) => ({ mapType: state.mapType === "roadmap" ? "hybrid" : "roadmap" })),
 
   setOfflineReady: (routeId) =>
     set((state) =>
@@ -99,5 +119,6 @@ export const useLiveStore = create<LiveState>((set) => ({
       suggestions: [],
       selectedPlace: null,
       returnTarget: null,
+      busLegs: null,
     }),
 }));

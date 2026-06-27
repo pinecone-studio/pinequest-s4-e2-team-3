@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { Moon, Sun } from "lucide-react";
+import { Layers, Moon, Sun } from "lucide-react";
 import {
   BarsIcon,
   ChevronLeftIcon,
@@ -17,6 +17,7 @@ import {
   WalkIcon,
 } from "@/components/icons";
 import { demoRoutes } from "@/lib/routes";
+import type { BusLeg, BusRoute, BusStep } from "@/lib/transit";
 import { googleMapsDirectionsUrl } from "@/lib/maps";
 import { GOOGLE_MAPS_KEY, hasGoogleMapsKey, loadGoogleMaps } from "@/lib/googlemaps";
 import { formatDistance, haversineMeters } from "@/lib/geo";
@@ -28,29 +29,30 @@ import { weatherEmoji, weatherLabel, type WeatherNow } from "@/lib/weather";
 import { useLiveStore } from "@/stores/liveStore";
 import { useLocationStore } from "@/stores/locationStore";
 import { useLocation } from "@/hooks/useLocation";
-import { DirectionsSheet } from "@/components/DirectionsSheet";
-import type { Coords, DemoRoute, ExploreSpot, PlaceOption, RouteStop } from "@/types";
+import type { Coords, DemoRoute, PlaceOption, RouteStop } from "@/types";
 
 // Loaded lazily + client-only because the Google Maps SDK touches `window`.
 const RouteMap = dynamic(() => import("@/components/RouteMap"), { ssr: false });
 
-// Map a suggested place onto the ExploreSpot shape DirectionsSheet expects; it
-// fetches the rest (hours, photo, reviews) from the place id.
-function placeToSpot(p: PlaceOption, userCoords: Coords | null): ExploreSpot {
-  const m = userCoords ? haversineMeters(userCoords, p) : null;
-  return {
-    id: p.id,
-    title: p.name,
-    category: p.kind === "transit" ? "Bus stop" : "Place",
-    categoryTone: "blue",
-    rating: p.rating ?? 0,
-    distance: m != null ? formatDistance(m) : "",
-    walkTime: m != null ? `${Math.max(1, Math.round(m / 83))} min` : "",
-    description: p.address ?? "",
-    imageUrl: "",
-    latitude: p.latitude,
-    longitude: p.longitude,
-  };
+// A place the traveller has chosen to head to (plan stop or a nearby pick).
+type Target = { name: string; latitude: number; longitude: number };
+
+const stripHtml = (s: string) => s.replace(/<[^>]+>/g, "");
+
+// Turn a Google transit leg into plain "board bus N at X, get off at Y" steps.
+function parseBusSteps(leg: google.maps.DirectionsLeg): BusStep[] {
+  return leg.steps.map((s): BusStep => {
+    if (s.travel_mode === google.maps.TravelMode.TRANSIT && s.transit) {
+      const t = s.transit;
+      const line = t.line?.short_name || t.line?.name || "Bus";
+      return {
+        mode: "transit",
+        text: `Bus ${line} toward ${t.headsign ?? t.arrival_stop?.name ?? "destination"}`,
+        sub: `Board at ${t.departure_stop?.name ?? "stop"} · ${t.num_stops} stop${t.num_stops === 1 ? "" : "s"} · get off at ${t.arrival_stop?.name ?? "stop"}`,
+      };
+    }
+    return { mode: "walk", text: stripHtml(s.instructions || "Walk"), sub: s.duration?.text };
+  });
 }
 
 type Theme = "dark" | "light";
@@ -149,7 +151,7 @@ export default function LiveGuidePage() {
 // Decides what fills the screen behind the guide UI:
 //   real Mapbox route map → cached static snapshot (offline) → stylised backdrop.
 function LiveBackground({ theme }: { theme: Theme }) {
-  const { activeRoute, currentStopIndex, simulatedCoords, forceOffline, suggestions, selectedPlace, returnTarget } =
+  const { activeRoute, currentStopIndex, simulatedCoords, forceOffline, suggestions, selectedPlace, returnTarget, returnMode, busLegs, mapType } =
     useLiveStore();
   const realCoords = useLocationStore((s) => s.coordinates);
   const position: Coords | null = resolvePosition(simulatedCoords, realCoords, activeRoute);
@@ -186,6 +188,9 @@ function LiveBackground({ theme }: { theme: Theme }) {
           suggestions={suggestions}
           selectedPlace={selectedPlace}
           returnTarget={returnTarget}
+          returnMode={returnMode}
+          busLegs={busLegs}
+          mapType={mapType}
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#eef2fb]/40 via-transparent to-[#eef2fb]/90 dark:from-[#0d1422]/40 dark:via-transparent dark:to-[#0d1422]/90" />
       </div>
@@ -222,9 +227,13 @@ function RoutePicker({
   onToggleTheme: () => void;
 }) {
   const setRoute = useLiveStore((s) => s.setRoute);
+  const setSimulated = useLiveStore((s) => s.setSimulated);
 
   const start = (route: DemoRoute) => {
-    setRoute(route);
+    setRoute(route); // resets simulatedCoords to null…
+    const first = route.stops[0];
+    // …so every demo begins at the first stop, not the user's real GPS.
+    if (first) setSimulated({ latitude: first.latitude, longitude: first.longitude });
   };
 
   return (
@@ -294,6 +303,7 @@ function LiveExperience({
     reset,
     setSuggestions,
     setReturnTarget,
+    setBusLegs,
     setOfflineReady,
     setForceOffline,
   } = useLiveStore();
@@ -312,8 +322,6 @@ function LiveExperience({
     weather,
     weatherTip,
     suggestions,
-    selectedPlace,
-    selectPlace,
     voiceInSupported,
     replay,
     pause,
@@ -333,8 +341,81 @@ function LiveExperience({
   // Secondary panels (Local tips + demo controls) are hidden by default so Michelle
   // stays the focus; one button reveals them.
   const [showExtras, setShowExtras] = useState(false);
-  // Plan-stop chooser, opened from "Back to my plan".
-  const [planOpen, setPlanOpen] = useState(false);
+  // The conversational hub: the "what's next?" decision card, the full-plan list,
+  // a chosen target awaiting a transport choice, and the bus-route sheet.
+  const [cardOpen, setCardOpen] = useState(false);
+  const [fullPlanOpen, setFullPlanOpen] = useState(false);
+  const [target, setTarget] = useState<Target | null>(null);
+  // "Somewhere else" first asks what the traveller feels like, before suggesting.
+  const [intentOpen, setIntentOpen] = useState(false);
+  // True after a side-trip to a nearby place, so we can offer "Back to my route".
+  const [detour, setDetour] = useState(false);
+  // The bus route's steps (which bus, board/alight stops) once "By bus" is picked.
+  const [busPlan, setBusPlan] = useState<BusStep[] | null>(null);
+
+  // Choose a place to head to → preview the leg on the map → ask transport.
+  const pickTarget = (t: Target) => {
+    setSuggestions([]);
+    setCardOpen(false);
+    setFullPlanOpen(false);
+    setBusPlan(null);
+    setBusLegs(null);
+    setDetour(false); // heading to a plan target = back on the route
+    setReturnTarget({ latitude: t.latitude, longitude: t.longitude }); // road preview
+    setTarget(t);
+  };
+  const chooseBus = (steps: BusStep[], legs?: BusLeg[]) => {
+    if (target) {
+      // Redraw the same map's guide line as a transit (bus) route + show steps.
+      // legs = real per-leg geometry; without them the map uses Google transit.
+      setReturnTarget({ latitude: target.latitude, longitude: target.longitude }, "transit");
+      setBusLegs(legs ?? null);
+      setBusPlan(steps);
+      const firstBus = steps.find((s) => s.mode === "transit");
+      announce(
+        firstBus
+          ? `${firstBus.text}. ${firstBus.sub ?? ""} The full route is below and on the map.`
+          : `Here's your bus route to ${target.name.split(",")[0]} on the map.`,
+      );
+    }
+    setTarget(null);
+  };
+  const chooseCar = () => {
+    setBusPlan(null);
+    setBusLegs(null);
+    if (target)
+      announce(
+        `For a taxi you can call UBCab, or just raise your hand by the road. I'll guide you to ${target.name.split(",")[0]}.`,
+      );
+    setTarget(null); // returnTarget stays (road line) → guide line to it
+  };
+  // Ask the traveller what they feel like first; the answer (a quick chip or a
+  // typed/spoken request) drives a tailored nearby recommendation.
+  const somewhereElse = () => {
+    setCardOpen(false);
+    setIntentOpen(true);
+    announce("What do you feel like? Grab a bite, see a sight, a coffee, or somewhere to rest?");
+  };
+  const pickIntent = (q: string) => {
+    setIntentOpen(false);
+    void ask(q);
+  };
+  // A nearby suggestion is always close, so skip the bus/taxi choice and just
+  // guide there on foot (road line) — no TransportCard.
+  const goToNearby = (t: Target) => {
+    setSuggestions([]);
+    setBusPlan(null);
+    setBusLegs(null);
+    setReturnTarget({ latitude: t.latitude, longitude: t.longitude }, "walk");
+    setDetour(true);
+    announce(
+      `Heading to ${t.name.split(",")[0]} — it's close, I'll guide you there on foot. When you're done, tap "Back to my route" to keep going.`,
+    );
+  };
+  // A typed/spoken request answers the intent prompt too → close it.
+  useEffect(() => {
+    if (suggestions.length) setIntentOpen(false);
+  }, [suggestions]);
 
   // --- Offline pack ---
   const offlineSaved = activeRoute ? offlineReadyIds.includes(activeRoute.id) : false;
@@ -453,6 +534,19 @@ function LiveExperience({
     };
   }, []);
 
+  // When the traveller reaches a stop, Michelle reads it (arrival narration) and
+  // the "what's next?" card opens — unless we're mid Auto-walk demo or already
+  // mid-decision. ponytail: keyed on the stop id so it fires once per arrival.
+  useEffect(() => {
+    if (arrived && !simulating && !target) {
+      setBusPlan(null);
+      setBusLegs(null);
+      setDetour(false); // reached a plan stop → no longer on a side-trip
+      setCardOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrived, currentStop?.id]);
+
   return (
     <>
       <TopBar theme={theme} onToggleTheme={onToggleTheme} />
@@ -492,42 +586,79 @@ function LiveExperience({
         />
       )}
 
+      {/* The conversational hub. Priority: transport choice → decision card →
+          nearby picks → a quiet "What's next?" entry. */}
+      {target ? (
+        <TransportCard
+          origin={effectiveCoords}
+          target={target}
+          onBus={chooseBus}
+          onCar={chooseCar}
+          onBack={() => {
+            setTarget(null);
+            setReturnTarget(null);
+            setBusLegs(null);
+          }}
+        />
+      ) : intentOpen ? (
+        <IntentCard
+          onPick={pickIntent}
+          onBack={() => {
+            setIntentOpen(false);
+            setCardOpen(true);
+          }}
+        />
+      ) : cardOpen ? (
+        <NextStepCard
+          nextStop={nextStop}
+          stops={activeRoute?.stops ?? []}
+          currentStopId={currentStop?.id ?? null}
+          fullPlanOpen={fullPlanOpen}
+          onToggleFullPlan={() => setFullPlanOpen((v) => !v)}
+          onTakeMeThere={() =>
+            nextStop &&
+            pickTarget({
+              name: nextStop.name,
+              latitude: nextStop.latitude,
+              longitude: nextStop.longitude,
+            })
+          }
+          onSomewhereElse={somewhereElse}
+          onPickStop={(s) =>
+            pickTarget({ name: s.name, latitude: s.latitude, longitude: s.longitude })
+          }
+          onClose={() => setCardOpen(false)}
+        />
+      ) : suggestions.length === 0 && !busPlan ? (
+        <button
+          onClick={() => setCardOpen(true)}
+          className={[
+            "pointer-events-auto mt-3 flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-bold",
+            detour
+              ? "bg-primary-600 text-white"
+              : "bg-ink/5 text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15",
+          ].join(" ")}
+        >
+          {detour ? "↩ Back to my route" : "What's next? →"}
+        </button>
+      ) : null}
+
+      {busPlan && <BusPlanCard steps={busPlan} onClose={() => setBusPlan(null)} />}
+
       {suggestions.length > 0 && (
         <SuggestionList
           suggestions={suggestions}
-          selectedPlace={selectedPlace}
           userCoords={effectiveCoords}
-          onSelect={selectPlace}
           onDismiss={() => setSuggestions([])}
-          onBackToPlan={() => {
-            setSuggestions([]); // hide the list + clear the detour
-            setPlanOpen(true); // let the traveller pick which stop to head to
-          }}
-          onGo={(place) => {
-            const m = effectiveCoords ? haversineMeters(effectiveCoords, place) : null;
-            const min = m != null ? Math.max(1, Math.round(m / 83)) : null;
-            const name = place.name.split(",")[0];
-            announce(
-              `Heading to ${name}${min ? `, about ${min} minute${min === 1 ? "" : "s"} away` : ""}. ` +
-                `I'll keep your plan ready — tap "Back to my plan" whenever you want to continue.`,
-            );
-          }}
+          onPick={(place) =>
+            goToNearby({
+              name: place.name,
+              latitude: place.latitude,
+              longitude: place.longitude,
+            })
+          }
         />
       )}
-
-      <BusExplorer userCoords={effectiveCoords} />
-
-      <PlanStops
-        open={planOpen}
-        stops={activeRoute?.stops ?? []}
-        currentStopId={currentStop?.id ?? null}
-        onClose={() => setPlanOpen(false)}
-        onGo={(stop) => {
-          setReturnTarget({ latitude: stop.latitude, longitude: stop.longitude });
-          announce(`Heading to ${stop.name}.`);
-          setPlanOpen(false);
-        }}
-      />
 
       <NarrationCard
         speaking={isSpeaking}
@@ -571,6 +702,9 @@ function TopBar({
   theme: Theme;
   onToggleTheme: () => void;
 }) {
+  const mapType = useLiveStore((s) => s.mapType);
+  const toggleMapType = useLiveStore((s) => s.toggleMapType);
+  const satellite = mapType === "hybrid";
   return (
     <div className="pointer-events-auto flex items-center gap-2">
       <Link
@@ -581,7 +715,22 @@ function TopBar({
         <ChevronLeftIcon size={20} />
       </Link>
 
-      <ThemeToggle theme={theme} onToggle={onToggleTheme} className="ml-auto" />
+      <button
+        type="button"
+        onClick={toggleMapType}
+        aria-label={satellite ? "Switch to map view" : "Switch to satellite view"}
+        title={satellite ? "Map view" : "Satellite view"}
+        className={[
+          "ml-auto flex h-10 w-10 items-center justify-center rounded-full transition-colors",
+          satellite
+            ? "bg-primary-600 text-white"
+            : "bg-ink/5 text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15",
+        ].join(" ")}
+      >
+        <Layers size={18} />
+      </button>
+
+      <ThemeToggle theme={theme} onToggle={onToggleTheme} />
 
       <Link
         href="/sos"
@@ -734,257 +883,325 @@ function PresenterStrip({
   );
 }
 
-// Places Michelle suggested (food spots, bus stations…) as selectable chips. Picking
-// one routes the map to it; a second tap clears the selection. When something is
-// selected, a Google Maps hand-off appears (transit directions for a bus stop).
+// Nearby places Michelle found — tap one to head there (then choose transport).
 function SuggestionList({
   suggestions,
-  selectedPlace,
   userCoords,
-  onSelect,
+  onPick,
   onDismiss,
-  onBackToPlan,
-  onGo,
 }: {
   suggestions: PlaceOption[];
-  selectedPlace: PlaceOption | null;
   userCoords: Coords | null;
-  onSelect: (place: PlaceOption | null) => void;
+  onPick: (place: PlaceOption) => void;
   onDismiss: () => void;
-  onBackToPlan: () => void;
-  onGo: (place: PlaceOption) => void;
 }) {
   const transit = suggestions.some((s) => s.kind === "transit");
-  const selMeters =
-    selectedPlace && userCoords ? haversineMeters(userCoords, selectedPlace) : null;
-  const [sheetSpot, setSheetSpot] = useState<ExploreSpot | null>(null);
-
   return (
-    <>
     <div className="animate-rise pointer-events-auto mt-3 rounded-3xl bg-white p-3 shadow-sm dark:bg-white/[0.07] dark:shadow-none">
       <div className="flex items-center justify-between px-1 pb-2">
         <p className="text-[11px] font-bold uppercase tracking-wide text-ink-muted dark:text-white/50">
-          {suggestions.length} {transit ? "stops" : "places"} nearby — tap to route there
+          {suggestions.length} {transit ? "stops" : "places"} nearby — tap to go
         </p>
-        <button
-          onClick={onDismiss}
-          className="text-xs font-semibold text-ink-muted dark:text-white/50"
-        >
+        <button onClick={onDismiss} className="text-xs font-semibold text-ink-muted dark:text-white/50">
           Hide
         </button>
       </div>
-
+      {/* Numbered + colour-coded to match the map markers, so the traveller can
+          tell which dot is which place at a glance. */}
       <div className="flex flex-wrap gap-2">
-        {suggestions.map((place) => {
-          const active = selectedPlace?.id === place.id;
-          const dist = userCoords
-            ? formatDistance(haversineMeters(userCoords, place))
-            : null;
+        {suggestions.map((place, i) => {
+          const dist = userCoords ? formatDistance(haversineMeters(userCoords, place)) : null;
+          const color = place.kind === "transit" ? "#1F9D6B" : "#D9831F";
           return (
             <button
               key={place.id}
-              onClick={() => {
-                onSelect(place); // highlight + route on the map behind
-                setSheetSpot(placeToSpot(place, userCoords)); // open the detail sheet
-              }}
-              className={[
-                "flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold transition-colors",
-                active
-                  ? "bg-primary-600 text-white"
-                  : "bg-ink/5 text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15",
-              ].join(" ")}
+              onClick={() => onPick(place)}
+              className="flex items-center gap-1.5 rounded-full bg-ink/5 px-2 py-1.5 pr-3 text-xs font-semibold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
             >
-              <span>{place.kind === "transit" ? "🚌" : "📍"}</span>
+              <span
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                style={{ backgroundColor: color }}
+              >
+                {i + 1}
+              </span>
               <span className="max-w-[9rem] truncate">{place.name}</span>
-              {dist && (
-                <span className={active ? "text-white/70" : "text-ink-muted dark:text-white/50"}>
-                  · {dist}
-                </span>
-              )}
+              {dist && <span className="text-ink-muted dark:text-white/50">· {dist}</span>}
             </button>
           );
         })}
       </div>
-
-      {selectedPlace && (
-        <div className="animate-rise mt-3">
-          {selMeters != null && (
-            <p className="mb-2 flex items-center gap-1.5 px-1 text-xs font-semibold text-ink dark:text-white">
-              <WalkIcon size={14} className="shrink-0 text-primary-500" />
-              <span className="truncate">
-                Walk to {selectedPlace.name.split(",")[0]} · {formatDistance(selMeters)} · ~
-                {Math.max(1, Math.round(selMeters / 83))} min
-              </span>
-            </p>
-          )}
-          {/* Confirm the detour → Michelle says she's taking you there. */}
-          <button
-            onClick={() => onGo(selectedPlace)}
-            className="flex w-full items-center justify-center gap-2 rounded-full bg-safety-safe py-2.5 text-sm font-bold text-white"
-          >
-            <WalkIcon size={16} /> Let&apos;s go
-          </button>
-          <div className="mt-2 flex gap-2">
-            <button
-              onClick={() => setSheetSpot(placeToSpot(selectedPlace, userCoords))}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-ink/5 py-2 text-xs font-bold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-            >
-              <MapPinIcon size={14} /> Details
-            </button>
-            {/* Clears the list + detour, draws the blue guide line to the next
-                stop, and Michelle says she's continuing the plan. */}
-            <button
-              onClick={onBackToPlan}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-ink/5 py-2 text-xs font-bold text-ink-muted hover:bg-ink/10 dark:bg-white/10 dark:text-white/60 dark:hover:bg-white/15"
-            >
-              <ChevronLeftIcon size={14} /> Back to plan
-            </button>
-          </div>
-        </div>
-      )}
-
     </div>
-
-      {/* Rendered OUTSIDE the animate-rise card: a transform ancestor would make
-          the fixed full-screen sheet size to the card instead of the viewport. */}
-      {sheetSpot && (
-        <DirectionsSheet
-          spot={sheetSpot}
-          origin={userCoords ? { lat: userCoords.latitude, lng: userCoords.longitude } : undefined}
-          onClose={() => setSheetSpot(null)}
-        />
-      )}
-    </>
   );
 }
 
-// One-tap "bus stops near me": fetches nearby stations via the existing browse
-// route, lists them, and opens DirectionsSheet for the picked one (how to get
-// to it + onward via the sheet's Google Maps transit link).
-function BusExplorer({ userCoords }: { userCoords: Coords | null }) {
-  const [stations, setStations] = useState<ExploreSpot[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [sheetSpot, setSheetSpot] = useState<ExploreSpot | null>(null);
+// Asks how to get to the chosen place. Bus → route drawn on the live map + steps;
+// car → spoken taxi tip. Both keep the guide line to the target.
+function TransportCard({
+  origin,
+  target,
+  onBus,
+  onCar,
+  onBack,
+}: {
+  origin: Coords | null;
+  target: Target;
+  onBus: (steps: BusStep[], legs?: BusLeg[]) => void;
+  onCar: () => void;
+  onBack: () => void;
+}) {
+  // Offer "By bus" only if we have a real route: first the live Hamuga API,
+  // else Google transit (most UB legs have neither → taxi instead).
+  const [bus, setBus] = useState<"checking" | "yes" | "no">("checking");
+  const legRef = useRef<google.maps.DirectionsLeg | null>(null);
+  const routeRef = useRef<BusRoute | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (origin) {
+        try {
+          const res = await fetch(
+            `/api/transit?oLat=${origin.latitude}&oLng=${origin.longitude}&dLat=${target.latitude}&dLng=${target.longitude}`,
+          );
+          const live: BusRoute | null = res.ok ? await res.json() : null;
+          if (cancelled) return;
+          if (live) {
+            routeRef.current = live;
+            return setBus("yes");
+          }
+        } catch {
+          /* fall through to Google below */
+        }
+      }
+      if (!origin || !GOOGLE_MAPS_KEY) return setBus("no");
+      try {
+        const google = await loadGoogleMaps(GOOGLE_MAPS_KEY);
+        if (cancelled) return;
+        new google.maps.DirectionsService().route(
+          {
+            origin: { lat: origin.latitude, lng: origin.longitude },
+            destination: { lat: target.latitude, lng: target.longitude },
+            travelMode: google.maps.TravelMode.TRANSIT,
+          },
+          (res: google.maps.DirectionsResult | null, status: google.maps.DirectionsStatus) => {
+            if (cancelled) return;
+            const leg = res?.routes?.[0]?.legs?.[0];
+            // Google often returns a walking-only "route" when it has no bus data
+            // (common in UB) — only count it as a bus if there's a real transit step.
+            const hasBus = !!leg?.steps?.some(
+              (s) => s.travel_mode === google.maps.TravelMode.TRANSIT,
+            );
+            legRef.current = status === "OK" && hasBus && leg ? leg : null;
+            setBus(legRef.current ? "yes" : "no");
+          },
+        );
+      } catch {
+        if (!cancelled) setBus("no");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [origin, target.latitude, target.longitude]);
 
-  const load = async () => {
-    if (loading) return;
-    setLoading(true);
-    const lat = userCoords?.latitude ?? 47.9077;
-    const lng = userCoords?.longitude ?? 106.8832;
-    try {
-      const res = await fetch(`/api/places?lat=${lat}&lng=${lng}&category=transit&limit=6`);
-      setStations(res.ok ? ((await res.json()) as ExploreSpot[]) : []);
-    } catch {
-      setStations([]);
-    }
-    setLoading(false);
-  };
+  const primary =
+    "flex w-full items-center justify-center gap-2 rounded-full bg-primary-600 py-2.5 text-sm font-bold text-white";
+  const secondary =
+    "flex w-full items-center justify-center gap-2 rounded-full bg-ink/5 py-2.5 text-sm font-bold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15";
 
   return (
-    <div className="pointer-events-auto mt-3">
-      {!stations ? (
-        <button
-          onClick={load}
-          disabled={loading}
-          className="flex w-full items-center justify-center gap-2 rounded-full bg-ink/5 py-2.5 text-sm font-bold text-ink hover:bg-ink/10 disabled:opacity-60 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-        >
-          🚌 {loading ? "Finding bus stops…" : "Bus stops near me"}
+    <div className="pointer-events-auto animate-rise mt-3 rounded-3xl bg-white p-3 shadow-sm dark:bg-white/[0.07] dark:shadow-none">
+      <p className="px-1 pb-2 text-[11px] font-bold uppercase tracking-wide text-ink-muted dark:text-white/50">
+        How do you want to get to {target.name.split(",")[0]}?
+      </p>
+      <div className="flex flex-col gap-1.5">
+        {bus === "checking" && (
+          <p className="px-1 pb-1 text-xs font-semibold text-ink-muted dark:text-white/50">
+            Checking for buses…
+          </p>
+        )}
+        {bus === "yes" && (
+          <button
+            onClick={() =>
+              routeRef.current
+                ? onBus(routeRef.current.steps, routeRef.current.legs)
+                : onBus(legRef.current ? parseBusSteps(legRef.current) : [])
+            }
+            className={primary}
+          >
+            🚌 By bus
+          </button>
+        )}
+        {bus === "no" && (
+          <p className="rounded-xl bg-ink/5 px-3 py-2 text-xs font-semibold text-ink-muted dark:bg-white/10 dark:text-white/60">
+            No direct bus here — a taxi is your best option.
+          </p>
+        )}
+        <button onClick={onCar} className={bus === "yes" ? secondary : primary}>
+          🚕 By car / taxi
         </button>
-      ) : (
-        <div className="animate-rise rounded-3xl bg-white p-3 shadow-sm dark:bg-white/[0.07] dark:shadow-none">
-          <div className="flex items-center justify-between px-1 pb-2">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-ink-muted dark:text-white/50">
-              {stations.length} bus stops nearby
-            </p>
-            <button
-              onClick={() => setStations(null)}
-              className="text-xs font-semibold text-ink-muted dark:text-white/50"
-            >
-              Hide
-            </button>
-          </div>
-          {stations.length === 0 ? (
-            <p className="px-1 pb-1 text-sm text-ink-muted dark:text-white/60">
-              No bus stops found nearby.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-1.5">
-              {stations.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => setSheetSpot(s)}
-                  className="flex items-center gap-2 rounded-xl bg-ink/5 px-3 py-2 text-left text-sm font-semibold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-                >
-                  🚌 <span className="min-w-0 flex-1 truncate">{s.title}</span>
-                  <span className="shrink-0 text-xs text-ink-muted dark:text-white/50">
-                    {s.distance}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {sheetSpot && (
-        <DirectionsSheet
-          spot={sheetSpot}
-          origin={userCoords ? { lat: userCoords.latitude, lng: userCoords.longitude } : undefined}
-          onClose={() => setSheetSpot(null)}
-        />
-      )}
+        <button
+          onClick={onBack}
+          className="mt-1 flex w-full items-center justify-center gap-1.5 py-1.5 text-xs font-bold text-ink-muted dark:text-white/50"
+        >
+          <ChevronLeftIcon size={14} /> Back
+        </button>
+      </div>
     </div>
   );
 }
 
-// Plan-stop chooser, opened from "Back to my plan". Picking a stop draws the
-// blue guide line to it and Michelle announces. Going to a plan stop continues
-// the journey (not a side detour) — the arrival scan advances once you reach it.
-function PlanStops({
-  open,
+// The bus route's steps: which bus to board, where to get on/off, walk segments.
+function BusPlanCard({ steps, onClose }: { steps: BusStep[]; onClose: () => void }) {
+  return (
+    <div className="pointer-events-auto animate-rise mt-3 rounded-3xl bg-white p-3 shadow-sm dark:bg-white/[0.07] dark:shadow-none">
+      <div className="flex items-center justify-between px-1 pb-2">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-ink-muted dark:text-white/50">
+          🚌 Your bus route
+        </p>
+        <button onClick={onClose} className="text-xs font-semibold text-ink-muted dark:text-white/50">
+          Hide
+        </button>
+      </div>
+      <ol className="space-y-2.5">
+        {steps.map((s, i) => (
+          <li key={i} className="flex gap-2.5">
+            <span className="mt-0.5 shrink-0 text-base">{s.mode === "transit" ? "🚌" : "🚶"}</span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-ink dark:text-white">{s.text}</p>
+              {s.sub && <p className="text-xs text-ink-muted dark:text-white/50">{s.sub}</p>}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+// "Somewhere else" → Michelle asks what the traveller's after; a chip (or just
+// talking to her) drives the nearby recommendation.
+function IntentCard({
+  onPick,
+  onBack,
+}: {
+  onPick: (query: string) => void;
+  onBack: () => void;
+}) {
+  const options: { emoji: string; label: string; query: string }[] = [
+    { emoji: "🍽️", label: "Eat", query: "Where's a good place to eat near me right now?" },
+    { emoji: "🏛️", label: "See a sight", query: "What's a good sight or museum to see near me right now?" },
+    { emoji: "☕", label: "Coffee", query: "Where's a nice coffee shop near me right now?" },
+    { emoji: "🌳", label: "Rest", query: "Where's a quiet park or spot to sit and rest near me?" },
+  ];
+  return (
+    <div className="pointer-events-auto animate-rise mt-3 rounded-3xl bg-white p-3 shadow-sm dark:bg-white/[0.07] dark:shadow-none">
+      <p className="px-1 pb-2 text-[11px] font-bold uppercase tracking-wide text-ink-muted dark:text-white/50">
+        What do you feel like?
+      </p>
+      <div className="grid grid-cols-2 gap-1.5">
+        {options.map((o) => (
+          <button
+            key={o.label}
+            onClick={() => onPick(o.query)}
+            className="flex items-center justify-center gap-2 rounded-full bg-ink/5 py-2.5 text-sm font-bold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+          >
+            <span className="text-base">{o.emoji}</span> {o.label}
+          </button>
+        ))}
+      </div>
+      <p className="px-1 pt-2 text-xs text-ink-muted dark:text-white/50">
+        Or just tell Michelle what you’re after.
+      </p>
+      <button
+        onClick={onBack}
+        className="mt-1 flex w-full items-center justify-center gap-1.5 py-1.5 text-xs font-bold text-ink-muted dark:text-white/50"
+      >
+        <ChevronLeftIcon size={14} /> Back
+      </button>
+    </div>
+  );
+}
+
+// The looping "what's next?" decision card shown at each stop.
+function NextStepCard({
+  nextStop,
   stops,
   currentStopId,
-  onGo,
+  fullPlanOpen,
+  onToggleFullPlan,
+  onTakeMeThere,
+  onSomewhereElse,
+  onPickStop,
   onClose,
 }: {
-  open: boolean;
+  nextStop: RouteStop | null;
   stops: RouteStop[];
   currentStopId: string | null;
-  onGo: (stop: RouteStop) => void;
+  fullPlanOpen: boolean;
+  onToggleFullPlan: () => void;
+  onTakeMeThere: () => void;
+  onSomewhereElse: () => void;
+  onPickStop: (stop: RouteStop) => void;
   onClose: () => void;
 }) {
-  if (!open || stops.length === 0) return null;
+  const secondary =
+    "flex w-full items-center justify-center gap-2 rounded-full bg-ink/5 py-2.5 text-sm font-bold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15";
 
   return (
     <div className="pointer-events-auto animate-rise mt-3 rounded-3xl bg-white p-3 shadow-sm dark:bg-white/[0.07] dark:shadow-none">
       <div className="flex items-center justify-between px-1 pb-2">
         <p className="text-[11px] font-bold uppercase tracking-wide text-ink-muted dark:text-white/50">
-          Where to next? — tap a stop
+          {nextStop ? `Next stop: ${nextStop.name}` : "You're at your last stop"}
         </p>
-        <button
-          onClick={onClose}
-          className="text-xs font-semibold text-ink-muted dark:text-white/50"
-        >
+        <button onClick={onClose} className="text-xs font-semibold text-ink-muted dark:text-white/50">
           Hide
         </button>
       </div>
+
       <div className="flex flex-col gap-1.5">
-        {stops.map((s, i) => (
+        {nextStop && (
           <button
-            key={s.id}
-            onClick={() => onGo(s)}
-            className="flex items-center gap-2 rounded-xl bg-ink/5 px-3 py-2 text-left text-sm font-semibold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+            onClick={onTakeMeThere}
+            className="flex w-full items-center justify-center gap-2 rounded-full bg-primary-600 py-2.5 text-sm font-bold text-white"
           >
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary-600 text-[10px] text-white">
-              {i + 1}
-            </span>
-            <span className="min-w-0 flex-1 truncate">{s.name}</span>
-            {s.id === currentStopId && (
-              <span className="shrink-0 text-xs font-bold text-primary-500">now</span>
-            )}
+            Take me there
           </button>
-        ))}
+        )}
+        <button onClick={onSomewhereElse} className={secondary}>
+          Somewhere else
+        </button>
+        <button onClick={onToggleFullPlan} className={secondary}>
+          {fullPlanOpen ? "Hide full plan" : "View full plan"}
+        </button>
       </div>
+
+      {fullPlanOpen && (
+        <div className="mt-2 flex flex-col gap-1.5 border-t border-ink/5 pt-2 dark:border-white/10">
+          {stops.map((s, i) => (
+            <button
+              key={s.id}
+              onClick={() => onPickStop(s)}
+              className="flex items-start gap-2 rounded-xl bg-ink/5 px-3 py-2 text-left hover:bg-ink/10 dark:bg-white/10 dark:hover:bg-white/15"
+            >
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary-600 text-[10px] text-white">
+                {i + 1}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold text-ink dark:text-white">
+                  {s.name}
+                </span>
+                {s.context && (
+                  <span className="block truncate text-xs text-ink-muted dark:text-white/50">
+                    {s.context}
+                  </span>
+                )}
+              </span>
+              {s.id === currentStopId && (
+                <span className="mt-1 shrink-0 text-xs font-bold text-primary-500">now</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
