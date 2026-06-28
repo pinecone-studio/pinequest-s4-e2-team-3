@@ -362,9 +362,12 @@ export const aiConversation: GuideMessage[] = [
 ];
 
 export const aiQuickReplies = [
-  "Plan my afternoon",
-  "Something quiet",
-  "Where to eat?",
+  "Plan my 5-day trip",
+  "I'm visiting in July",
+  "Show me Ulaanbaatar",
+  "Take me to the countryside",
+  "Best time to visit Mongolia?",
+  "What food should I try?",
 ];
 
 export const interpreterLanguages = { from: "EN", to: "PT" };

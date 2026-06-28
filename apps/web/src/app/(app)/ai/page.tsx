@@ -18,10 +18,19 @@ interface PlaceCard {
   reviews?: { text: string; author?: string; rating?: number }[];
 }
 
+// One scheduled stop of a finished plan, saved to the Journey timeline.
+interface PlanStop {
+  day: number;
+  time: string;
+  title: string;
+  note?: string;
+}
+
 // A finished plan Michelle proposes; the traveller confirms it with the buttons.
 interface PendingPlan {
   title: string;
   summary: string;
+  stops?: PlanStop[];
 }
 
 interface Message {
@@ -186,7 +195,7 @@ export default function AiPage() {
       if (data.saved) {
         // Write to localStorage so the Journey page can display it.
         try {
-          const entry = { id: crypto.randomUUID(), title: plan.title, summary: plan.summary, savedAt: new Date().toISOString() };
+          const entry = { id: crypto.randomUUID(), title: plan.title, summary: plan.summary, stops: plan.stops ?? [], savedAt: new Date().toISOString() };
           const prev = JSON.parse(localStorage.getItem("polaris:saved-plans") ?? "[]");
           localStorage.setItem("polaris:saved-plans", JSON.stringify([entry, ...prev]));
         } catch { /* ignore storage quota issues */ }
@@ -224,9 +233,16 @@ export default function AiPage() {
     sendMessage(input);
   }
 
+  // The most recent finished plan that hasn't been saved yet — powers the
+  // always-visible Save button in the header.
+  const savable = [...messages].reverse().find((m) => m.pendingPlan && m.planStatus !== "saved");
+
   return (
     <div className="flex h-[calc(100dvh-7rem)] flex-col lg:h-[calc(100dvh-5rem)]">
-      <ChatHeader />
+      <ChatHeader
+        onSave={savable ? () => savePlan(savable.id, savable.pendingPlan!) : undefined}
+        disabled={isLoading}
+      />
 
       <div className="flex-1 space-y-3 overflow-y-auto py-4">
         {messages.map((message) => (
@@ -256,16 +272,31 @@ export default function AiPage() {
   );
 }
 
-function ChatHeader() {
+function ChatHeader({
+  onSave,
+  disabled,
+}: {
+  onSave?: () => void;
+  disabled: boolean;
+}) {
   return (
     <header className="flex items-center gap-3 border-b border-sand-200 pb-4">
       <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-600 text-white">
         <SparklesIcon size={20} />
       </span>
-      <div>
+      <div className="flex-1">
         <p className="font-bold text-ink">{guide.name}</p>
         <p className="text-sm text-ink-muted">{guide.status}</p>
       </div>
+      {onSave ? (
+        <button
+          onClick={onSave}
+          disabled={disabled}
+          className="rounded-full bg-primary-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50"
+        >
+          Save plan
+        </button>
+      ) : null}
     </header>
   );
 }

@@ -22,11 +22,44 @@ import { demoRoutes } from "@/lib/routes";
 import { useLiveStore } from "@/stores/liveStore";
 import type { JourneyStop, TripDay } from "@/types";
 
+interface PlanStop {
+  day: number;
+  time: string;
+  title: string;
+  note?: string;
+}
+
 interface SavedPlan {
   id: string;
   title: string;
   summary: string;
+  stops?: PlanStop[];
   savedAt: string;
+}
+
+// Turn a saved plan's flat stop list into the day-by-day timeline the Journey
+// page renders. Defaults the fields the chat plan doesn't carry (image, walk…).
+function planToDays(stops: PlanStop[]): TripDay[] {
+  const byDay = new Map<number, JourneyStop[]>();
+  stops.forEach((s, i) => {
+    const list = byDay.get(s.day) ?? [];
+    list.push({
+      id: `plan-${s.day}-${i}`,
+      time: s.time,
+      tag: "Plan",
+      tagTone: "blue",
+      title: s.title,
+      note: s.note ?? "",
+      walk: "",
+      dwell: "",
+      imageUrl: `https://picsum.photos/seed/${encodeURIComponent(s.title)}/600/400`,
+      status: "upcoming",
+    });
+    byDay.set(s.day, list);
+  });
+  return [...byDay.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([day, dayStops]) => ({ dayNumber: day, label: `Day ${day}`, stops: dayStops }));
 }
 
 function findCurrentDayIndex(days: TripDay[]): number {
@@ -50,7 +83,16 @@ export default function JourneyPage() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem("polaris:saved-plans");
-      if (raw) setSavedPlans(JSON.parse(raw));
+      if (!raw) return;
+      const plans: SavedPlan[] = JSON.parse(raw);
+      setSavedPlans(plans);
+      // Drive the timeline from the most recent saved plan that has scheduled stops.
+      const latest = plans.find((p) => p.stops?.length);
+      if (latest?.stops?.length) {
+        const planDays = planToDays(latest.stops);
+        setDays(planDays);
+        setActiveDayIdx(0);
+      }
     } catch { /* ignore */ }
   }, []);
 
@@ -112,6 +154,8 @@ export default function JourneyPage() {
                 onClick={() => {
                   localStorage.removeItem("polaris:saved-plans");
                   setSavedPlans([]);
+                  setDays(initialTripDays);
+                  setActiveDayIdx(findCurrentDayIndex(initialTripDays));
                 }}
                 className="text-xs font-semibold text-ink-muted hover:text-ink"
               >
@@ -306,16 +350,22 @@ function TimelineStop({
               {stop.title}
             </h3>
             <p className="mt-1 text-sm text-ink-muted">{stop.note}</p>
-            <div className="mt-3 flex items-center gap-4 text-xs font-semibold text-ink-muted">
-              <span className="flex items-center gap-1">
-                <MapPinIcon size={14} />
-                {stop.walk}
-              </span>
-              <span className="flex items-center gap-1">
-                <ClockIcon size={14} />
-                {stop.dwell}
-              </span>
-            </div>
+            {(stop.walk || stop.dwell) && (
+              <div className="mt-3 flex items-center gap-4 text-xs font-semibold text-ink-muted">
+                {stop.walk && (
+                  <span className="flex items-center gap-1">
+                    <MapPinIcon size={14} />
+                    {stop.walk}
+                  </span>
+                )}
+                {stop.dwell && (
+                  <span className="flex items-center gap-1">
+                    <ClockIcon size={14} />
+                    {stop.dwell}
+                  </span>
+                )}
+              </div>
+            )}
 
             <div className="mt-3 flex gap-2 border-t border-ink/5 pt-3">
               <button
