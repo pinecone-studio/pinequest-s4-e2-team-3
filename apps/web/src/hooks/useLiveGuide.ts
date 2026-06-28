@@ -202,8 +202,11 @@ export function useLiveGuide() {
         // traveller taps play; narrate every arrival after that.
         if (startedRef.current) sayNarration(stop);
         else startedRef.current = true;
+        // Newly back on a main stop → drop the "return"/detour guide line. Only
+        // on a genuine new arrival, NOT on a reload where the stop is already in
+        // arrivedStopIds — otherwise refresh would wipe a persisted detour route.
+        setReturnTarget(null);
       }
-      setReturnTarget(null); // back on the route — drop the "return" guide line
       break; // furthest reached stop handled; stop scanning
     }
   }, [

@@ -1,5 +1,7 @@
 "use client";
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import { demoRoutes } from "@/lib/routes";
 import type { Coords, DemoRoute, PlaceOption } from "@/types";
 import type { BusLeg } from "@/lib/transit";
 
@@ -45,7 +47,9 @@ interface LiveState {
   reset: () => void;
 }
 
-export const useLiveStore = create<LiveState>((set) => ({
+export const useLiveStore = create<LiveState>()(
+  persist(
+    (set) => ({
   activeRoute: null,
   currentStopIndex: 0,
   arrivedStopIds: [],
@@ -121,4 +125,43 @@ export const useLiveStore = create<LiveState>((set) => ({
       returnTarget: null,
       busLegs: null,
     }),
-}));
+    }),
+    {
+      name: "lumo:live", // localStorage key (matches the chat's "lumo:chat")
+      // Persist the resume state. simulatedCoords is included so the blue dot
+      // resumes where the journey left off — otherwise it desyncs: the card says
+      // "arrived at <stop>" (from currentStopIndex) while the dot falls back to
+      // raw GPS somewhere else. forceOffline (a demo toggle) stays out.
+      //
+      // Store only the route ID, not the whole DemoRoute (stops + full narration
+      // text) — autowalk writes simulatedCoords ~12×/s, and re-serialising the
+      // entire route each tick is wasteful. merge() rehydrates it from demoRoutes.
+      partialize: (s) =>
+        ({
+          activeRouteId: s.activeRoute?.id ?? null,
+          currentStopIndex: s.currentStopIndex,
+          arrivedStopIds: s.arrivedStopIds,
+          simulatedCoords: s.simulatedCoords,
+          suggestions: s.suggestions,
+          selectedPlace: s.selectedPlace,
+          returnTarget: s.returnTarget,
+          returnMode: s.returnMode,
+          busLegs: s.busLegs,
+          mapType: s.mapType,
+          offlineReadyIds: s.offlineReadyIds,
+        }) as unknown as LiveState,
+      merge: (persisted, current) => {
+        const { activeRouteId, ...rest } = (persisted ?? {}) as Partial<LiveState> & {
+          activeRouteId?: string | null;
+        };
+        return {
+          ...current,
+          ...rest,
+          activeRoute: activeRouteId
+            ? demoRoutes.find((r) => r.id === activeRouteId) ?? null
+            : null,
+        };
+      },
+    },
+  ),
+);
