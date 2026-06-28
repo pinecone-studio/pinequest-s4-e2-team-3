@@ -3,7 +3,7 @@ import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
-import { findNearbyPlaces, type NearbyPlace } from "@/lib/places";
+import { findNearbyPlaces, lookupPlace, type NearbyPlace } from "@/lib/places";
 
 const SYSTEM_PROMPT =
   "You are Michelle, a warm, knowledgeable AI travel guide for Mongolia (the Polaris app). " +
@@ -37,8 +37,12 @@ const SYSTEM_PROMPT =
   "After a stop is settled, recap the stops chosen so far as a short numbered list, then ask " +
   "plainly: 'Want to add another stop, or are you happy with this plan?' " +
   "• If they want more → ask what they'd like next and propose the next stop. " +
-  "• When they signal they're happy / done → call finalize_trip_plan with a short title and a " +
-  "2–4 sentence summary of the stops in order. This does NOT save the plan — it shows the " +
+  "• When they signal they're happy / done → call finalize_trip_plan with a short title, a " +
+  "2–4 sentence summary, AND the full `stops` list — every stop with its day number, a time " +
+  "(e.g. '09:00' or 'Morning'), the place title and a one-line note — so it saves to the " +
+  "day-by-day Journey timeline. The `stops` list MUST contain EVERY place from EVERY day you " +
+  "agreed on — about 3 stops per day, matching the places in your summary — NEVER just one stop. " +
+  "This does NOT save the plan — it shows the " +
   "traveller 'Yes, save' and 'No, add more' buttons. After calling it, write ONE short warm " +
   "line presenting the plan (e.g. 'Here's your plan — tap Yes to save it, or add more stops.'). " +
   "Do NOT claim it is saved; the traveller saves it with the button. " +
@@ -60,17 +64,22 @@ const SYSTEM_PROMPT =
   "things like 'planning a trip', 'before I arrive', 'next month', 'thinking of visiting'). For " +
   "them, work ENTIRELY from your own knowledge of Mongolia — do NOT call find_nearby_places and " +
   "do NOT ask them to turn on location (their GPS is in their home country, not Mongolia, so it " +
-  "is useless here). " +
+  "is useless here). BUT for EVERY real place you recommend in planning, call lookup_place with " +
+  "its name so the traveller sees its photo card — propose two places, make two lookup_place calls. " +
   "TALK LIKE A REAL LOCAL GUIDE SITTING ACROSS FROM THEM — warm, curious and genuinely interested " +
   "in THIS particular person, never a brochure or a checklist. Before you plan anything, GET TO " +
   "KNOW THEM through a natural back-and-forth: ask only one or two questions at a time (never a " +
   "long questionnaire), listen to the answer, then ask the next thing. " +
-  "ALWAYS ask EARLY — as one of your very first questions — whether they want to explore the city, " +
-  "Ulaanbaatar, and its culture, OR get out into the countryside and see nature. This single choice " +
-  "shapes the entire trip, so never skip it; phrase it warmly, e.g. 'Are you drawn more to " +
-  "Ulaanbaatar's city life and culture, or to getting out into the countryside and nature?' " +
-  "ALSO ask EARLY which month they're coming (if they haven't said), because Mongolia's seasons " +
-  "change everything. Once you know the month, tailor your suggestions to that season and gently " +
+  "Before you plan ANYTHING, you MUST gather these FOUR essentials, asked naturally one or two at a " +
+  "time (never as a checklist dump): " +
+  "(1) CITY vs COUNTRYSIDE — do they want Ulaanbaatar and its culture, or the countryside and nature? " +
+  "(2) HOW MANY DAYS they have for the trip. " +
+  "(3) which MONTH they're coming. " +
+  "(4) what they'd most enjoy (history, nomadic life, landscapes, food, adventure, photography). " +
+  "NEVER propose places or an itinerary until you have all four — if any is still missing, your next " +
+  "message must ASK for the missing one, not suggest a plan. Asking 'how many days do you have?' is " +
+  "as important as the city/countryside question, so do not skip it. " +
+  "Once you know the month, tailor your suggestions to that season and gently " +
   "steer them toward what's genuinely good then: summer (Jun–Aug) is best for the countryside, " +
   "Gobi, lakes, Naadam and the green steppe; autumn (Sep–Oct) is golden, calm and great for " +
   "photography; winter (Nov–Feb) is bitterly cold so favour Ulaanbaatar's indoor culture, the " +
@@ -85,14 +94,23 @@ const SYSTEM_PROMPT =
   "EVEN IF they give lots of detail up front (days, month, saved places), do NOT jump straight to a " +
   "full itinerary — first reflect it back warmly and ask one or two follow-ups to make it personal. " +
   "BUILD THE ITINERARY ONE DAY AT A TIME — NEVER dump the whole multi-day plan in a single message. " +
+  "BEFORE you plan Day 1, ask WHAT TIME their flight lands in Ulaanbaatar (most international flights " +
+  "land early morning or late evening — it changes the whole first day). Then SCHEDULE EACH DAY HOUR " +
+  "BY HOUR with real clock times: start Day 1 from their landing time (e.g. 'You land at 07:00 — by " +
+  "09:00, after checking in, start at X nearby'), and give every stop a time. For each stop say what " +
+  "to see/do there, suggest WHERE and WHAT to eat nearby (a real local dish or spot — buuz, khuushuur, " +
+  "a good cafe), and tell them HOW to get to the next stop (walk, taxi, bus, or hired driver) with a " +
+  "rough travel time. Keep it realistic — leave time for the meal and the travel between stops. " +
   "Propose only the next single day, choosing from the FULL range of real Mongolian destinations " +
   "(Ulaanbaatar, Gorkhi-Terelj, Tsonjin Boldog, Khustai, Kharkhorin & Erdene Zuu, the Gobi & " +
   "Khongoryn Els, Lake Khövsgöl, Orkhon Valley & Tövkhön, Amarbayasgalant, Tsenkher hot springs, " +
   "Bayanzag, Naiman Nuur, the Altai…). These are only examples — pick whatever genuinely fits THIS " +
   "traveller's interests, season and chosen region, and DO NOT default to the same place for " +
   "everyone (in particular, do NOT reach for Gorkhi-Terelj by habit — only suggest it when it " +
-  "actually fits). KEEP EACH DAY RELAXED AND UNHURRIED — at " +
-  "most 2-3 highlights, with realistic travel times and real breathing room to actually enjoy each " +
+  "actually fits). For each place you name in a day, call lookup_place so its card appears. " +
+  "KEEP EACH DAY RELAXED AND UNHURRIED but FULL — aim for ABOUT 3 stops a day (2-4), e.g. a morning " +
+  "sight, a lunch/food stop, and an afternoon spot — never just one, with realistic travel times and " +
+  "real breathing room to actually enjoy each " +
   "place instead of racing through it. Tie every suggestion back to what they told you they care " +
   "about. " +
   "RESPECT GEOGRAPHY — Mongolia is huge and the regions are far apart, so NEVER bounce between " +
@@ -141,6 +159,27 @@ const TOOLS: ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "lookup_place",
+      description:
+        "Look up ONE well-known Mongolian destination BY NAME to show its photo card. " +
+        "Use this during trip planning (when there's no live location) for each real place " +
+        "you recommend — e.g. 'Gorkhi-Terelj National Park', 'Khongoryn Els', 'Erdene Zuu " +
+        "Monastery'. Call it once per place you propose so the traveller sees its card.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "The destination's full name, e.g. 'Lake Khövsgöl' or 'Yolyn Am'.",
+          },
+        },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "finalize_trip_plan",
       description:
         "Call ONLY when the traveller signals their plan is complete. This does NOT save the " +
@@ -157,8 +196,29 @@ const TOOLS: ChatCompletionTool[] = [
             type: "string",
             description: "2–4 sentence summary of the planned stops, in order.",
           },
+          stops: {
+            type: "array",
+            description:
+              "EVERY stop of the plan in order, so it can be saved to the day-by-day Journey " +
+              "timeline. Include all days you settled with the traveller, with ABOUT 3 stops per " +
+              "day (2-4) — never just one stop for a day.",
+            items: {
+              type: "object",
+              properties: {
+                day: { type: "integer", description: "Day number, starting at 1." },
+                time: { type: "string", description: "Time of day, e.g. '09:00' or 'Morning'." },
+                title: { type: "string", description: "Place / activity name." },
+                note: {
+                  type: "string",
+                  description:
+                    "One short line: what they'll do there, plus any food tip or how to get to the next stop.",
+                },
+              },
+              required: ["day", "time", "title"],
+            },
+          },
         },
-        required: ["title", "summary"],
+        required: ["title", "summary", "stops"],
       },
     },
   },
@@ -174,6 +234,14 @@ interface ChatRequest {
   location?: { lat: number; lng: number };
 }
 
+// This is a Mongolia-only guide. A GPS fix outside Mongolia (the traveller is
+// still abroad planning) must NOT drive nearby search — otherwise it recommends
+// foreign places. Treat anything outside Mongolia's bounding box as no location.
+function inMongolia(loc?: { lat: number; lng: number }): boolean {
+  if (!loc) return false;
+  return loc.lat >= 41.5 && loc.lat <= 52.2 && loc.lng >= 87.7 && loc.lng <= 120;
+}
+
 export async function POST(req: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -184,8 +252,11 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { messages, location } = (await req.json()) as ChatRequest;
+    const { messages, location: rawLocation } = (await req.json()) as ChatRequest;
     const openai = new OpenAI({ apiKey });
+
+    // Only use the GPS fix if it's actually in Mongolia; otherwise plan as pre-arrival.
+    const location = inMongolia(rawLocation) ? rawLocation : undefined;
 
     const locationNote = location
       ? "The traveller's live GPS location is available — use find_nearby_places for anything location-based."
@@ -244,9 +315,16 @@ async function runConversation(
       if (call.function.name === "finalize_trip_plan") {
         // Don't save here — hand the plan to the UI so the traveller can confirm.
         if (args.title && args.summary) {
-          pendingPlan = { title: args.title, summary: args.summary };
+          pendingPlan = { title: args.title, summary: args.summary, stops: args.stops ?? [] };
         }
         result = { presented: Boolean(pendingPlan) };
+      } else if (call.function.name === "lookup_place") {
+        // Planning lookup by name — no live location needed.
+        const place = args.name ? await lookupPlace(args.name) : null;
+        if (place) collected.push(place);
+        result = place
+          ? { found: true, name: place.name, rating: place.rating }
+          : { found: false };
       } else {
         const places = location
           ? await findNearbyPlaces(location.lat, location.lng, args.keyword ?? "place", args.type)
@@ -288,10 +366,19 @@ async function runConversation(
   };
 }
 
+// One scheduled stop in a finished plan, saved to the day-by-day Journey timeline.
+interface PlanStop {
+  day: number;
+  time: string;
+  title: string;
+  note?: string;
+}
+
 // A finished plan awaiting the traveller's Save / Add more decision in the UI.
 interface PendingPlan {
   title: string;
   summary: string;
+  stops: PlanStop[];
 }
 
 // Cards shown beneath Michelle's reply: the closest few distinct places this turn,
@@ -340,8 +427,10 @@ function toCards(places: NearbyPlace[]): PlaceCard[] {
 interface ToolArgs {
   keyword?: string;
   type?: string;
+  name?: string;
   title?: string;
   summary?: string;
+  stops?: PlanStop[];
 }
 
 function safeParse(json: string): ToolArgs {

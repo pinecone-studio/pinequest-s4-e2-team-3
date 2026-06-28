@@ -57,6 +57,71 @@ interface PlacesTextResult {
   }[];
 }
 
+// Ulaanbaatar — biases planning lookups toward Mongolia when there's no device location.
+const UB_CENTER = { latitude: 47.9186, longitude: 106.9177 };
+
+function photoMediaUrl(photoName: string | undefined, width: number): string | undefined {
+  return photoName
+    ? `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=${width}&key=${GOOGLE_KEY}`
+    : undefined;
+}
+
+function mapReviews(reviews: PlacesTextResult["reviews"]): NearbyPlace["reviews"] {
+  return (reviews ?? [])
+    .filter((r) => r.text?.text)
+    .slice(0, 5)
+    .map((r) => ({
+      text: r.text!.text!,
+      author: r.authorAttribution?.displayName,
+      rating: r.rating,
+    }));
+}
+
+// Look up ONE well-known Mongolian destination by name, for trip-planning cards
+// when there's no live location. No walk time — these aren't near the traveller.
+export async function lookupPlace(name: string): Promise<NearbyPlace | null> {
+  if (!GOOGLE_KEY || !name.trim()) return null;
+
+  const cacheKey = `lookup:${name.toLowerCase().trim()}`;
+  try {
+    return await cached(cacheKey, PLACES_TTL_MS, async () => {
+      const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": GOOGLE_KEY,
+          "X-Goog-FieldMask":
+            "places.id,places.displayName,places.rating,places.formattedAddress,places.location,places.photos,places.editorialSummary,places.userRatingCount,places.reviews",
+        },
+        body: JSON.stringify({
+          textQuery: `${name}, Mongolia`,
+          maxResultCount: 1,
+          // Soft bias to Mongolia (wide radius) so a name like "Khongoryn Els" still resolves.
+          locationBias: { circle: { center: UB_CENTER, radius: 400_000 } },
+        }),
+      });
+      if (!response.ok) throw new Error(`places lookup ${response.status}`);
+
+      const place: PlacesTextResult | undefined = ((await response.json()).places ?? [])[0];
+      if (!place) return null;
+      return {
+        id: place.id ?? crypto.randomUUID(),
+        name: place.displayName?.text ?? name,
+        latitude: place.location?.latitude ?? UB_CENTER.latitude,
+        longitude: place.location?.longitude ?? UB_CENTER.longitude,
+        rating: place.rating,
+        address: place.formattedAddress,
+        imageUrl: photoMediaUrl(place.photos?.[0]?.name, 400),
+        description: place.editorialSummary?.text,
+        reviewCount: place.userRatingCount,
+        reviews: mapReviews(place.reviews),
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
 // Real places near a point, closest first, via the Places API (New) Text Search.
 // Free text (e.g. "park to rest", "coffee") plus a location bias, so it handles
 // both food and open-ended "somewhere to sit" searches. Runs server-side (no
@@ -109,18 +174,8 @@ export async function findNearbyPlaces(
             : undefined;
         const walkMinutes =
           distKm !== undefined ? Math.max(1, Math.round((distKm * 1000) / 83)) : undefined;
-        const photoName = place.photos?.[0]?.name;
-        const imageUrl = photoName
-          ? `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&key=${GOOGLE_KEY}`
-          : undefined;
-        const reviews = (place.reviews ?? [])
-          .filter((r) => r.text?.text)
-          .slice(0, 5)
-          .map((r) => ({
-            text: r.text!.text!,
-            author: r.authorAttribution?.displayName,
-            rating: r.rating,
-          }));
+        const imageUrl = photoMediaUrl(place.photos?.[0]?.name, 400);
+        const reviews = mapReviews(place.reviews);
         return {
           id: place.id ?? crypto.randomUUID(),
           name: place.displayName?.text ?? "Unknown",
