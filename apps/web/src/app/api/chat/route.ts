@@ -297,7 +297,11 @@ interface PendingPlan {
 // Cards shown beneath Michelle's reply: the closest few distinct places this turn,
 // with their rating, review count and a snippet from the top review.
 interface PlaceCard {
+  id: string;
   name: string;
+  // Coordinates so the Live Guide can drop a map marker on each suggestion.
+  latitude: number;
+  longitude: number;
   description?: string;
   imageUrl?: string;
   rating?: number;
@@ -319,7 +323,10 @@ function toCards(places: NearbyPlace[]): PlaceCard[] {
     .sort((a, b) => (a.walkMinutes ?? 999) - (b.walkMinutes ?? 999))
     .slice(0, 3)
     .map((p) => ({
+      id: p.id,
       name: p.name,
+      latitude: p.latitude,
+      longitude: p.longitude,
       description: p.description,
       imageUrl: p.imageUrl,
       rating: p.rating,

@@ -47,7 +47,6 @@ interface PlacesTextResult {
   formattedAddress?: string;
   location?: { latitude?: number; longitude?: number };
   currentOpeningHours?: { openNow?: boolean };
-  location?: { latitude?: number; longitude?: number };
   photos?: { name: string }[];
   editorialSummary?: { text?: string };
   userRatingCount?: number;
