@@ -18,7 +18,7 @@ interface PlaceCard {
   reviews?: { text: string; author?: string; rating?: number }[];
 }
 
-// One scheduled stop of a finished plan, saved to the Journey timeline.
+// One stop in a finished plan (structured data the AI returns).
 interface PlanStop {
   day: number;
   time: string;
@@ -178,44 +178,35 @@ export default function AiPage() {
     ]);
   }
 
-  // "Yes, save" — persist just the plan summary to the DB, then confirm.
-  async function savePlan(messageId: string, plan: PendingPlan) {
+  // "Yes, save" — write plan to localStorage immediately so Journey can display it,
+  // then fire a background sync to Supabase (failure is silent).
+  function savePlan(messageId: string, plan: PendingPlan) {
     setMessages((current) =>
       current.map((m) =>
         m.id === messageId ? { ...m, planStatus: "saved" } : m,
       ),
     );
+
+    // Save to localStorage first — Journey reads from here.
     try {
-      const response = await fetch("/api/trips", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(plan),
-      });
-      const data = await response.json();
-      if (data.saved) {
-        // Write to localStorage so the Journey page can display it.
-        try {
-          const entry = { id: crypto.randomUUID(), title: plan.title, summary: plan.summary, stops: plan.stops ?? [], savedAt: new Date().toISOString() };
-          const prev = JSON.parse(localStorage.getItem("polaris:saved-plans") ?? "[]");
-          localStorage.setItem("polaris:saved-plans", JSON.stringify([entry, ...prev]));
-        } catch { /* ignore storage quota issues */ }
-        addAssistantReply("Saved to your journey.", undefined, undefined, true);
-      } else {
-        setMessages((current) =>
-          current.map((m) =>
-            m.id === messageId ? { ...m, planStatus: "pending" } : m,
-          ),
-        );
-        addAssistantReply("Sorry, I couldn't save your plan. Please try again.");
-      }
-    } catch {
-      setMessages((current) =>
-        current.map((m) =>
-          m.id === messageId ? { ...m, planStatus: "pending" } : m,
-        ),
-      );
-      addAssistantReply("Something went wrong saving your plan. Please try again.");
-    }
+      const seen = new Set<string>();
+      const places = messages
+        .flatMap((m) => m.places ?? [])
+        .filter((p) => { const k = p.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
+        .map((p) => ({ name: p.name, address: p.address, imageUrl: p.imageUrl, rating: p.rating, walkMinutes: p.walkMinutes }));
+      const entry = { id: crypto.randomUUID(), title: plan.title, summary: plan.summary, stops: plan.stops ?? [], savedAt: new Date().toISOString(), places };
+      const prev = JSON.parse(localStorage.getItem("polaris:saved-plans") ?? "[]");
+      localStorage.setItem("polaris:saved-plans", JSON.stringify([entry, ...prev]));
+    } catch { /* ignore storage quota issues */ }
+
+    addAssistantReply("Saved to your journey.", undefined, undefined, true);
+
+    // Background sync to Supabase — failure is silent, plan is already saved locally.
+    fetch("/api/trips", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: plan.title, summary: plan.summary }),
+    }).catch(() => { /* ignore */ });
   }
 
   // "No, add more" — dismiss the buttons and keep building the plan.
@@ -427,7 +418,7 @@ function PlaceCardView({ place }: { place: PlaceCard }) {
                     expanded ? "" : "line-clamp-3"
                   }`}
                 >
-                  “{review.text}”
+                  "{review.text}"
                 </p>
                 {review.author ? (
                   <p className="mt-1 text-[10px] font-semibold text-ink-muted/70">

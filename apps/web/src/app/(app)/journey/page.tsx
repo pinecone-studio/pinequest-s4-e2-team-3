@@ -3,24 +3,15 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Tag } from "@/components/Tag";
 import {
-  ClockIcon,
-  CloseIcon,
   MapPinIcon,
-  PencilIcon,
   SparklesIcon,
-  SunIcon,
+  StarIcon,
   TrashIcon,
+  WalkIcon,
 } from "@/components/icons";
-import {
-  journeyAdaptationNote,
-  trip,
-  tripDays as initialTripDays,
-} from "@/lib/mockData";
 import { demoRoutes } from "@/lib/routes";
 import { useLiveStore } from "@/stores/liveStore";
-import type { JourneyStop, TripDay } from "@/types";
 
 interface PlanStop {
   day: number;
@@ -29,245 +20,272 @@ interface PlanStop {
   note?: string;
 }
 
+interface PlanPlace {
+  name: string;
+  address?: string;
+  imageUrl?: string;
+  rating?: number;
+  walkMinutes?: number;
+}
+
 interface SavedPlan {
   id: string;
   title: string;
   summary: string;
-  stops?: PlanStop[];
+  stops?: PlanStop[] | string[];
+  doneStops?: string[];
   savedAt: string;
+  places?: PlanPlace[];
 }
 
-// Turn a saved plan's flat stop list into the day-by-day timeline the Journey
-// page renders. Defaults the fields the chat plan doesn't carry (image, walk…).
-function planToDays(stops: PlanStop[]): TripDay[] {
-  const byDay = new Map<number, JourneyStop[]>();
-  stops.forEach((s, i) => {
-    const list = byDay.get(s.day) ?? [];
-    list.push({
-      id: `plan-${s.day}-${i}`,
-      time: s.time,
-      tag: "Plan",
-      tagTone: "blue",
-      title: s.title,
-      note: s.note ?? "",
-      walk: "",
-      dwell: "",
-      imageUrl: `https://picsum.photos/seed/${encodeURIComponent(s.title)}/600/400`,
-      status: "upcoming",
-    });
-    byDay.set(s.day, list);
-  });
-  return [...byDay.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([day, dayStops]) => ({ dayNumber: day, label: `Day ${day}`, stops: dayStops }));
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function toStructured(stops: PlanStop[] | string[] | undefined): PlanStop[] {
+  if (!stops?.length) return [];
+  if (typeof stops[0] === "string") {
+    return (stops as string[]).map((title) => ({ day: 1, time: "", title }));
+  }
+  return stops as PlanStop[];
 }
 
-function findCurrentDayIndex(days: TripDay[]): number {
-  const idx = days.findIndex((d) =>
-    d.stops.some((s) => s.status === "current")
+function stopKey(s: PlanStop) {
+  return `${s.day}:${s.title}`;
+}
+
+function firstActiveDay(stops: PlanStop[], doneSet: Set<string>): number {
+  const days = [...new Set(stops.map((s) => s.day))].sort((a, b) => a - b);
+  const incomplete = days.find((d) =>
+    stops.filter((s) => s.day === d).some((s) => !doneSet.has(stopKey(s))),
   );
-  return idx >= 0 ? idx : 0;
+  return incomplete ?? days[days.length - 1] ?? 1;
 }
+
+function matchPlace(title: string, places: PlanPlace[]): PlanPlace | undefined {
+  const key = title.toLowerCase();
+  return places.find((p) => p.name.toLowerCase() === key)
+    ?? places.find((p) => key.includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(key));
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 
 export default function JourneyPage() {
   const router = useRouter();
   const setRoute = useLiveStore((s) => s.setRoute);
-  const [days, setDays] = useState<TripDay[]>(initialTripDays);
-  const [activeDayIdx, setActiveDayIdx] = useState(() =>
-    findCurrentDayIndex(initialTripDays)
-  );
-  const [editingStop, setEditingStop] = useState<JourneyStop | null>(null);
-  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [savedPlans, setSavedPlans] = useState<SavedPlan[]>([]);
+  const [activePlanId, setActivePlanId] = useState<string | null>(null);
+  const [activeDayNum, setActiveDayNum] = useState<number>(1);
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem("polaris:saved-plans");
-      if (!raw) return;
-      const plans: SavedPlan[] = JSON.parse(raw);
-      setSavedPlans(plans);
-      // Drive the timeline from the most recent saved plan that has scheduled stops.
-      const latest = plans.find((p) => p.stops?.length);
-      if (latest?.stops?.length) {
-        const planDays = planToDays(latest.stops);
-        setDays(planDays);
-        setActiveDayIdx(0);
+      if (raw) {
+        const plans = JSON.parse(raw) as SavedPlan[];
+        setSavedPlans(plans);
+        if (plans.length > 0) {
+          const first = plans[0];
+          setActivePlanId(first.id);
+          const stops = toStructured(first.stops);
+          const doneSet = new Set<string>(first.doneStops ?? []);
+          setActiveDayNum(firstActiveDay(stops, doneSet));
+        }
       }
     } catch { /* ignore */ }
   }, []);
 
-  const activeDay = days[activeDayIdx];
+  const activePlan = savedPlans.find((p) => p.id === activePlanId) ?? null;
+  const structuredStops = toStructured(activePlan?.stops);
+  const dayNumbers = [...new Set(structuredStops.map((s) => s.day))].sort((a, b) => a - b);
+  const doneSet = new Set<string>(activePlan?.doneStops ?? []);
+  const dayStops = structuredStops.filter((s) => s.day === activeDayNum);
 
-  function handleSaveEdit(updated: JourneyStop) {
-    setDays((prev) =>
-      prev.map((day, i) =>
-        i !== activeDayIdx
-          ? day
-          : {
-              ...day,
-              stops: day.stops.map((s) =>
-                s.id === updated.id ? updated : s
-              ),
-            }
-      )
-    );
-    setEditingStop(null);
+  function selectPlan(id: string) {
+    setActivePlanId(id);
+    const plan = savedPlans.find((p) => p.id === id);
+    if (plan) {
+      const stops = toStructured(plan.stops);
+      const done = new Set<string>(plan.doneStops ?? []);
+      setActiveDayNum(firstActiveDay(stops, done));
+    }
   }
 
-  function handleDelete(id: string) {
-    setDays((prev) =>
-      prev.map((day, i) =>
-        i !== activeDayIdx
-          ? day
-          : { ...day, stops: day.stops.filter((s) => s.id !== id) }
-      )
+  function toggleDone(stop: PlanStop) {
+    if (!activePlan) return;
+    const key = stopKey(stop);
+    const current = new Set<string>(activePlan.doneStops ?? []);
+    if (current.has(key)) current.delete(key);
+    else current.add(key);
+    const updated = savedPlans.map((p) =>
+      p.id === activePlan.id ? { ...p, doneStops: [...current] } : p,
     );
-    setDeleteTargetId(null);
+    setSavedPlans(updated);
+    localStorage.setItem("polaris:saved-plans", JSON.stringify(updated));
+  }
+
+  function deletePlan(id: string) {
+    const updated = savedPlans.filter((p) => p.id !== id);
+    setSavedPlans(updated);
+    localStorage.setItem("polaris:saved-plans", JSON.stringify(updated));
+    if (updated.length > 0) {
+      setActivePlanId(updated[0].id);
+      const stops = toStructured(updated[0].stops);
+      const done = new Set<string>(updated[0].doneStops ?? []);
+      setActiveDayNum(firstActiveDay(stops, done));
+    } else {
+      setActivePlanId(null);
+    }
   }
 
   return (
-    <>
-      <div className="space-y-5">
-        <header>
-          <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">
-            Day {activeDay.dayNumber} of {days.length} · Adaptive
-          </p>
-          <h1 className="mt-2 font-serif text-4xl leading-tight tracking-tight text-balance text-ink">
-            Your {trip.city} journey
-          </h1>
-          <p className="mt-1 text-sm text-ink-muted">{activeDay.label}</p>
-        </header>
+    <div className="space-y-5">
+      <header>
+        <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">
+          {activePlan
+            ? `Michelle's plan · ${new Date(activePlan.savedAt).toLocaleDateString("en", { month: "short", day: "numeric" })}`
+            : "Your journey"}
+        </p>
+        <h1 className="mt-2 font-serif text-4xl leading-tight tracking-tight text-balance text-ink">
+          {activePlan ? activePlan.title : "No plans yet"}
+        </h1>
+      </header>
 
-        <DaySelector
-          days={days}
-          activeDayIdx={activeDayIdx}
-          onChange={setActiveDayIdx}
-        />
+      {savedPlans.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <>
+          {savedPlans.length > 1 && (
+            <PlanTabs plans={savedPlans} activePlanId={activePlanId} onSelect={selectPlan} />
+          )}
 
-        <AdaptationNote />
-
-        {savedPlans.length > 0 && (
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">Plans from Michelle</p>
-              <button
-                onClick={() => {
-                  localStorage.removeItem("polaris:saved-plans");
-                  setSavedPlans([]);
-                  setDays(initialTripDays);
-                  setActiveDayIdx(findCurrentDayIndex(initialTripDays));
-                }}
-                className="text-xs font-semibold text-ink-muted hover:text-ink"
-              >
-                Clear all
-              </button>
-            </div>
-            {savedPlans.map((plan) => (
-              <div key={plan.id} className="rounded-2xl bg-white p-4 shadow-ink-sm">
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary-600 text-white">
-                    <SparklesIcon size={16} />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="font-bold text-ink leading-tight">{plan.title}</p>
-                    <p className="mt-1 text-sm text-ink-muted leading-snug line-clamp-3">{plan.summary}</p>
-                  </div>
-                </div>
+          {activePlan && (
+            <>
+              <div className="rounded-3xl bg-primary-50 px-4 py-3">
+                <p className="text-sm text-primary-700 leading-snug">{activePlan.summary}</p>
               </div>
-            ))}
-          </section>
-        )}
 
-        {activeDay.stops.length === 0 ? (
-          <div className="py-8 flex flex-col items-center gap-4 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-sand-100">
-              <MapPinIcon size={24} className="text-ink-muted" />
-            </div>
-            <div>
-              <p className="font-semibold text-ink">Nothing planned yet</p>
-              <p className="mt-1 text-sm text-ink-muted">Ask Michelle to build your day, stop by stop.</p>
-            </div>
-            <Link
-              href="/ai"
-              className="flex items-center gap-2 rounded-full bg-primary-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-primary-700"
-            >
-              <SparklesIcon size={14} />
-              Plan with Michelle
-            </Link>
-          </div>
-        ) : (
-          <ol>
-            {activeDay.stops.map((stop, index) => (
-              <TimelineStop
-                key={stop.id}
-                stop={stop}
-                isLast={index === activeDay.stops.length - 1}
-                onEdit={() => setEditingStop(stop)}
-                onDelete={() => setDeleteTargetId(stop.id)}
-              />
-            ))}
-          </ol>
-        )}
+              {dayNumbers.length > 1 && (
+                <DayTabs
+                  days={dayNumbers}
+                  activeDay={activeDayNum}
+                  doneSet={doneSet}
+                  stops={structuredStops}
+                  onSelect={setActiveDayNum}
+                />
+              )}
 
-        <button
-          onClick={() => {
-            const route = demoRoutes.find((r) => r.region === "ulaanbaatar") ?? demoRoutes[0];
-            setRoute(route);
-            router.push("/live");
-          }}
-          className="block w-full rounded-full bg-primary-600 py-3.5 text-center text-sm font-bold text-white"
-        >
-          Start the live guide
-        </button>
-      </div>
+              {dayStops.length > 0 ? (
+                <ol>
+                  {dayStops.map((stop, idx) => (
+                    <StopCard
+                      key={`${stop.day}-${stop.title}-${idx}`}
+                      stop={stop}
+                      index={idx}
+                      done={doneSet.has(stopKey(stop))}
+                      isLast={idx === dayStops.length - 1}
+                      place={matchPlace(stop.title, activePlan.places ?? [])}
+                      onToggle={() => toggleDone(stop)}
+                    />
+                  ))}
+                </ol>
+              ) : (
+                <div className="py-8 text-center">
+                  <p className="text-sm text-ink-muted">No stops for this day.</p>
+                </div>
+              )}
 
-      {editingStop && (
-        <EditModal
-          stop={editingStop}
-          onSave={handleSaveEdit}
-          onClose={() => setEditingStop(null)}
-        />
+              <div className="flex gap-3 pt-1">
+                <Link
+                  href="/ai"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-full bg-primary-600 py-3 text-sm font-bold text-white hover:bg-primary-700"
+                >
+                  <SparklesIcon size={14} />
+                  Plan more with Michelle
+                </Link>
+                <button
+                  onClick={() => deletePlan(activePlan.id)}
+                  className="flex h-12 w-12 items-center justify-center rounded-full bg-sand-100 text-ink-muted hover:bg-red-50 hover:text-safety-critical"
+                >
+                  <TrashIcon size={18} />
+                </button>
+              </div>
+            </>
+          )}
+
+          <button
+            onClick={() => {
+              const route = demoRoutes.find((r) => r.region === "ulaanbaatar") ?? demoRoutes[0];
+              setRoute(route);
+              router.push("/live");
+            }}
+            className="block w-full rounded-full bg-primary-600 py-3.5 text-center text-sm font-bold text-white hover:bg-primary-700"
+          >
+            Start the live guide
+          </button>
+        </>
       )}
-
-      {deleteTargetId && (
-        <DeleteConfirm
-          onConfirm={() => handleDelete(deleteTargetId)}
-          onCancel={() => setDeleteTargetId(null)}
-        />
-      )}
-    </>
+    </div>
   );
 }
 
-function DaySelector({
-  days,
-  activeDayIdx,
-  onChange,
+// ---------------------------------------------------------------------------
+// Empty state
+// ---------------------------------------------------------------------------
+
+function EmptyState() {
+  return (
+    <div className="py-16 flex flex-col items-center gap-4 text-center">
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-50">
+        <MapPinIcon size={28} className="text-primary-500" />
+      </div>
+      <div>
+        <p className="font-serif text-xl text-ink">No plans yet</p>
+        <p className="mt-1.5 max-w-xs text-sm text-ink-muted">
+          Chat with Michelle to plan your Mongolia trip. When you save a plan, it appears here.
+        </p>
+      </div>
+      <Link
+        href="/ai"
+        className="flex items-center gap-2 rounded-full bg-primary-600 px-6 py-3 text-sm font-bold text-white hover:bg-primary-700"
+      >
+        <SparklesIcon size={14} />
+        Plan with Michelle
+      </Link>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Plan tabs
+// ---------------------------------------------------------------------------
+
+function PlanTabs({
+  plans,
+  activePlanId,
+  onSelect,
 }: {
-  days: TripDay[];
-  activeDayIdx: number;
-  onChange: (idx: number) => void;
+  plans: SavedPlan[];
+  activePlanId: string | null;
+  onSelect: (id: string) => void;
 }) {
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1">
-      {days.map((day, idx) => {
-        const isActive = idx === activeDayIdx;
-        const isCurrent = day.stops.some((s) => s.status === "current");
+    <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+      {plans.map((plan) => {
+        const isActive = plan.id === activePlanId;
+        const label = plan.title.length > 18 ? plan.title.slice(0, 17) + "…" : plan.title;
         return (
           <button
-            key={day.dayNumber}
-            onClick={() => onChange(idx)}
+            key={plan.id}
+            onClick={() => onSelect(plan.id)}
             className={[
-              "relative shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-colors",
-              isActive
-                ? "bg-primary-600 text-white"
-                : "bg-white text-ink-muted hover:bg-sand-100 hover:text-ink",
+              "shrink-0 flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-semibold transition-colors",
+              isActive ? "bg-primary-600 text-white" : "bg-white text-ink-muted hover:bg-sand-100 hover:text-ink",
             ].join(" ")}
           >
-            Day {day.dayNumber}
-            {isCurrent && !isActive && (
-              <span className="absolute right-2 top-1.5 h-1.5 w-1.5 rounded-full bg-primary-500" />
-            )}
+            <SparklesIcon size={12} />
+            {label}
           </button>
         );
       })}
@@ -275,296 +293,143 @@ function DaySelector({
   );
 }
 
-function AdaptationNote() {
+// ---------------------------------------------------------------------------
+// Day tabs
+// ---------------------------------------------------------------------------
+
+function DayTabs({
+  days,
+  activeDay,
+  doneSet,
+  stops,
+  onSelect,
+}: {
+  days: number[];
+  activeDay: number;
+  doneSet: Set<string>;
+  stops: PlanStop[];
+  onSelect: (day: number) => void;
+}) {
   return (
-    <div className="flex gap-3 rounded-3xl border border-safety-armed/20 bg-sand-amber p-4">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-safety-armed text-white">
-        <SunIcon size={18} />
-      </span>
-      <p className="text-sm font-semibold text-ink">{journeyAdaptationNote}</p>
+    <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+      {days.map((day) => {
+        const dayStops = stops.filter((s) => s.day === day);
+        const doneCount = dayStops.filter((s) => doneSet.has(stopKey(s))).length;
+        const allDone = doneCount === dayStops.length && dayStops.length > 0;
+        const isActive = day === activeDay;
+        return (
+          <button
+            key={day}
+            onClick={() => onSelect(day)}
+            className={[
+              "shrink-0 flex flex-col items-center rounded-2xl px-5 py-2.5 transition-colors",
+              isActive ? "bg-primary-600 text-white" : "bg-white text-ink-muted hover:bg-sand-100 hover:text-ink",
+            ].join(" ")}
+          >
+            <span className="text-[10px] font-bold uppercase tracking-widest opacity-70">Day</span>
+            <span className="text-xl font-bold leading-tight">{day}</span>
+            <span className={[
+              "text-[10px] font-semibold",
+              isActive ? "text-white/70" : allDone ? "text-green-500" : "text-ink-muted/50",
+            ].join(" ")}>
+              {allDone ? "✓ done" : `${doneCount}/${dayStops.length}`}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-function TimelineStop({
+// ---------------------------------------------------------------------------
+// Stop card — photo card + time + done toggle
+// ---------------------------------------------------------------------------
+
+function StopCard({
   stop,
+  index,
+  done,
   isLast,
-  onEdit,
-  onDelete,
+  place,
+  onToggle,
 }: {
-  stop: JourneyStop;
+  stop: PlanStop;
+  index: number;
+  done: boolean;
   isLast: boolean;
-  onEdit: () => void;
-  onDelete: () => void;
+  place?: PlanPlace;
+  onToggle: () => void;
 }) {
-  const isSkipped = stop.status === "skipped";
+  const imageUrl =
+    place?.imageUrl ??
+    `https://picsum.photos/seed/${encodeURIComponent(stop.title)}/700/400`;
 
   return (
     <li className="flex gap-3">
-      <div className="flex w-12 flex-col items-center">
-        <span
+      {/* Timeline column */}
+      <div className="flex flex-col items-center" style={{ width: 40 }}>
+        <button
+          onClick={onToggle}
+          title={done ? "Mark undone" : "Mark done"}
           className={[
-            "text-xs font-bold",
-            isSkipped ? "text-ink-muted/60" : "text-ink",
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors",
+            done
+              ? "border-green-500 bg-green-500 text-white"
+              : "border-primary-600 bg-white text-primary-600 hover:bg-primary-50",
           ].join(" ")}
         >
-          {stop.time}
-        </span>
-        <TimelineDot status={stop.status} />
-        {!isLast && <span className="w-px flex-1 bg-sand-300" />}
+          {done ? (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 13l4 4L19 7" />
+            </svg>
+          ) : (
+            index + 1
+          )}
+        </button>
+        {!isLast && <span className="my-1 w-px flex-1 bg-sand-300" style={{ minHeight: 20 }} />}
       </div>
 
-      <div
-        className={["flex-1 pb-5", isSkipped ? "opacity-50" : ""].join(" ")}
-      >
-        <article className="overflow-hidden rounded-3xl bg-white shadow-ink-sm">
+      {/* Photo card */}
+      <div className="flex-1 pb-5">
+        {stop.time ? (
+          <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-ink-muted">{stop.time}</p>
+        ) : null}
+        <article className={["overflow-hidden rounded-3xl bg-white shadow-ink-sm transition-opacity", done ? "opacity-60" : ""].join(" ")}>
           <div className="relative h-40">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={stop.imageUrl}
-              alt={stop.title}
-              className={[
-                "h-full w-full object-cover",
-                isSkipped ? "grayscale" : "",
-              ].join(" ")}
-            />
-            <div className="absolute left-3 top-3">
-              <Tag label={stop.tag} tone={stop.tagTone} />
-            </div>
-            {isSkipped && (
-              <div className="absolute right-3 top-3">
-                <span className="rounded-full bg-black/60 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
-                  Not visited
-                </span>
+            <img src={imageUrl} alt={stop.title} className="h-full w-full object-cover" />
+            {done && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                <span className="rounded-full bg-green-500 px-3 py-1 text-sm font-bold text-white">✓ Done</span>
               </div>
             )}
           </div>
-
           <div className="p-4">
-            <h3
-              className={[
-                "text-lg font-bold text-ink",
-                isSkipped ? "line-through decoration-ink-muted/60" : "",
-              ].join(" ")}
-            >
+            <h3 className={["text-base font-bold text-ink leading-snug", done ? "line-through decoration-ink-muted/60" : ""].join(" ")}>
               {stop.title}
             </h3>
-            <p className="mt-1 text-sm text-ink-muted">{stop.note}</p>
-            {(stop.walk || stop.dwell) && (
-              <div className="mt-3 flex items-center gap-4 text-xs font-semibold text-ink-muted">
-                {stop.walk && (
+            {stop.note ? (
+              <p className="mt-1 text-sm text-ink-muted leading-snug">{stop.note}</p>
+            ) : null}
+            {(place?.rating != null || place?.walkMinutes != null) && (
+              <div className="mt-2 flex items-center gap-4 text-xs font-semibold text-ink-muted">
+                {place?.rating != null && (
                   <span className="flex items-center gap-1">
-                    <MapPinIcon size={14} />
-                    {stop.walk}
+                    <StarIcon size={11} className="text-safety-armed" />
+                    {place.rating}
                   </span>
                 )}
-                {stop.dwell && (
+                {place?.walkMinutes != null && (
                   <span className="flex items-center gap-1">
-                    <ClockIcon size={14} />
-                    {stop.dwell}
+                    <WalkIcon size={12} />
+                    {place.walkMinutes} min walk
                   </span>
                 )}
               </div>
             )}
-
-            <div className="mt-3 flex gap-2 border-t border-ink/5 pt-3">
-              <button
-                onClick={onEdit}
-                className="flex items-center gap-1.5 rounded-full bg-sand-100 px-3 py-1.5 text-xs font-semibold text-ink-muted transition-colors hover:bg-sand-200 hover:text-ink"
-              >
-                <PencilIcon size={12} />
-                Edit
-              </button>
-              <button
-                onClick={onDelete}
-                className="flex items-center gap-1.5 rounded-full bg-sand-100 px-3 py-1.5 text-xs font-semibold text-ink-muted transition-colors hover:bg-red-50 hover:text-safety-critical"
-              >
-                <TrashIcon size={12} />
-                Remove
-              </button>
-            </div>
           </div>
         </article>
       </div>
     </li>
-  );
-}
-
-function TimelineDot({ status }: { status: JourneyStop["status"] }) {
-  if (status === "current") {
-    return (
-      <span className="my-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-primary-600">
-        <span className="h-2 w-2 rounded-full bg-primary-600" />
-      </span>
-    );
-  }
-  if (status === "done") {
-    return <span className="my-1 h-4 w-4 rounded-full bg-safety-safe" />;
-  }
-  if (status === "skipped") {
-    return (
-      <span className="my-1 flex h-4 w-4 items-center justify-center rounded-full bg-ink-muted/20">
-        <span className="h-px w-2.5 rounded-full bg-ink-muted/60" />
-      </span>
-    );
-  }
-  return (
-    <span className="my-1 h-4 w-4 rounded-full border-2 border-safety-armed bg-white" />
-  );
-}
-
-function EditModal({
-  stop,
-  onSave,
-  onClose,
-}: {
-  stop: JourneyStop;
-  onSave: (s: JourneyStop) => void;
-  onClose: () => void;
-}) {
-  const [draft, setDraft] = useState<JourneyStop>(stop);
-
-  function update<K extends keyof JourneyStop>(key: K, value: JourneyStop[K]) {
-    setDraft((prev) => ({ ...prev, [key]: value }));
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end">
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in"
-        onClick={onClose}
-      />
-      <div className="relative space-y-4 rounded-t-3xl bg-white p-6 animate-slide-up">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-ink">Edit stop</h2>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-sand-100 text-ink-muted"
-          >
-            <CloseIcon size={16} />
-          </button>
-        </div>
-
-        <div className="space-y-3">
-          <label className="block">
-            <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">
-              Time
-            </span>
-            <input
-              type="text"
-              value={draft.time}
-              onChange={(e) => update("time", e.target.value)}
-              className="mt-1 w-full rounded-xl border border-ink/10 bg-sand-50 px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">
-              Title
-            </span>
-            <input
-              type="text"
-              value={draft.title}
-              onChange={(e) => update("title", e.target.value)}
-              className="mt-1 w-full rounded-xl border border-ink/10 bg-sand-50 px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">
-              Note
-            </span>
-            <textarea
-              value={draft.note}
-              onChange={(e) => update("note", e.target.value)}
-              rows={3}
-              className="mt-1 w-full resize-none rounded-xl border border-ink/10 bg-sand-50 px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-            />
-          </label>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">
-                Distance
-              </span>
-              <input
-                type="text"
-                value={draft.walk}
-                onChange={(e) => update("walk", e.target.value)}
-                className="mt-1 w-full rounded-xl border border-ink/10 bg-sand-50 px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">
-                Duration
-              </span>
-              <input
-                type="text"
-                value={draft.dwell}
-                onChange={(e) => update("dwell", e.target.value)}
-                className="mt-1 w-full rounded-xl border border-ink/10 bg-sand-50 px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-              />
-            </label>
-          </div>
-        </div>
-
-        <div className="flex gap-3">
-          <button
-            onClick={onClose}
-            className="flex-1 rounded-full border border-ink/15 py-3 text-sm font-bold text-ink-muted hover:bg-sand-100"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onSave(draft)}
-            className="flex-1 rounded-full bg-primary-600 py-3 text-sm font-bold text-white hover:bg-primary-700"
-          >
-            Save changes
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DeleteConfirm({
-  onConfirm,
-  onCancel,
-}: {
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in"
-        onClick={onCancel}
-      />
-      <div className="relative w-full max-w-sm space-y-4 rounded-3xl bg-white p-6 text-center animate-scale-in">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50">
-          <TrashIcon size={24} className="text-safety-critical" />
-        </div>
-        <div>
-          <h3 className="text-lg font-bold text-ink">Remove this stop?</h3>
-          <p className="mt-1 text-sm text-ink-muted">
-            This stop will be removed from your plan.
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={onCancel}
-            className="flex-1 rounded-full border border-ink/15 py-3 text-sm font-bold text-ink-muted hover:bg-sand-100"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className="flex-1 rounded-full bg-safety-critical py-3 text-sm font-bold text-white hover:opacity-90"
-          >
-            Remove
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }

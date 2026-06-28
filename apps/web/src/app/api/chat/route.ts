@@ -41,7 +41,8 @@ const SYSTEM_PROMPT =
   "2–4 sentence summary, AND the full `stops` list — every stop with its day number, a time " +
   "(e.g. '09:00' or 'Morning'), the place title and a one-line note — so it saves to the " +
   "day-by-day Journey timeline. The `stops` list MUST contain EVERY place from EVERY day you " +
-  "agreed on — about 3 stops per day, matching the places in your summary — NEVER just one stop. " +
+  "agreed on — a FULL day of 5–7 stops including breakfast/brunch, lunch restaurant, afternoon " +
+  "sights, a coffee or snack break, and dinner — NEVER fewer than 4 stops for a full day. " +
   "This does NOT save the plan — it shows the " +
   "traveller 'Yes, save' and 'No, add more' buttons. After calling it, write ONE short warm " +
   "line presenting the plan (e.g. 'Here's your plan — tap Yes to save it, or add more stops.'). " +
@@ -108,10 +109,13 @@ const SYSTEM_PROMPT =
   "traveller's interests, season and chosen region, and DO NOT default to the same place for " +
   "everyone (in particular, do NOT reach for Gorkhi-Terelj by habit — only suggest it when it " +
   "actually fits). For each place you name in a day, call lookup_place so its card appears. " +
-  "KEEP EACH DAY RELAXED AND UNHURRIED but FULL — aim for ABOUT 3 stops a day (2-4), e.g. a morning " +
-  "sight, a lunch/food stop, and an afternoon spot — never just one, with realistic travel times and " +
-  "real breathing room to actually enjoy each " +
-  "place instead of racing through it. Tie every suggestion back to what they told you they care " +
+  "PLAN A FULL DAY — every day must include ALL of these: a morning activity (e.g. 09:00), a " +
+  "breakfast or brunch spot (e.g. 08:00–09:00), a lunch restaurant with a specific local dish " +
+  "(e.g. 12:30), at least one afternoon sight or activity (e.g. 14:00), a coffee or snack break " +
+  "(e.g. 16:00), and a dinner restaurant (e.g. 19:00). Aim for 5–7 stops per day total. Give each " +
+  "stop a real clock time, say what to do/see/eat there, and say how to get to the next stop. " +
+  "Never skip meals — food stops are as important as sights. Keep the pace realistic with enough " +
+  "time at each place to actually enjoy it. Tie every suggestion back to what they told you they care " +
   "about. " +
   "RESPECT GEOGRAPHY — Mongolia is huge and the regions are far apart, so NEVER bounce between " +
   "distant areas on back-to-back days (e.g. the Gobi on Day 1 then Arkhangai on Day 2 is wrong — " +
@@ -200,8 +204,9 @@ const TOOLS: ChatCompletionTool[] = [
             type: "array",
             description:
               "EVERY stop of the plan in order, so it can be saved to the day-by-day Journey " +
-              "timeline. Include all days you settled with the traveller, with ABOUT 3 stops per " +
-              "day (2-4) — never just one stop for a day.",
+              "timeline. Include all days you settled with the traveller. Each day MUST have 5–7 " +
+              "stops covering the full day: breakfast/brunch, a morning sight, lunch restaurant, " +
+              "afternoon activity, coffee break, and dinner — all with specific clock times.",
             items: {
               type: "object",
               properties: {
