@@ -37,6 +37,63 @@ export function stopSpeaking(): void {
   stopBrowser(); // also cancel any browser-TTS fallback in flight
 }
 
+// Play an audio blob with the same anti-overlap + ObjectURL cleanup as speak().
+// `myToken` must be the value of speakToken captured right after stopSpeaking().
+// Throws if playback can't start (e.g. autoplay blocked) so callers can fall back.
+async function playBlobWithToken(
+  blob: Blob,
+  opts: NaturalSpeakOptions,
+  myToken: number,
+): Promise<boolean> {
+  if (myToken !== speakToken) return false;
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  currentAudio = audio;
+  currentUrl = url;
+
+  const cleanup = () => {
+    if (currentUrl === url) {
+      URL.revokeObjectURL(url);
+      currentUrl = null;
+    }
+    if (currentAudio === audio) currentAudio = null;
+  };
+
+  audio.onplay = () => opts.onStart?.();
+  audio.onended = () => {
+    opts.onEnd?.();
+    cleanup();
+  };
+  audio.onerror = () => {
+    opts.onEnd?.();
+    cleanup();
+  };
+
+  try {
+    await audio.play();
+    return true;
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
+}
+
+// Play a pre-fetched / cached audio blob (offline narration). Works with no
+// network. Returns true if it played, false otherwise.
+export async function playBlob(
+  blob: Blob,
+  opts: NaturalSpeakOptions = {},
+): Promise<boolean> {
+  stopSpeaking();
+  const myToken = speakToken;
+  try {
+    return await playBlobWithToken(blob, opts, myToken);
+  } catch {
+    opts.onEnd?.();
+    return false;
+  }
+}
+
 // Speak text aloud using the natural server voice. Returns true if it played,
 // false if it fell back to the browser voice (or couldn't speak at all).
 export async function speak(
@@ -63,31 +120,7 @@ export async function speak(
     const blob = await res.blob();
     if (myToken !== speakToken) return false;
 
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    currentAudio = audio;
-    currentUrl = url;
-
-    const cleanup = () => {
-      if (currentUrl === url) {
-        URL.revokeObjectURL(url);
-        currentUrl = null;
-      }
-      if (currentAudio === audio) currentAudio = null;
-    };
-
-    audio.onplay = () => opts.onStart?.();
-    audio.onended = () => {
-      opts.onEnd?.();
-      cleanup();
-    };
-    audio.onerror = () => {
-      opts.onEnd?.();
-      cleanup();
-    };
-
-    await audio.play();
-    return true;
+    return await playBlobWithToken(blob, opts, myToken);
   } catch (err) {
     // Superseded or deliberately aborted → stay silent (no fallback, no onEnd).
     if (myToken !== speakToken) return false;

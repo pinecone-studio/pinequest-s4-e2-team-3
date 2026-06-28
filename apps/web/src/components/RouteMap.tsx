@@ -9,7 +9,8 @@ import {
   useMap,
   useMapsLibrary,
 } from "@vis.gl/react-google-maps";
-import { GOOGLE_MAPS_KEY, DARK_MAP_STYLES, LIGHT_MAP_STYLES } from "@/lib/googlemaps";
+import { GOOGLE_MAPS_KEY } from "@/lib/googlemaps";
+import { tileUrl } from "@/lib/offlineTiles";
 import type { Coords, DemoRoute, PlaceOption } from "@/types";
 import type { BusLeg } from "@/lib/transit";
 
@@ -59,14 +60,16 @@ export default function RouteMap({
       <Map
         defaultCenter={path[0]}
         defaultZoom={5}
-        mapTypeId={mapType}
-        styles={mapType === "roadmap" ? (theme === "light" ? LIGHT_MAP_STYLES : DARK_MAP_STYLES) : undefined}
         disableDefaultUI
         zoomControl
         gestureHandling="greedy"
         clickableIcons={false}
         style={{ width: "100%", height: "100%" }}
       >
+        {/* Base layer: colourful CartoDB raster for "map" (clearer than Google's
+            styled roadmap, and matches the offline map); Google "hybrid" for sat. */}
+        <BaseTiles mapType={mapType} theme={theme} />
+
         {/* Show the full plan line only when not heading to a specific target —
             otherwise just the current→target leg (DetourLine below) is drawn. */}
         {!selectedPlace && !returnTarget && <RouteLine path={path} />}
@@ -120,6 +123,38 @@ export default function RouteMap({
       </Map>
     </APIProvider>
   );
+}
+
+// Swaps the map's base layer: "map" → colourful CartoDB raster tiles (themed,
+// and the same look as the offline map); "satellite" → Google's hybrid imagery.
+function BaseTiles({ mapType, theme }: { mapType: "roadmap" | "hybrid"; theme: "dark" | "light" }) {
+  const map = useMap();
+  const mapsLib = useMapsLibrary("maps");
+  const coreLib = useMapsLibrary("core");
+
+  useEffect(() => {
+    if (!map || !mapsLib || !coreLib) return;
+    if (mapType === "hybrid") {
+      map.setMapTypeId("hybrid");
+      return;
+    }
+    const style = theme === "dark" ? "dark" : "voyager";
+    const carto = new mapsLib.ImageMapType({
+      getTileUrl: (c: google.maps.Point, z: number) => {
+        const n = 2 ** z;
+        if (c.y < 0 || c.y >= n) return ""; // out-of-range row → blank
+        const x = ((c.x % n) + n) % n; // wrap columns around the globe
+        return tileUrl(style, z, x, c.y);
+      },
+      tileSize: new coreLib.Size(256, 256),
+      maxZoom: 20,
+      name: "carto",
+    });
+    map.mapTypes.set("carto", carto);
+    map.setMapTypeId("carto");
+  }, [map, mapsLib, coreLib, mapType, theme]);
+
+  return null;
 }
 
 // Surfaces auth/load failures (e.g. invalid key) to the caller.

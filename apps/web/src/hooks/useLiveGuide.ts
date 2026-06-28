@@ -4,7 +4,9 @@ import { useLiveStore } from "@/stores/liveStore";
 import { useLocationStore } from "@/stores/locationStore";
 import { haversineMeters, hasArrived } from "@/lib/geo";
 import { resolvePosition } from "@/lib/position";
-import { speak, stopSpeaking } from "@/lib/tts";
+import { speak, stopSpeaking, playBlob } from "@/lib/tts";
+import { loadPack, audioKey } from "@/lib/offline";
+import { getAudio } from "@/lib/offlineAudio";
 import { createListener, ttsSupported, sttSupported } from "@/lib/speech";
 import { useWeather } from "@/hooks/useWeather";
 import { weatherTip } from "@/lib/weather";
@@ -57,6 +59,7 @@ export function useLiveGuide() {
     simulatedCoords,
     suggestions,
     selectedPlace,
+    offlineReadyIds,
     advanceStop,
     goToStop,
     markArrived,
@@ -108,23 +111,59 @@ export function useLiveGuide() {
   const tipRef = useRef<string | null>(null);
   tipRef.current = tip;
 
-  const sayNarration = useCallback((stop: RouteStop) => {
-    const tipText = tipRef.current;
-    const spoken = tipText ? `${stop.narration} ${tipText}` : stop.narration;
-    setAudioLoading(true); // "preparing…" until playback actually starts
-    void speak(spoken, {
-      lang: "en",
-      onStart: () => {
-        setAudioLoading(false);
-        setIsSpeaking(true);
-      },
-      onEnd: () => {
-        setIsSpeaking(false);
-        setAudioLoading(false);
-      },
-    });
-    setLastAnswer(null);
-  }, []);
+  // The journey starts parked at the first stop, so its arrival fires immediately
+  // on route load — we mark it reached but DON'T auto-speak it (the traveller taps
+  // play to hear the intro). Every later arrival narrates automatically. Reset per
+  // route so each new journey's first stop is silent on load too.
+  const startedRef = useRef(false);
+  useEffect(() => {
+    startedRef.current = false;
+  }, [activeRoute?.id]);
+
+  // The offline pack's AI narration text per stop (generated once at save time).
+  // Recomputed when the route changes or its pack finishes saving.
+  const packTexts = useMemo(() => {
+    const pack = activeRoute ? loadPack(activeRoute.id) : null;
+    const map: Record<string, string> = {};
+    pack?.stops.forEach((s) => (map[s.id] = s.text));
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRoute?.id, offlineReadyIds]);
+
+  // Effective narration for a stop: cached AI text if saved, else the bundled one.
+  const currentNarration = currentStop
+    ? packTexts[currentStop.id] ?? currentStop.narration
+    : "";
+
+  const sayNarration = useCallback(
+    (stop: RouteStop) => {
+      const text = packTexts[stop.id] ?? stop.narration;
+      const tipText = tipRef.current;
+      const spoken = tipText ? `${text} ${tipText}` : text;
+      setAudioLoading(true); // "preparing…" until playback actually starts
+      const opts = {
+        lang: "en" as const,
+        onStart: () => {
+          setAudioLoading(false);
+          setIsSpeaking(true);
+        },
+        onEnd: () => {
+          setIsSpeaking(false);
+          setAudioLoading(false);
+        },
+      };
+      const routeId = activeRoute?.id;
+      // Prefer the cached voice (works offline + skips a TTS fetch online);
+      // fall back to live server TTS of the same text.
+      void (async () => {
+        const blob = routeId ? await getAudio(audioKey(routeId, stop.id)) : null;
+        if (blob) void playBlob(blob, opts);
+        else void speak(spoken, opts);
+      })();
+      setLastAnswer(null);
+    },
+    [packTexts, activeRoute?.id],
+  );
 
   // Speak a one-off line (e.g. confirming a detour) and show it on Michelle's card.
   const announce = useCallback((text: string) => {
@@ -159,7 +198,10 @@ export function useLiveGuide() {
       const stop = stops[i];
       if (!arrivedStopIds.includes(stop.id)) {
         markArrived(stop.id);
-        sayNarration(stop);
+        // Skip the very first auto-arrival (route load) — stay silent until the
+        // traveller taps play; narrate every arrival after that.
+        if (startedRef.current) sayNarration(stop);
+        else startedRef.current = true;
       }
       setReturnTarget(null); // back on the route — drop the "return" guide line
       break; // furthest reached stop handled; stop scanning
@@ -275,6 +317,7 @@ export function useLiveGuide() {
   return {
     activeRoute,
     currentStop,
+    currentNarration,
     nextStop,
     currentStopIndex,
     effectiveCoords,

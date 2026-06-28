@@ -52,7 +52,7 @@ function romanize(s?: string): string {
 }
 
 // Decodes a Google/OTP encoded polyline string into lat/lng points.
-function decodePolyline(encoded: string): Coords[] {
+export function decodePolyline(encoded: string): Coords[] {
   const points: Coords[] = [];
   let index = 0, lat = 0, lng = 0;
   while (index < encoded.length) {

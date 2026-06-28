@@ -29,10 +29,12 @@ import { weatherEmoji, weatherLabel, type WeatherNow } from "@/lib/weather";
 import { useLiveStore } from "@/stores/liveStore";
 import { useLocationStore } from "@/stores/locationStore";
 import { useLocation } from "@/hooks/useLocation";
+import { useOnline } from "@/hooks/useOnline";
 import type { Coords, DemoRoute, PlaceOption, RouteStop } from "@/types";
 
 // Loaded lazily + client-only because the Google Maps SDK touches `window`.
 const RouteMap = dynamic(() => import("@/components/RouteMap"), { ssr: false });
+const OfflineMap = dynamic(() => import("@/components/OfflineMap"), { ssr: false });
 
 // A place the traveller has chosen to head to (plan stop or a nearby pick).
 type Target = { name: string; latitude: number; longitude: number };
@@ -133,7 +135,7 @@ export default function LiveGuidePage() {
             pointer-events on themselves. */}
         <div
           className={[
-            "relative mx-auto flex min-h-screen w-full max-w-md flex-col px-5 pb-6 pt-6",
+            "relative z-10 mx-auto flex min-h-screen w-full max-w-md flex-col px-5 pb-6 pt-6",
             activeRoute ? "pointer-events-none" : "",
           ].join(" ")}
         >
@@ -156,18 +158,8 @@ function LiveBackground({ theme }: { theme: Theme }) {
   const realCoords = useLocationStore((s) => s.coordinates);
   const position: Coords | null = resolvePosition(simulatedCoords, realCoords, activeRoute);
 
-  const [online, setOnline] = useState(true);
+  const online = useOnline();
   const [mapFailed, setMapFailed] = useState(false);
-  useEffect(() => {
-    const sync = () => setOnline(navigator.onLine);
-    sync();
-    window.addEventListener("online", sync);
-    window.addEventListener("offline", sync);
-    return () => {
-      window.removeEventListener("online", sync);
-      window.removeEventListener("offline", sync);
-    };
-  }, []);
 
   if (!activeRoute) return <MapBackdrop />;
 
@@ -197,17 +189,36 @@ function LiveBackground({ theme }: { theme: Theme }) {
     );
   }
 
-  // Offline: show the cached static snapshot if we have one.
-  const pack = loadPack(activeRoute.id);
-  if (offline && pack?.image) {
+  // Offline: prefer the interactive cached-tile map (zoom / pan / live GPS); fall
+  // back to the saved static snapshot, then the stylised backdrop.
+  if (offline) {
+    const pack = loadPack(activeRoute.id);
+    if (pack?.tiles) {
+      // z-0 traps Leaflet's internal pane/control z-indexes inside this box so
+      // the guide UI (z-10 column) still paints on top of the map.
+      return (
+        <div className="absolute inset-0 z-0">
+          <OfflineMap
+            stops={activeRoute.stops}
+            encodedPath={pack.encodedPath}
+            position={position}
+            tileStyle={pack.tileStyle}
+          />
+        </div>
+      );
+    }
     return (
       <div className="absolute inset-0">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={pack.image}
-          alt={`${activeRoute.title} route`}
-          className="h-full w-full object-cover opacity-90"
-        />
+        {pack?.image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={pack.image}
+            alt={`${activeRoute.title} route`}
+            className="h-full w-full object-cover opacity-90"
+          />
+        ) : (
+          <MapBackdrop />
+        )}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#eef2fb]/40 via-transparent to-[#eef2fb]/90 dark:from-[#0d1422]/40 dark:via-transparent dark:to-[#0d1422]/90" />
       </div>
     );
@@ -308,9 +319,15 @@ function LiveExperience({
     setForceOffline,
   } = useLiveStore();
 
+  // Offline (real signal loss or the demo toggle): the chat/Places-backed features
+  // (nearby suggestions, asking Michelle) can't reach the network, so we hide them.
+  const online = useOnline();
+  const offline = forceOffline || !online;
+
   const {
     activeRoute,
     currentStop,
+    currentNarration,
     nextStop,
     effectiveCoords,
     isSpeaking,
@@ -334,7 +351,7 @@ function LiveExperience({
   // (Michelle speaks the same combination on arrival). An AI answer replaces it.
   const narrationText =
     lastAnswer ??
-    [currentStop?.narration, weatherTip].filter(Boolean).join(" ");
+    [currentNarration, weatherTip].filter(Boolean).join(" ");
 
   const arrived = currentStop ? arrivedStopIds.includes(currentStop.id) : false;
 
@@ -420,19 +437,33 @@ function LiveExperience({
   // --- Offline pack ---
   const offlineSaved = activeRoute ? offlineReadyIds.includes(activeRoute.id) : false;
   const [saving, setSaving] = useState(false);
+  const [savingProgress, setSavingProgress] = useState<{ done: number; total: number } | null>(null);
+  const savingRef = useRef(false);
 
-  // Reflect any previously-saved pack on mount.
-  useEffect(() => {
-    if (activeRoute && hasPack(activeRoute.id)) setOfflineReady(activeRoute.id);
-  }, [activeRoute, setOfflineReady]);
-
+  // Build (or rebuild) the offline pack: AI narration text + voice audio + map.
   const downloadPack = async () => {
-    if (!activeRoute || saving) return;
+    if (!activeRoute || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
-    await savePack(activeRoute);
-    setOfflineReady(activeRoute.id);
-    setSaving(false);
+    setSavingProgress({ done: 0, total: activeRoute.stops.length });
+    try {
+      await savePack(activeRoute, (done, total) => setSavingProgress({ done, total }), theme);
+      setOfflineReady(activeRoute.id);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+      setSavingProgress(null);
+    }
   };
+
+  // On route activation: reflect an existing pack, else auto-build it once while
+  // online so the journey is ready when the signal drops.
+  useEffect(() => {
+    if (!activeRoute) return;
+    if (hasPack(activeRoute.id)) setOfflineReady(activeRoute.id);
+    else if (navigator.onLine) void downloadPack();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRoute?.id]);
 
   // --- Simulate control (so arrivals can be demoed without being in Mongolia) ---
   const simulateArrival = () => {
@@ -557,6 +588,21 @@ function LiveExperience({
         weather={weather}
       />
 
+      {savingProgress && (
+        <div className="pointer-events-none mt-2 flex items-center gap-2 self-start rounded-full bg-ink/5 px-3 py-1.5 text-xs font-semibold text-ink-muted dark:bg-white/10 dark:text-white/60">
+          <span className="h-3 w-3 animate-spin rounded-full border-2 border-primary-500/30 border-t-primary-500" />
+          Preparing offline guide… {savingProgress.done}/{savingProgress.total}
+        </div>
+      )}
+
+      {forceOffline && !savingProgress && (
+        <div className="pointer-events-none mt-2 self-start rounded-full bg-ink/80 px-3 py-1.5 text-xs font-bold text-white shadow-sm dark:bg-white/15">
+          {offlineSaved
+            ? "📦 Offline preview — saved map, text & voice"
+            : "📦 Offline preview — nothing saved yet, reconnect to prepare"}
+        </div>
+      )}
+
       <div className="flex-1" />
 
       {/* Scrollable bottom cluster — keeps the demo controls (Routes, Auto-walk)
@@ -624,6 +670,7 @@ function LiveExperience({
             })
           }
           onSomewhereElse={somewhereElse}
+          offline={offline}
           onPickStop={(s) =>
             pickTarget({ name: s.name, latitude: s.latitude, longitude: s.longitude })
           }
@@ -669,6 +716,7 @@ function LiveExperience({
         isAnswer={!!lastAnswer}
         voiceError={voiceError}
         voiceInSupported={voiceInSupported}
+        offline={offline}
         onReplay={replay}
         onPause={pause}
         onMic={startListening}
@@ -704,7 +752,11 @@ function TopBar({
 }) {
   const mapType = useLiveStore((s) => s.mapType);
   const toggleMapType = useLiveStore((s) => s.toggleMapType);
+  const forceOffline = useLiveStore((s) => s.forceOffline);
+  const online = useOnline();
   const satellite = mapType === "hybrid";
+  // The satellite/map toggle only affects the online Google map — hide it offline.
+  const showLayers = online && !forceOffline;
   return (
     <div className="pointer-events-auto flex items-center gap-2">
       <Link
@@ -715,22 +767,24 @@ function TopBar({
         <ChevronLeftIcon size={20} />
       </Link>
 
-      <button
-        type="button"
-        onClick={toggleMapType}
-        aria-label={satellite ? "Switch to map view" : "Switch to satellite view"}
-        title={satellite ? "Map view" : "Satellite view"}
-        className={[
-          "ml-auto flex h-10 w-10 items-center justify-center rounded-full transition-colors",
-          satellite
-            ? "bg-primary-600 text-white"
-            : "bg-ink/5 text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15",
-        ].join(" ")}
-      >
-        <Layers size={18} />
-      </button>
+      {showLayers && (
+        <button
+          type="button"
+          onClick={toggleMapType}
+          aria-label={satellite ? "Switch to map view" : "Switch to satellite view"}
+          title={satellite ? "Map view" : "Satellite view"}
+          className={[
+            "ml-auto flex h-10 w-10 items-center justify-center rounded-full transition-colors",
+            satellite
+              ? "bg-primary-600 text-white"
+              : "bg-ink/5 text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15",
+          ].join(" ")}
+        >
+          <Layers size={18} />
+        </button>
+      )}
 
-      <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+      <ThemeToggle theme={theme} onToggle={onToggleTheme} className={showLayers ? "" : "ml-auto"} />
 
       <Link
         href="/sos"
@@ -1086,11 +1140,13 @@ function IntentCard({
   onPick: (query: string) => void;
   onBack: () => void;
 }) {
+  // Phrased to make Michelle look up nearby places immediately (the chat prompt
+  // otherwise asks a clarifying question for vague requests → no map markers).
   const options: { emoji: string; label: string; query: string }[] = [
-    { emoji: "🍽️", label: "Eat", query: "Where's a good place to eat near me right now?" },
-    { emoji: "🏛️", label: "See a sight", query: "What's a good sight or museum to see near me right now?" },
-    { emoji: "☕", label: "Coffee", query: "Where's a nice coffee shop near me right now?" },
-    { emoji: "🌳", label: "Rest", query: "Where's a quiet park or spot to sit and rest near me?" },
+    { emoji: "🍽️", label: "Eat", query: "Show me good places to eat near me right now — list the closest options, don't ask me anything." },
+    { emoji: "🏛️", label: "See a sight", query: "Show me sights or museums to visit near me right now — list the closest options, don't ask me anything." },
+    { emoji: "☕", label: "Coffee", query: "Show me coffee shops near me right now — list the closest options, don't ask me anything." },
+    { emoji: "🌳", label: "Rest", query: "Show me parks or quiet spots to rest near me right now — list the closest options, don't ask me anything." },
   ];
   return (
     <div className="pointer-events-auto animate-rise mt-3 rounded-3xl bg-white p-3 shadow-sm dark:bg-white/[0.07] dark:shadow-none">
@@ -1130,6 +1186,7 @@ function NextStepCard({
   onToggleFullPlan,
   onTakeMeThere,
   onSomewhereElse,
+  offline = false,
   onPickStop,
   onClose,
 }: {
@@ -1140,6 +1197,7 @@ function NextStepCard({
   onToggleFullPlan: () => void;
   onTakeMeThere: () => void;
   onSomewhereElse: () => void;
+  offline?: boolean;
   onPickStop: (stop: RouteStop) => void;
   onClose: () => void;
 }) {
@@ -1166,9 +1224,12 @@ function NextStepCard({
             Take me there
           </button>
         )}
-        <button onClick={onSomewhereElse} className={secondary}>
-          Somewhere else
-        </button>
+        {/* "Somewhere else" needs the chat + Places API — hidden offline. */}
+        {!offline && (
+          <button onClick={onSomewhereElse} className={secondary}>
+            Somewhere else
+          </button>
+        )}
         <button onClick={onToggleFullPlan} className={secondary}>
           {fullPlanOpen ? "Hide full plan" : "View full plan"}
         </button>
@@ -1215,6 +1276,7 @@ function NarrationCard({
   isAnswer,
   voiceError,
   voiceInSupported,
+  offline = false,
   onReplay,
   onPause,
   onMic,
@@ -1228,6 +1290,7 @@ function NarrationCard({
   isAnswer: boolean;
   voiceError: string | null;
   voiceInSupported: boolean;
+  offline?: boolean;
   onReplay: () => void;
   onPause: () => void;
   onMic: () => void;
@@ -1348,20 +1411,27 @@ function NarrationCard({
           )}
         </button>
 
-        {/* Ask by text — always available, robust on a noisy stage. */}
-        <div className="flex flex-1 items-center gap-2 rounded-full bg-ink/5 px-4 py-2 ring-primary-500/40 transition-shadow focus-within:ring-2 dark:bg-white/10">
+        {/* Ask by text/voice needs the chat backend — disabled offline. */}
+        <div
+          className={[
+            "flex flex-1 items-center gap-2 rounded-full bg-ink/5 px-4 py-2 ring-primary-500/40 transition-shadow focus-within:ring-2 dark:bg-white/10",
+            offline ? "opacity-50" : "",
+          ].join(" ")}
+        >
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()}
-            placeholder="Ask Michelle…"
-            className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted dark:placeholder:text-white/40"
+            disabled={offline}
+            placeholder={offline ? "Offline — questions need a connection" : "Ask Michelle…"}
+            className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted disabled:cursor-not-allowed dark:placeholder:text-white/40"
           />
           <button
             onClick={submit}
+            disabled={offline}
             aria-label="Send"
             className={
-              draft.trim()
+              draft.trim() && !offline
                 ? "text-primary-600 dark:text-primary-400"
                 : "text-ink-muted dark:text-white/40"
             }
@@ -1373,12 +1443,12 @@ function NarrationCard({
         {voiceInSupported && (
           <button
             onClick={onMic}
-            disabled={busy}
-            aria-label={busy ? "Pause Michelle to talk" : "Talk to Michelle"}
-            title={busy ? "Pause Michelle to talk" : "Talk to Michelle"}
+            disabled={busy || offline}
+            aria-label={offline ? "Offline — voice needs a connection" : busy ? "Pause Michelle to talk" : "Talk to Michelle"}
+            title={offline ? "Offline — voice needs a connection" : busy ? "Pause Michelle to talk" : "Talk to Michelle"}
             className={[
               "flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition-colors",
-              busy
+              busy || offline
                 ? "cursor-not-allowed bg-ink/5 text-ink-muted/40 dark:bg-white/5 dark:text-white/20"
                 : listening
                   ? "bg-safety-critical text-white"
