@@ -1,7 +1,8 @@
-// Offline raster map tiles (OpenStreetMap) cached in IndexedDB so the offline
-// map is fully interactive (zoom / pan / live GPS) — not a flat snapshot.
-// ponytail: OSM public tiles are fine at demo scale; for production self-host or
-// use a provider that permits caching (their bulk-download policy is strict).
+// Offline raster map tiles (CartoDB) cached in IndexedDB so the offline map is
+// fully interactive (zoom / pan / live GPS) — not a flat snapshot. Both light
+// (voyager) and dark styles are cached so night mode works offline too.
+// ponytail: Carto public tiles are fine at demo scale; for production self-host
+// or use a provider that permits caching (their bulk-download policy is strict).
 
 export interface TileBounds {
   north: number;
@@ -29,7 +30,8 @@ const CONCURRENCY = 6;
 const MIN_ZOOM = 10;
 const MAX_ZOOM = 16;
 
-const tileKey = (z: number, x: number, y: number) => `${z}/${x}/${y}`;
+const tileKey = (style: TileStyle, z: number, x: number, y: number) => `${style}/${z}/${x}/${y}`;
+const ALL_STYLES: TileStyle[] = ["voyager", "dark"];
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -57,12 +59,17 @@ async function putTile(key: string, blob: Blob): Promise<void> {
   }
 }
 
-export async function getTile(z: number, x: number, y: number): Promise<Blob | null> {
+export async function getTile(
+  style: TileStyle,
+  z: number,
+  x: number,
+  y: number,
+): Promise<Blob | null> {
   try {
     const db = await openDb();
     const blob = await new Promise<Blob | null>((resolve, reject) => {
       const tx = db.transaction(STORE, "readonly");
-      const req = tx.objectStore(STORE).get(tileKey(z, x, y));
+      const req = tx.objectStore(STORE).get(tileKey(style, z, x, y));
       req.onsuccess = () => resolve((req.result as Blob) ?? null);
       req.onerror = () => reject(req.error);
     });
@@ -97,13 +104,14 @@ function tilesForBounds(b: TileBounds): { z: number; x: number; y: number }[] {
   return jobs;
 }
 
-// Download + cache map tiles covering the route bounds. Returns the count cached.
+// Download + cache map tiles covering the route bounds, in BOTH styles (so the
+// offline map can switch light/dark with the theme). Returns the count cached.
 export async function cacheTiles(
   bounds: TileBounds,
-  style: TileStyle,
   onProgress?: (done: number, total: number) => void,
 ): Promise<number> {
-  const jobs = tilesForBounds(bounds);
+  const coords = tilesForBounds(bounds);
+  const jobs = ALL_STYLES.flatMap((style) => coords.map((c) => ({ style, ...c })));
   const total = jobs.length;
   let done = 0;
   let cached = 0;
@@ -115,9 +123,9 @@ export async function cacheTiles(
     await Promise.all(
       batch.map(async (t) => {
         try {
-          const res = await fetch(tileUrl(style, t.z, t.x, t.y));
+          const res = await fetch(tileUrl(t.style, t.z, t.x, t.y));
           if (res.ok) {
-            await putTile(tileKey(t.z, t.x, t.y), await res.blob());
+            await putTile(tileKey(t.style, t.z, t.x, t.y), await res.blob());
             cached++;
           }
         } catch {

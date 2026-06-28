@@ -202,7 +202,10 @@ function LiveBackground({ theme }: { theme: Theme }) {
             stops={activeRoute.stops}
             encodedPath={pack.encodedPath}
             position={position}
-            tileStyle={pack.tileStyle}
+            theme={theme}
+            returnTarget={returnTarget}
+            returnMode={returnMode}
+            busLegs={busLegs}
           />
         </div>
       );
@@ -309,6 +312,7 @@ function LiveExperience({
     arrivedStopIds,
     offlineReadyIds,
     forceOffline,
+    returnTarget,
     setSimulated,
     advanceStop,
     reset,
@@ -447,7 +451,7 @@ function LiveExperience({
     setSaving(true);
     setSavingProgress({ done: 0, total: activeRoute.stops.length });
     try {
-      await savePack(activeRoute, (done, total) => setSavingProgress({ done, total }), theme);
+      await savePack(activeRoute, (done, total) => setSavingProgress({ done, total }));
       setOfflineReady(activeRoute.id);
     } finally {
       savingRef.current = false;
@@ -509,11 +513,29 @@ function LiveExperience({
     simActiveRef.current = true;
     setSimulating(true);
 
+    // Walk the recommended detour (current position → returnTarget) when one is
+    // set, otherwise walk the whole main route. buildRoutePath only reads
+    // latitude/longitude, so a 2-point leg is enough for the detour case.
+    const anchor = guide.effectiveCoords;
+    const detour = returnTarget && anchor;
+    const legStops: RouteStop[] = detour
+      ? ([
+          { latitude: anchor!.latitude, longitude: anchor!.longitude },
+          { latitude: returnTarget!.latitude, longitude: returnTarget!.longitude },
+        ] as RouteStop[])
+      : activeRoute.stops;
+
+    // A detour autowalk takes a FIXED total time regardless of distance, so a
+    // long recommended route just moves faster and a short one slower — same
+    // duration either way. Fixed step count + a computed interval below gives
+    // that. Main routes keep the per-leg equal-time default.
+    const stepsPerLeg = detour ? 48 : 14; // detour: enough points for smooth motion
+
     // Prefer real road geometry; fall back to straight legs if it can't load.
     let pts: Coords[] = [];
     try {
       const google = await loadGoogleMaps(GOOGLE_MAPS_KEY);
-      pts = (await buildRoutePath(google, activeRoute.stops)).map((p) => ({
+      pts = (await buildRoutePath(google, legStops, stepsPerLeg)).map((p) => ({
         latitude: p.lat,
         longitude: p.lng,
       }));
@@ -523,19 +545,18 @@ function LiveExperience({
     if (!simActiveRef.current) return; // user stopped while the path loaded
 
     if (pts.length === 0) {
-      const stops = activeRoute.stops;
-      for (let i = 0; i < stops.length - 1; i++) {
-        const a = stops[i];
-        const b = stops[i + 1];
-        for (let s = 0; s < 12; s++) {
-          const t = s / 12;
+      for (let i = 0; i < legStops.length - 1; i++) {
+        const a = legStops[i];
+        const b = legStops[i + 1];
+        for (let s = 0; s < stepsPerLeg; s++) {
+          const t = s / stepsPerLeg;
           pts.push({
             latitude: a.latitude + (b.latitude - a.latitude) * t,
             longitude: a.longitude + (b.longitude - a.longitude) * t,
           });
         }
       }
-      const last = stops[stops.length - 1];
+      const last = legStops[legStops.length - 1];
       pts.push({ latitude: last.latitude, longitude: last.longitude });
     }
     if (pts.length === 0) {
@@ -543,8 +564,25 @@ function LiveExperience({
       return;
     }
 
-    let i = 0;
-    setSimulated(pts[0]);
+    // Resume from the path point nearest the current position, so a refresh (or
+    // pressing play mid-route) continues from here instead of jumping to the
+    // start. ponytail: O(n) scan, n≈14·stops — fine for a demo route.
+    let i = anchor
+      ? pts.reduce(
+          (best, p, idx) =>
+            haversineMeters(anchor, p) < haversineMeters(anchor, pts[best]) ? idx : best,
+          0,
+        )
+      : 0;
+    setSimulated(pts[i]);
+    // Detour: spread the remaining points over a fixed total time (≈4s) so every
+    // recommended route finishes in the same time. ponytail: DETOUR_TOTAL_MS is
+    // the knob — smaller = faster. Main routes keep the slower per-step pace.
+    const DETOUR_TOTAL_MS = 4000;
+    const remaining = Math.max(1, pts.length - i);
+    const intervalMs = detour
+      ? Math.max(40, Math.round(DETOUR_TOTAL_MS / remaining))
+      : STEP_MS;
     simTimerRef.current = setInterval(() => {
       // Hold position while Michelle is speaking / preparing a narration.
       if (busyRef.current) return;
@@ -554,7 +592,7 @@ function LiveExperience({
         return;
       }
       setSimulated(pts[i]);
-    }, STEP_MS);
+    }, intervalMs);
   };
 
   // Stop the timer if the screen unmounts (e.g. switching routes).
@@ -568,13 +606,19 @@ function LiveExperience({
   // When the traveller reaches a stop, Michelle reads it (arrival narration) and
   // the "what's next?" card opens — unless we're mid Auto-walk demo or already
   // mid-decision. ponytail: keyed on the stop id so it fires once per arrival.
+  // Skip the clears on the first run after a reload, else a persisted bus/detour
+  // route gets wiped on mount and the map falls back to the main route.
+  const arrivalMounted = useRef(false);
   useEffect(() => {
     if (arrived && !simulating && !target) {
-      setBusPlan(null);
-      setBusLegs(null);
-      setDetour(false); // reached a plan stop → no longer on a side-trip
+      if (arrivalMounted.current) {
+        setBusPlan(null);
+        setBusLegs(null);
+        setDetour(false); // reached a plan stop → no longer on a side-trip
+      }
       setCardOpen(true);
     }
+    arrivalMounted.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arrived, currentStop?.id]);
 

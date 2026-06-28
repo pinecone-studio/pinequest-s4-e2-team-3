@@ -6,14 +6,14 @@
 
 import { GOOGLE_MAPS_KEY, hasGoogleMapsKey } from "@/lib/googlemaps";
 import { putAudio } from "@/lib/offlineAudio";
-import { cacheTiles, type TileBounds, type TileStyle } from "@/lib/offlineTiles";
+import { cacheTiles, type TileBounds } from "@/lib/offlineTiles";
 import type { DemoRoute } from "@/types";
 
 const KEY_PREFIX = "nomad:offline:";
 // Bump when the pack shape changes so stale/incomplete packs from older builds
-// are ignored and rebuilt (v7: server Directions geometry — road-following incl.
-// rural roads).
-const PACK_VERSION = 7;
+// are ignored and rebuilt (v8: both light+dark tiles cached so night mode works
+// offline).
+const PACK_VERSION = 8;
 
 export interface OfflinePack {
   version: number;
@@ -25,9 +25,8 @@ export interface OfflinePack {
   // Encoded road polyline so the offline map can draw the route line.
   encodedPath: string | null;
   // True once map tiles were cached → render the interactive offline map.
+  // (Both light + dark styles are cached, so the offline map follows the theme.)
   tiles: boolean;
-  // Tile style the cached tiles were downloaded with (render must match).
-  tileStyle: TileStyle;
   // text = AI narration generated once at save time (falls back to the bundled
   // stop.narration). The matching voice audio lives in IndexedDB (offlineAudio).
   stops: { id: string; name: string; text: string }[];
@@ -153,9 +152,7 @@ function routeBounds(route: DemoRoute): TileBounds {
 export async function savePack(
   route: DemoRoute,
   onProgress?: (done: number, total: number) => void,
-  theme: "dark" | "light" = "light",
 ): Promise<OfflinePack> {
-  const tileStyle: TileStyle = theme === "dark" ? "dark" : "voyager";
   const encodedPath = await roadPolyline(route); // road-following where possible
   const staticUrl = buildStaticMapUrl(route, encodedPath);
   const image = staticUrl ? await urlToDataUrl(staticUrl) : null;
@@ -163,9 +160,9 @@ export async function savePack(
 
   const stopsN = route.stops.length;
 
-  // Phase 1: interactive map tiles (the bulk of the work).
+  // Phase 1: interactive map tiles (the bulk of the work — both light+dark).
   let tilesTotal = 0;
-  const tilesCached = await cacheTiles(routeBounds(route), tileStyle, (done, total) => {
+  const tilesCached = await cacheTiles(routeBounds(route), (done, total) => {
     tilesTotal = total;
     onProgress?.(done, total + stopsN);
   });
@@ -194,7 +191,6 @@ export async function savePack(
     image,
     encodedPath,
     tiles: tilesCached > 0,
-    tileStyle,
     stops: route.stops.map((s) => ({ id: s.id, name: s.name, text: texts[s.id] })),
   };
 
