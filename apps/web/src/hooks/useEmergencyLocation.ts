@@ -7,10 +7,10 @@ export type LocationStatus = "loading" | "ready" | "denied";
 
 export interface EmergencyLocation {
   status: LocationStatus;
-  // Human place name (once reverse-geocoded); null while unknown.
   place: string | null;
-  // Formatted coordinates, e.g. "47.9186° N · 106.9177° E"; null until located.
   coords: string | null;
+  rawLat: number | null;
+  rawLng: number | null;
 }
 
 // Reads the device's real location for the SOS sheet. Coordinates appear as soon
@@ -20,11 +20,13 @@ export function useEmergencyLocation(): EmergencyLocation {
     status: "loading",
     place: null,
     coords: null,
+    rawLat: null,
+    rawLng: null,
   });
 
   useEffect(() => {
     if (!navigator.geolocation) {
-      setLocation({ status: "denied", place: null, coords: null });
+      setLocation({ status: "denied", place: null, coords: null, rawLat: null, rawLng: null });
       return;
     }
 
@@ -35,12 +37,14 @@ export function useEmergencyLocation(): EmergencyLocation {
           status: "ready",
           place: null,
           coords: formatCoords(latitude, longitude),
+          rawLat: latitude,
+          rawLng: longitude,
         });
 
         const name = await reverseGeocode(latitude, longitude);
         setLocation((current) => ({ ...current, place: name }));
       },
-      () => setLocation({ status: "denied", place: null, coords: null }),
+      () => setLocation({ status: "denied", place: null, coords: null, rawLat: null, rawLng: null }),
       { enableHighAccuracy: true, timeout: 10000 },
     );
   }, []);
