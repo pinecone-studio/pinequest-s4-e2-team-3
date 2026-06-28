@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   CloseIcon,
@@ -19,6 +19,7 @@ import {
   useEmergencyLocation,
   type EmergencyLocation,
 } from "@/hooks/useEmergencyLocation";
+import { useTwilioCall } from "@/hooks/useTwilioCall";
 import type { SosOption } from "@/types";
 
 // Map each emergency option to its icon. Kept here so the data stays plain.
@@ -298,10 +299,11 @@ function ReadyView({
   );
 }
 
-// The in-app call screen (matches the Emergency mockup): a live "On call" banner
-// with a running timer, the operator-ready message shown in English and Mongolian,
-// and actions to read it aloud, watch help arrive, or end the call. The call runs
-// entirely inside the web app — it never hands off to the phone dialer.
+// The in-app call screen (matches the Emergency mockup). It places a REAL call
+// through Twilio Voice (see useTwilioCall), shows the live connection state and a
+// timer that starts on connect, plus the operator-ready message in English and
+// Mongolian. If Twilio isn't configured it degrades to a tel: dial fallback so
+// the SOS still reaches help.
 function CallView({
   option,
   location,
@@ -312,16 +314,31 @@ function CallView({
   onEnd: () => void;
 }) {
   const [seconds, setSeconds] = useState(0);
+  const { status, call, hangup } = useTwilioCall();
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // A simple call timer, ticking up from connection.
+  // Place the real call once, as soon as the screen opens — the operator hears
+  // the SOS message and location read aloud.
   useEffect(() => {
-    const id = setInterval(() => setSeconds((s) => s + 1), 1000);
-    return () => clearInterval(id);
+    const loc = location.place ?? "the traveller's current location";
+    const co = location.coords ? ` Coordinates ${location.coords}.` : "";
+    call(`This is an emergency call for ${option.service}. ${option.message} My location is ${loc}.${co}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Stop any speech if the screen unmounts (e.g. the call ends mid-readout).
+  // Count up once the call is placed.
   useEffect(() => {
-    return () => window.speechSynthesis?.cancel();
+    if (status !== "connected") return;
+    const id = setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [status]);
+
+  // Stop any speech/audio if the screen unmounts (e.g. the call ends mid-readout).
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis?.cancel();
+      audioRef.current?.pause();
+    };
   }, []);
 
   const place = location.place ?? "your current location";
@@ -329,28 +346,58 @@ function CallView({
   const englishLocation = `My location is ${place}.${coords ? ` Coordinates ${coords}.` : ""}`;
   const mongolianLocation = `Миний байршил: ${place}.${coords ? ` Координат: ${coords}.` : ""}`;
 
-  function readAloud() {
+  // Read the Mongolian message aloud with Chimege's Mongolian voice; fall back to
+  // the browser's speech synthesis if Chimege isn't configured/available.
+  async function readAloud() {
+    const text = `${option.messageMn} ${mongolianLocation}`;
+    window.speechSynthesis?.cancel();
+    audioRef.current?.pause();
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, lang: "mn" }),
+      });
+      if (res.ok) {
+        const url = URL.createObjectURL(await res.blob());
+        const audio = new Audio(url);
+        audioRef.current = audio;
+        audio.onended = () => URL.revokeObjectURL(url);
+        await audio.play();
+        return;
+      }
+    } catch {
+      /* fall through to browser speech */
+    }
     if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(`${option.messageMn} ${mongolianLocation}`);
+    const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "mn-MN";
     window.speechSynthesis.speak(utterance);
   }
 
+  function endCall() {
+    hangup();
+    onEnd();
+  }
+
+  const banner = CALL_STATUS[status];
+
   return (
     <div className="mt-4">
-      {/* Live call banner */}
+      {/* Live call banner — reflects the real Twilio connection state */}
       <div className="flex items-center justify-between rounded-2xl bg-ink px-5 py-4 text-white">
         <div className="flex items-start gap-3">
-          <span className="mt-1 h-2.5 w-2.5 rounded-full bg-safety-safe" />
+          <span className={`mt-1 h-2.5 w-2.5 rounded-full ${banner.dot}`} />
           <div>
             <p className="font-bold leading-tight">
-              On call · {option.serviceNumber} {option.service}
+              {banner.title} · {option.serviceNumber} {option.service}
             </p>
-            <p className="text-sm text-white/60">Connected · operator speaks Mongolian</p>
+            <p className="text-sm text-white/60">{banner.subtitle}</p>
           </div>
         </div>
-        <span className="font-mono text-xl font-bold tabular-nums">{formatDuration(seconds)}</span>
+        {status === "connected" ? (
+          <span className="font-mono text-xl font-bold tabular-nums">{formatDuration(seconds)}</span>
+        ) : null}
       </div>
 
       {/* The message the operator hears, in English and Mongolian */}
@@ -383,7 +430,7 @@ function CallView({
       </button>
 
       <button
-        onClick={onEnd}
+        onClick={endCall}
         className="mt-3 w-full rounded-full bg-[#fbe9e7] py-4 text-base font-bold text-safety-critical"
       >
         End call
@@ -391,6 +438,14 @@ function CallView({
     </div>
   );
 }
+
+// Banner wording + dot colour for each live call state.
+const CALL_STATUS = {
+  connecting: { title: "Calling", subtitle: "Dialing the operator…", dot: "bg-safety-armed animate-pulse" },
+  connected: { title: "On call", subtitle: "Connected · the operator is being read your message", dot: "bg-safety-safe" },
+  ended: { title: "Call ended", subtitle: "You can call again if you need to", dot: "bg-ink-muted" },
+  unavailable: { title: "Couldn’t place call", subtitle: "Tap End and try again", dot: "bg-safety-critical" },
+} as const;
 
 // Seconds → mm:ss for the call timer.
 function formatDuration(totalSeconds: number): string {
