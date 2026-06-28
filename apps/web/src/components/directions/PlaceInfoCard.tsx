@@ -5,6 +5,26 @@ import { Stars } from "./Stars";
 import type { PlaceDetails, Review, TravelMode } from "./types";
 import type { ExploreSpot } from "@/types";
 
+const TAXI_APPS = [
+  {
+    label: "UBCab",
+    icon: "🚕",
+    android: "https://play.google.com/store/apps/details?id=com.mezorn.ubcab.ubcab_passanger_v2",
+    ios: "https://apps.apple.com/mn/app/ubcab/id863109199",
+  },
+  {
+    label: "Aba",
+    icon: "🚖",
+    android: "https://play.google.com/store/apps/details?id=com.abataxi",
+    ios: "https://apps.apple.com/mn/app/aba-mongolia/id6447431571",
+  },
+];
+
+function taxiLink(app: (typeof TAXI_APPS)[number]) {
+  if (typeof navigator === "undefined") return app.android;
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) ? app.ios : app.android;
+}
+
 const MODE_LABEL: Record<TravelMode, string> = {
   walking: "walk",
   driving: "drive",
@@ -88,6 +108,26 @@ export function PlaceInfoCard({ spot, details, googleMapsUrl, onClose, routeDura
         <p className="mt-0.5 mb-3 text-sm text-ink-muted">
           {routeDuration ?? spot.walkTime} {MODE_LABEL[mode]} · {spot.distance}
         </p>
+
+        {mode === "driving" && (
+          <div className="mb-3 rounded-2xl bg-amber-50 border border-amber-100 px-3.5 py-3">
+            <p className="text-xs font-bold text-amber-700 mb-2">Book a taxi</p>
+            <div className="flex gap-2">
+              {TAXI_APPS.map((app) => (
+                <a
+                  key={app.label}
+                  href={taxiLink(app)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-white border border-amber-200 py-2 text-xs font-bold text-amber-900 active:bg-amber-100"
+                >
+                  <span>{app.icon}</span> {app.label}
+                </a>
+              ))}
+            </div>
+            <p className="mt-2 text-[10px] text-amber-600">Tap to open the app if installed</p>
+          </div>
+        )}
       </div>
 
       <div className="h-px bg-ink/8" />

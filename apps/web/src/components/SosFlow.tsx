@@ -14,6 +14,7 @@ import {
 } from "@/components/icons";
 import { softToneClass } from "@/lib/tone";
 import { sos } from "@/lib/mockData";
+import { logSosIncident } from "@/lib/sosIncidents";
 import {
   useEmergencyLocation,
   type EmergencyLocation,
@@ -78,7 +79,31 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
         <ReadyView
           option={selected}
           location={location}
-          onCall={() => setStep("calling")}
+          onCall={async () => {
+            const language = navigator.language;
+            const isOnline = navigator.onLine;
+            let batteryLevel: number | null = null;
+            if ("getBattery" in navigator) {
+              try {
+                const bat = await (navigator as unknown as { getBattery(): Promise<{ level: number }> }).getBattery();
+                batteryLevel = Math.round(bat.level * 100);
+              } catch { /* unsupported */ }
+            }
+            logSosIncident({
+              type: selected.id,
+              title: selected.title,
+              service: selected.service,
+              service_number: selected.serviceNumber,
+              lat: location.rawLat,
+              lng: location.rawLng,
+              place_name: location.place,
+              coords: location.coords,
+              language,
+              battery_level: batteryLevel,
+              is_online: isOnline,
+            }).catch(() => {});
+            setStep("calling");
+          }}
         />
       ) : null}
       {step === "calling" && selected ? (

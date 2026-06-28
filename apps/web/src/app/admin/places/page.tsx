@@ -9,17 +9,20 @@ const UB = { lat: 47.9077, lng: 106.8832 };
 interface MapPickerProps {
   lat: string;
   lng: string;
+  userLocation: { lat: number; lng: number } | null;
   onPick: (lat: string, lng: string) => void;
 }
 
-const MapPicker = memo(function MapPicker({ lat, lng, onPick }: MapPickerProps) {
+const MapPicker = memo(function MapPicker({ lat, lng, userLocation, onPick }: MapPickerProps) {
   const pin = lat && lng ? { lat: parseFloat(lat), lng: parseFloat(lng) } : null;
+  const center = pin ?? userLocation ?? UB;
   return (
     <APIProvider apiKey={MAPS_KEY}>
       <Map
         mapId="DEMO_MAP_ID"
-        defaultCenter={pin ?? UB}
-        defaultZoom={13}
+        defaultCenter={center}
+        defaultZoom={15}
+        mapTypeId="hybrid"
         gestureHandling="greedy"
         mapTypeControl={false}
         streetViewControl={false}
@@ -31,6 +34,17 @@ const MapPicker = memo(function MapPicker({ lat, lng, onPick }: MapPickerProps) 
           onPick(e.detail.latLng.lat.toFixed(6), e.detail.latLng.lng.toFixed(6));
         }}
       >
+        {/* Current user location dot */}
+        {userLocation && (
+          <AdvancedMarker position={userLocation}>
+            <div style={{
+              width: 16, height: 16, borderRadius: "50%",
+              background: "#4F46E5", border: "2.5px solid white",
+              boxShadow: "0 0 0 4px rgba(79,70,229,0.25)",
+            }} />
+          </AdvancedMarker>
+        )}
+        {/* Selected pin */}
         {pin && <AdvancedMarker position={pin} />}
       </Map>
     </APIProvider>
@@ -72,6 +86,16 @@ export default function AdminPlacesPage() {
   const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [search, setSearch] = useState("");
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (p) => setUserLocation({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => {},
+      { enableHighAccuracy: true },
+    );
+  }, []);
 
   async function load(p = page) {
     setLoading(true);
@@ -162,9 +186,23 @@ export default function AdminPlacesPage() {
     : places;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8 font-sans">
-      <h1 className="mb-1 text-2xl font-bold text-gray-900">Газрын удирдлага</h1>
-      <p className="mb-6 text-sm text-gray-500">Нийт: {total} газар · Supabase `places` table</p>
+    <div className="min-h-screen bg-gray-50 font-sans">
+      <div className="sticky top-0 z-10 bg-gray-900 px-6 py-4">
+        <div className="max-w-3xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <a href="/admin" className="flex items-center gap-1.5 text-gray-400 hover:text-gray-200 text-sm transition-colors">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+              Admin
+            </a>
+            <span className="text-gray-700">|</span>
+            <h1 className="text-base font-bold text-white">Газрын удирдлага</h1>
+          </div>
+          <span className="rounded-full bg-gray-800 px-3 py-1 text-xs font-semibold text-gray-300">
+            {total} газар
+          </span>
+        </div>
+      </div>
+      <div className="mx-auto max-w-3xl px-4 py-6">
 
       {/* ── Form ── */}
       <div className="mb-8 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -204,7 +242,7 @@ export default function AdminPlacesPage() {
 
           {/* Map picker */}
           <div className="col-span-full overflow-hidden rounded-xl border border-gray-200" style={{ height: 220 }}>
-            <MapPicker lat={form.latitude} lng={form.longitude} onPick={handlePick} />
+            <MapPicker lat={form.latitude} lng={form.longitude} userLocation={userLocation} onPick={handlePick} />
           </div>
           <p className="col-span-full -mt-1 text-xs text-gray-400">↑ Map дээр дарж координат бөглөнө</p>
 
@@ -312,6 +350,7 @@ export default function AdminPlacesPage() {
           </button>
         </div>
       )}
+      </div>
     </div>
   );
 }
