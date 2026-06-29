@@ -12,6 +12,8 @@ import {
 } from "@/components/icons";
 import { demoRoutes, getRoutes } from "@/lib/routes";
 import { useLiveStore } from "@/stores/liveStore";
+import { createClient } from "@/lib/supabase";
+import { DEMO_EMAIL } from "@/lib/demoAuth";
 import type { DemoRoute } from "@/types";
 
 interface PlanStop {
@@ -121,22 +123,35 @@ export default function JourneyPage() {
       plans = JSON.parse(localStorage.getItem("polaris:saved-plans") ?? "[]") as SavedPlan[];
     } catch { /* ignore corrupt storage */ }
 
-    // The demo routes appear as ONE ready-made plan (each route = a day) using the
-    // same day-tab/timeline UI as Michelle's plans. It's DERIVED from the backend
-    // routes, so rebuild it on every load (carrying over the done-state) — that
-    // way it always reflects the current routes instead of a stale cached copy.
-    void getRoutes().then((rts) => {
-      setRoutes(rts);
+    // The guided 3-day demo plan is ONLY for the demo (autofiller) account — it
+    // shouldn't appear in every user's Journey. So we check the signed-in email,
+    // seed the trip plan (each route = a day) only for the demo account, and strip
+    // any previously-seeded trip plan for everyone else.
+    void (async () => {
+      const { data } = await createClient().auth.getUser();
+      const isDemo = data.user?.email?.toLowerCase() === DEMO_EMAIL.toLowerCase();
+
       const userPlans = plans.filter((p) => !p.id.startsWith("route:"));
-      const prevTrip = plans.find((p) => p.id === "route:trip");
-      const tripPlan: SavedPlan = { ...routesToPlan(rts), doneStops: prevTrip?.doneStops ?? [] };
-      const all = [tripPlan, ...userPlans];
+      let all = userPlans;
+
+      if (isDemo) {
+        const rts = await getRoutes();
+        setRoutes(rts);
+        const prevTrip = plans.find((p) => p.id === "route:trip");
+        const tripPlan: SavedPlan = { ...routesToPlan(rts), doneStops: prevTrip?.doneStops ?? [] };
+        all = [tripPlan, ...userPlans];
+      }
+
       localStorage.setItem("polaris:saved-plans", JSON.stringify(all));
       setSavedPlans(all);
-      const first = all[0];
-      setActivePlanId(first.id);
-      setActiveDayNum(firstActiveDay(toStructured(first.stops), new Set(first.doneStops ?? [])));
-    });
+      if (all.length > 0) {
+        const first = all[0];
+        setActivePlanId(first.id);
+        setActiveDayNum(firstActiveDay(toStructured(first.stops), new Set(first.doneStops ?? [])));
+      } else {
+        setActivePlanId(null);
+      }
+    })();
   }, []);
 
   const activePlan = savedPlans.find((p) => p.id === activePlanId) ?? null;

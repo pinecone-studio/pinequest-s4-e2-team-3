@@ -180,20 +180,43 @@ export default function AiPage() {
 
   // "Yes, save" — write plan to localStorage immediately so Journey can display it,
   // then fire a background sync to Supabase (failure is silent).
-  function savePlan(messageId: string, plan: PendingPlan) {
+  async function savePlan(messageId: string, plan: PendingPlan) {
     setMessages((current) =>
       current.map((m) =>
         m.id === messageId ? { ...m, planStatus: "saved" } : m,
       ),
     );
 
-    // Save to localStorage first — Journey reads from here.
+    // One image per stop: prefer the photo Michelle already showed for that place;
+    // for any stop without one, look it up by name (same Google Places source as
+    // Explore) so every stop in the Journey timeline gets a real photo.
+    const norm = (s: string) => s.toLowerCase().trim();
+    const cards = messages.flatMap((m) => m.places ?? []);
+    const cardFor = (title: string) =>
+      cards.find((c) => norm(c.name) === norm(title)) ??
+      cards.find((c) => norm(title).includes(norm(c.name)) || norm(c.name).includes(norm(title)));
+
+    const loc = coords;
+    const places = await Promise.all(
+      (plan.stops ?? []).map(async (st) => {
+        const card = cardFor(st.title);
+        if (card?.imageUrl) {
+          return { name: st.title, imageUrl: card.imageUrl, address: card.address, rating: card.rating, walkMinutes: card.walkMinutes };
+        }
+        try {
+          const qs = new URLSearchParams({ q: st.title });
+          if (loc) { qs.set("lat", String(loc.lat)); qs.set("lng", String(loc.lng)); }
+          const res = await fetch(`/api/places?${qs.toString()}`);
+          const data = res.ok ? await res.json() : [];
+          return { name: st.title, imageUrl: data[0]?.imageUrl as string | undefined };
+        } catch {
+          return { name: st.title };
+        }
+      }),
+    );
+
+    // Save to localStorage — Journey reads from here.
     try {
-      const seen = new Set<string>();
-      const places = messages
-        .flatMap((m) => m.places ?? [])
-        .filter((p) => { const k = p.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
-        .map((p) => ({ name: p.name, address: p.address, imageUrl: p.imageUrl, rating: p.rating, walkMinutes: p.walkMinutes }));
       const entry = { id: crypto.randomUUID(), title: plan.title, summary: plan.summary, stops: plan.stops ?? [], savedAt: new Date().toISOString(), places };
       const prev = JSON.parse(localStorage.getItem("polaris:saved-plans") ?? "[]");
       localStorage.setItem("polaris:saved-plans", JSON.stringify([entry, ...prev]));
