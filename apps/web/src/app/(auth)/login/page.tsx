@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase";
+import { DEMO_EMAIL, DEMO_PASSWORD } from "@/lib/demoAuth";
 import { SparklesIcon } from "@/components/icons";
 
 export default function LoginPage() {
@@ -13,19 +14,33 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function signIn(emailArg: string, passwordArg: string) {
     setError(null);
     setSubmitting(true);
     try {
       const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({
+        email: emailArg,
+        password: passwordArg,
+      });
       if (error) { setError(error.message); return; }
       router.push("/");
       router.refresh();
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    void signIn(email, password);
+  }
+
+  // Fill the demo credentials into the form, then sign in for real.
+  function enterDemo() {
+    setEmail(DEMO_EMAIL);
+    setPassword(DEMO_PASSWORD);
+    void signIn(DEMO_EMAIL, DEMO_PASSWORD);
   }
 
   return (
@@ -86,8 +101,9 @@ export default function LoginPage() {
           <div className="mt-6 border-t border-sand-200 pt-6">
             <button
               type="button"
-              onClick={() => router.push("/")}
-              className="w-full rounded-xl border border-primary-600 py-3 font-semibold text-primary-600 transition-colors hover:bg-primary-50 active:scale-[0.97]"
+              onClick={enterDemo}
+              disabled={submitting}
+              className="w-full rounded-xl border border-primary-600 py-3 font-semibold text-primary-600 transition-colors hover:bg-primary-50 active:scale-[0.97] disabled:opacity-60"
             >
               Enter demo →
             </button>

@@ -1,17 +1,34 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase";
+import { signInDemo } from "@/lib/demoAuth";
 import { SparklesIcon } from "@/components/icons";
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+
+  // "Enter demo" — sign in the shared demo account for real, then go to the app.
+  async function enterDemo() {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const msg = await signInDemo();
+      if (msg) { setError(msg); return; }
+      router.push("/");
+      router.refresh();
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -126,12 +143,14 @@ export default function RegisterPage() {
           {/* Presentation shortcut: skip sign-up and jump straight into the
               project demo. Used when walking through the product live. */}
           <div className="mt-6 border-t border-sand-200 pt-6">
-            <Link
-              href="/"
-              className="block w-full rounded-xl border border-primary-600 py-3 text-center font-semibold text-primary-600 transition-colors hover:bg-primary-50 active:scale-[0.97]"
+            <button
+              type="button"
+              onClick={enterDemo}
+              disabled={submitting}
+              className="block w-full rounded-xl border border-primary-600 py-3 text-center font-semibold text-primary-600 transition-colors hover:bg-primary-50 active:scale-[0.97] disabled:opacity-60"
             >
               Enter demo →
-            </Link>
+            </button>
           </div>
         </div>
 

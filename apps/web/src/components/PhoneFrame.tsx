@@ -264,7 +264,42 @@ export function PhoneFrame({
   className = "",
 }: PhoneFrameProps) {
   const deviceRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
   const dark = statusBarTheme === "dark";
+
+  // Remember the route the app is on INSIDE the frame, so a full-page refresh
+  // restores the current screen instead of resetting to the iframe's start URL
+  // (otherwise every refresh jumped back to /register). Sign-out navigates the
+  // frame to /login, which is captured here too, so a refresh then lands there.
+  const FRAME_PATH_KEY = "lumo:frame-path";
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
+
+  // Resolve the start URL on the client: last in-frame route, else the prop.
+  useEffect(() => {
+    if (!src) return;
+    let stored: string | null = null;
+    try { stored = sessionStorage.getItem(FRAME_PATH_KEY); } catch { /* ignore */ }
+    setResolvedSrc(stored || src);
+  }, [src]);
+
+  // The app navigates client-side (no iframe load event per route), so poll the
+  // same-origin frame location and remember it for the next refresh.
+  useEffect(() => {
+    if (!src) return;
+    let last = "";
+    const id = setInterval(() => {
+      try {
+        const win = frameRef.current?.contentWindow;
+        if (!win) return;
+        const path = win.location.pathname + win.location.search;
+        if (path && path !== last) {
+          last = path;
+          sessionStorage.setItem(FRAME_PATH_KEY, path);
+        }
+      } catch { /* cross-origin or not ready yet */ }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [src]);
 
   // Direct-DOM tilt — avoids React re-render on every mousemove frame
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -366,7 +401,8 @@ export function PhoneFrame({
                 sees a clean 393 × 793 px viewport with no overlapping chrome */}
             {src ? (
               <iframe
-                src={src}
+                ref={frameRef}
+                src={resolvedSrc ?? undefined}
                 title="App preview"
                 allow="microphone; camera"
                 style={{
