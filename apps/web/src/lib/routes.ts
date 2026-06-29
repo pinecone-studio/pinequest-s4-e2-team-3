@@ -1,23 +1,25 @@
-// Pre-authored Nomad AI demo routes for Mongolia.
+// Pre-authored Nomad AI demo routes for Mongolia — a 3-day guided trip.
 //
 // Each stop's `narration` is written ahead of time so the Live Guide can speak
 // the moment you arrive WITHOUT any network or backend — this is what makes the
 // on-stage demo reliable and also backs the app's "offline travel pack" pillar.
 // The AI (free-form Q&A) is only used when the traveller actively asks something.
 //
-// Coordinates are real so geolocation / "open in Google Maps" behave correctly.
+// Coordinates are real where confidently known (UB landmarks, Mörön, Hatgal,
+// Lake Khövsgöl). A few northern stops are marked `TODO: verify coords` — set
+// the exact lat/lng for those, since they drive the map + "open in Google Maps".
 
 import type { DemoRoute } from "@/types";
 
 export const demoRoutes: DemoRoute[] = [
   // ----------------------------------------------------------------------
-  // 1. Ulaanbaatar — landing & first hours in the city (walkable, easy demo)
+  // Day 1 — Ulaanbaatar city, then the evening departure north to Selenge
   // ----------------------------------------------------------------------
   {
-    id: "ub-arrival",
-    title: "Landing in Ulaanbaatar",
+    id: "ub-day1",
+    title: "Day 1 · Ulaanbaatar",
     region: "ulaanbaatar",
-    summary: "From the airport to the heart of the city — your first hours in Mongolia.",
+    summary: "Land in Mongolia, see the capital, then the evening ride north from Dragon terminal.",
     stops: [
       {
         id: "ub-airport",
@@ -27,11 +29,11 @@ export const demoRoutes: DemoRoute[] = [
         longitude: 106.8197,
         arrivalRadius: 400,
         narration:
-          "Welcome to Mongolia. You've landed at Chinggis Khaan Airport, about 50 kilometres south of the city. Don't take the first taxi that approaches you inside — step out to the official taxi line, or use the airport bus. Your next stop is Sükhbaatar Square, the centre of Ulaanbaatar.",
+          "Welcome to Mongolia. You've just landed at Chinggis Khaan International Airport, about 50 kilometres south of Ulaanbaatar. Don't take the first taxi that approaches you inside — step out to the official taxi line, or take the airport bus. We'll head into the city now; our first stop is Sükhbaatar Square, right in the centre.",
         context:
-          "The airport sits in the Khushig Valley. There's no metered taxi culture, so agree the price before you get in.",
+          "The airport sits in the Khushig Valley. There's no metered-taxi culture, so agree the price before you get in.",
         transport: [
-          { mode: "taxi", label: "Official taxi · ~50 min · ₮60,000–80,000" },
+          { mode: "taxi", label: "Official taxi to centre · ~50 min · ₮60,000–80,000" },
           { mode: "bus", label: "Airport bus to city centre · ~70 min · ₮1,500" },
         ],
         askLocalPhrases: [
@@ -55,7 +57,7 @@ export const demoRoutes: DemoRoute[] = [
         longitude: 106.9176,
         arrivalRadius: 150,
         narration:
-          "You're standing in Sükhbaatar Square — locals also call it Chinggis Square. That huge seated statue ahead is Chinggis Khaan, watching over the parliament. This is the easiest landmark to navigate from, so take a moment. When you're ready, we'll walk west to Gandan Monastery, the spiritual heart of the city.",
+          "This is Sükhbaatar Square, the heart of Ulaanbaatar — locals also call it Chinggis Square. The giant seated statue ahead is Chinggis Khaan, watching over Parliament. It's the easiest landmark to orient from. We'll spend the day in the city, then catch an evening ride north to Selenge. Next, let's visit Gandan Monastery.",
         context:
           "Named after the revolutionary hero Damdin Sükhbaatar. Government House and the National History Museum frame the square.",
         transport: [{ mode: "walk", label: "Walk west · ~25 min" }],
@@ -75,44 +77,64 @@ export const demoRoutes: DemoRoute[] = [
         longitude: 106.8945,
         arrivalRadius: 150,
         narration:
-          "This is Gandan Monastery — one of the few that survived the 1930s purges. Inside stands Migjid Janraisig, a 26-metre golden statue. Walk clockwise around the temples, and spin the prayer wheels with your right hand as you pass. Speak softly here. After this, let's find lunch at a local guanz.",
+          "Welcome to Gandantegchinlen Monastery, the spiritual heart of the city and one of the few that survived the 1930s purges. Inside stands Migjid Janraisig, a 26-metre golden statue. Walk clockwise around the temples, spin the prayer wheels with your right hand, and keep your voice low. After this we'll head south to Zaisan for a view over the whole city.",
         context:
-          "A guanz is a small, family-run Mongolian canteen — cheap, hearty, and where locals actually eat. Try buuz (steamed dumplings) or tsuivan (fried noodles).",
-        transport: [{ mode: "walk", label: "Walk · ~10 min to nearby guanz" }],
+          "Speak softly and walk clockwise. Photography is fine outside but ask before shooting inside the temples.",
+        transport: [{ mode: "taxi", label: "Taxi south · ~20 min · ₮8,000–12,000" }],
         askLocalPhrases: [
           {
             en: "Is it OK to take photos here?",
             mn: "Энд зураг авч болох уу?",
             roman: "End zurag avch bolokh uu?",
           },
+        ],
+      },
+      {
+        id: "ub-zaisan",
+        name: "Zaisan Memorial",
+        kind: "Viewpoint · memorial",
+        latitude: 47.8866,
+        longitude: 106.9148,
+        arrivalRadius: 200,
+        narration:
+          "You've reached the Zaisan Memorial, on the hill at the southern edge of the city. Climb the steps and the whole of Ulaanbaatar opens up below you, with the forested Bogd Khan mountain at your back. It's the best place to understand how the city sits in its valley. Catch your breath — this evening we head to the Dragon terminal to travel north.",
+        context:
+          "The circular mosaic memorial honours Soviet–Mongolian wartime friendship. Sunset light over the city is the reward for the climb.",
+        transport: [{ mode: "taxi", label: "Taxi to Dragon terminal · ~25 min" }],
+        askLocalPhrases: [
           {
-            en: "Thank you",
-            mn: "Баярлалаа",
-            roman: "Bayarlalaa",
+            en: "Please take me to the Dragon bus terminal.",
+            mn: "Намайг Драгон автобусны буудал руу хүргэж өгөөч.",
+            roman: "Namaig Dragon avtobusny buudal ruu khürgej ögööch.",
           },
         ],
       },
       {
-        id: "ub-guanz",
-        name: "Local guanz (Mongolian canteen)",
-        kind: "Guanz",
-        latitude: 47.9166,
-        longitude: 106.905,
-        arrivalRadius: 120,
+        id: "ub-dragon",
+        name: "Dragon Bus Terminal",
+        kind: "Bus terminal",
+        // TODO: verify coords — Dragon terminal, west Ulaanbaatar (approximate).
+        latitude: 47.9148,
+        longitude: 106.827,
+        arrivalRadius: 250,
         narration:
-          "Here's a proper guanz — the kind that rarely shows up on Google Maps. No English menu, and that's fine. Point at what looks good, or order buuz. A plate is usually three to five thousand tögrög. Cash is king here, so have small notes ready. Enjoy your first real Mongolian meal.",
+          "This is the Dragon terminal on the west side of the city — your departure point for the countryside. Long-distance buses and shared vans to Selenge, Darkhan and the north leave from here, mostly in the late afternoon and evening. Buy your ticket at the counter, keep your bag with you, and confirm the departure time. Settle in — it's a few hours north to Selenge. Get some rest on the road.",
         context:
-          "Guanz portions are generous and meat-heavy. If you don't eat mutton, learn one phrase below — it saves a lot of confusion.",
+          "Buy tickets at the counter, not from people in the car park. Departures fill up — arrive with time to spare and keep cash handy.",
+        transport: [
+          { mode: "bus", label: "Evening bus to Selenge · ~4–5 hr" },
+          { mode: "shared-van", label: "Shared van (mikr) · leaves when full" },
+        ],
         askLocalPhrases: [
           {
-            en: "I'll have the buuz, please.",
-            mn: "Бууз авъя.",
-            roman: "Buuz avya.",
+            en: "Does this bus go to Selenge?",
+            mn: "Энэ автобус Сэлэнгэ рүү явах уу?",
+            roman: "Ene avtobus Selenge ruu yavakh uu?",
           },
           {
-            en: "Do you have a vegetarian dish?",
-            mn: "Махгүй хоол байна уу?",
-            roman: "Makhgüi khool baina uu?",
+            en: "What time does it leave?",
+            mn: "Хэдэн цагт хөдлөх вэ?",
+            roman: "Kheden tsagt khödlökh ve?",
           },
         ],
       },
@@ -120,13 +142,87 @@ export const demoRoutes: DemoRoute[] = [
   },
 
   // ----------------------------------------------------------------------
-  // 2. Khövsgöl — the rural "last-mile" problem Nomad AI is built for
+  // Day 2 — Selenge: arrive, the mountain pass, and the great monastery
   // ----------------------------------------------------------------------
   {
-    id: "khuvsgul-lake",
-    title: "Reaching Lake Khövsgöl",
+    id: "selenge-day2",
+    title: "Day 2 · Selenge",
+    region: "selenge",
+    summary: "Mongolia's green north — Saikhny Khutul pass and Amarbayasgalant Monastery.",
+    stops: [
+      {
+        id: "selenge-arrival",
+        name: "Sükhbaatar (Selenge)",
+        kind: "Town · province centre",
+        // TODO: verify coords — Sükhbaatar city, Selenge (approximate).
+        latitude: 50.2342,
+        longitude: 106.2017,
+        arrivalRadius: 600,
+        narration:
+          "Good morning — you've arrived in Selenge, Mongolia's green northern province along the Selenge and Orkhon rivers. This is farming country, softer and wetter than the steppe further south. Stretch your legs and grab breakfast. Today we'll cross a mountain pass and visit one of the most beautiful monasteries in the country.",
+        context:
+          "Selenge is Mongolia's breadbasket — wheat fields and river valleys. Mornings can be cool and damp; bring a light layer.",
+        transport: [{ mode: "drive", label: "Local driver to Saikhny Khutul" }],
+        askLocalPhrases: [
+          {
+            en: "Where can I get breakfast?",
+            mn: "Өглөөний цайг хаанаас идэх вэ?",
+            roman: "Öglöönii tsaig khaanaas idekh ve?",
+          },
+        ],
+      },
+      {
+        id: "saikhny-khutul",
+        name: "Saikhny Khutul (pass)",
+        kind: "Mountain pass · ovoo",
+        // TODO: verify coords — Saikhny Khutul pass, Selenge (approximate).
+        latitude: 49.78,
+        longitude: 105.85,
+        arrivalRadius: 500,
+        narration:
+          "We're at Saikhny Khutul — a high pass with wide views over the rolling Selenge hills. Mongolians honour a pass like this with an ovoo, a sacred cairn of stones. If you'd like to follow the custom, walk clockwise around it three times and add a stone for safe travels. Take in the view, then we'll continue to Amarbayasgalant.",
+        context:
+          "An ovoo marks a sacred high point. Walking around it three times clockwise is a traveller's blessing for the road ahead.",
+        transport: [{ mode: "drive", label: "Drive on to Amarbayasgalant · ~1–2 hr" }],
+        askLocalPhrases: [
+          {
+            en: "What is this ovoo for?",
+            mn: "Энэ овоо юунд зориулагдсан бэ?",
+            roman: "Ene ovoo yuund zoriulagdsan be?",
+          },
+        ],
+      },
+      {
+        id: "amarbayasgalant",
+        name: "Amarbayasgalant Monastery",
+        kind: "Monastery",
+        // TODO: verify coords — Amarbayasgalant Monastery, Baruunbüren, Selenge (approximate).
+        latitude: 49.4775,
+        longitude: 105.0853,
+        arrivalRadius: 400,
+        narration:
+          "This is Amarbayasgalant, one of the three largest monasteries in Mongolia and among the best preserved. It was built in the 18th century in honour of Zanabazar, Mongolia's first spiritual leader and great artist. The symmetrical Manchu-style halls sit in a quiet valley by the Iven river. Walk the grounds slowly and clockwise — this is the highlight of Selenge.",
+        context:
+          "The monastery survived the purges largely intact. It's peaceful and far from crowds; dress modestly and keep noise down inside.",
+        askLocalPhrases: [
+          {
+            en: "Thank you, this is beautiful.",
+            mn: "Баярлалаа, үнэхээр гоё юм байна.",
+            roman: "Bayarlalaa, ünekheer goyo yum baina.",
+          },
+        ],
+      },
+    ],
+  },
+
+  // ----------------------------------------------------------------------
+  // Day 3 — Khövsgöl: Mörön to Hatgal to the Blue Pearl
+  // ----------------------------------------------------------------------
+  {
+    id: "khuvsgul-day3",
+    title: "Day 3 · Khövsgöl",
     region: "khuvsgul",
-    summary: "Murun to Hatgal to the Blue Pearl — the rural leg where maps go quiet.",
+    summary: "Mörön to Hatgal to Lake Khövsgöl — the rural leg where maps go quiet.",
     stops: [
       {
         id: "murun",
@@ -136,7 +232,7 @@ export const demoRoutes: DemoRoute[] = [
         longitude: 100.1625,
         arrivalRadius: 600,
         narration:
-          "You've reached Mörön, the capital of Khövsgöl province. This is your jumping-off point. There's no scheduled bus to the lake — you'll share a van or jeep that leaves when it's full, usually from the market. Don't wait for a timetable that doesn't exist. Ask around for a shared ride to Hatgal.",
+          "You've reached Mörön, capital of Khövsgöl province and your gateway to the lake. There's no scheduled bus to the lake — you'll share a van or jeep that leaves when it's full, usually from the market. Don't wait for a timetable that doesn't exist. Ask around for a shared ride to Hatgal.",
         context:
           "Shared vans (mikr) gather near the central market. Prices are per seat; it leaves once full, which could be 20 minutes or two hours.",
         transport: [
@@ -203,94 +299,21 @@ export const demoRoutes: DemoRoute[] = [
       },
     ],
   },
-
-  // ----------------------------------------------------------------------
-  // 3. Gobi — desert distances, no signal, plan-ahead travel
-  // ----------------------------------------------------------------------
-  {
-    id: "gobi-south",
-    title: "Into the South Gobi",
-    region: "gobi",
-    summary: "Dalanzadgad to ice canyon to the singing dunes — desert travel, done right.",
-    stops: [
-      {
-        id: "dalanzadgad",
-        name: "Dalanzadgad",
-        kind: "Town · Gobi gateway",
-        latitude: 43.5708,
-        longitude: 104.425,
-        arrivalRadius: 600,
-        narration:
-          "You're in Dalanzadgad, the gateway to the South Gobi. Distances out here are huge and roads are often just tracks in the dirt, so nothing happens without a driver and a full fuel tank. Fill up, grab water for the whole day, and confirm your route with your driver now. First stop: Yolyn Am, the valley that keeps its ice into summer.",
-        context:
-          "Self-driving the Gobi is risky without experience. Most travellers hire a driver-guide with a Russian UAZ van. There's little to no phone signal between sites.",
-        transport: [
-          { mode: "drive", label: "Hired driver (UAZ van) · ~1.5 hr to Yolyn Am" },
-        ],
-        askLocalPhrases: [
-          {
-            en: "Where can I buy fuel and water?",
-            mn: "Шатахуун, ус хаанаас авах вэ?",
-            roman: "Shatakhuun, us khaanaas avakh ve?",
-          },
-          {
-            en: "How long does it take to get there?",
-            mn: "Тийшээ хэр удаж очих вэ?",
-            roman: "Tiishee kher udaj ochikh ve?",
-          },
-        ],
-      },
-      {
-        id: "yolyn-am",
-        name: "Yolyn Am (Vulture Valley)",
-        kind: "Nature · canyon",
-        latitude: 43.4869,
-        longitude: 104.076,
-        arrivalRadius: 400,
-        narration:
-          "This is Yolyn Am — a deep, narrow gorge in the Gurvan Saikhan mountains. Strangely for a desert, it stays so cold that sheets of ice survive here into July. It's named after the lammergeier, the bearded vulture you might see overhead. From the car park it's a gentle walk into the canyon. Watch for pikas darting between the rocks.",
-        context:
-          "Bring a layer — it's noticeably colder in the gorge than out on the steppe. The walk in is easy and mostly flat.",
-        transport: [
-          { mode: "walk", label: "Walk into the gorge · ~2 km each way" },
-          { mode: "drive", label: "Then ~4 hr drive to Khongoryn Els" },
-        ],
-        askLocalPhrases: [
-          {
-            en: "How far can we walk in?",
-            mn: "Хэр хол явж болох вэ?",
-            roman: "Kher khol yavj bolokh ve?",
-          },
-        ],
-      },
-      {
-        id: "khongoryn-els",
-        name: "Khongoryn Els (Singing Dunes)",
-        kind: "Nature · sand dunes",
-        latitude: 43.7333,
-        longitude: 102.3,
-        arrivalRadius: 500,
-        narration:
-          "You've reached Khongoryn Els — the Singing Dunes. They rise up to 300 metres, and when the wind moves the sand it makes a low, humming roar that gives them their name. Climbing the tallest dune is a hard, slow push in soft sand, but the view from the crest at sunset is unforgettable. If a herder offers a camel ride, that's the classic way to arrive at the dunes.",
-        context:
-          "Start the climb in late afternoon to avoid the heat and catch sunset at the top. Camel rides are run by local herder families — agree the price first.",
-        askLocalPhrases: [
-          {
-            en: "How much for a camel ride?",
-            mn: "Тэмээ унах хэд вэ?",
-            roman: "Temee unakh khed ve?",
-          },
-          {
-            en: "Thank you, that was wonderful.",
-            mn: "Баярлалаа, үнэхээр гайхалтай байлаа.",
-            roman: "Bayarlalaa, ünekheer gaikhaltai bailaa.",
-          },
-        ],
-      },
-    ],
-  },
 ];
 
 export function getRouteById(id: string): DemoRoute | undefined {
   return demoRoutes.find((r) => r.id === id);
+}
+
+// Fetch the journeys from the backend, falling back to the bundled demoRoutes on
+// any failure (offline, no network, API error) so the routes are always present.
+export async function getRoutes(): Promise<DemoRoute[]> {
+  try {
+    const res = await fetch("/api/routes");
+    if (!res.ok) throw new Error(`routes ${res.status}`);
+    const data = (await res.json()) as DemoRoute[];
+    return Array.isArray(data) && data.length ? data : demoRoutes;
+  } catch {
+    return demoRoutes;
+  }
 }
