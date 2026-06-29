@@ -317,9 +317,20 @@ function CallView({
   const { status, call, hangup } = useTwilioCall();
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Place the real call once, as soon as the screen opens — the operator hears
-  // the SOS message and location read aloud.
+  // On a phone we dial straight from the user's own number via the native dialer;
+  // on desktop (no SIM) we place the call server-side through Twilio.
+  const isMobile =
+    typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  const demoNumber = process.env.NEXT_PUBLIC_SOS_DEMO_NUMBER;
+
+  // Start the call once, as soon as the screen opens.
   useEffect(() => {
+    if (isMobile && demoNumber) {
+      // Phone: open the dialer so the user calls from their own number.
+      window.location.href = `tel:${demoNumber}`;
+      return;
+    }
+    // Desktop: Twilio reads the SOS message + location to the operator.
     const loc = location.place ?? "the traveller's current location";
     const co = location.coords ? ` Coordinates ${location.coords}.` : "";
     call(`This is an emergency call for ${option.service}. ${option.message} My location is ${loc}.${co}`);
@@ -380,11 +391,15 @@ function CallView({
     onEnd();
   }
 
-  const banner = CALL_STATUS[status];
+  // On a phone the dialer takes over, so show a phone-call banner instead of the
+  // Twilio connection state.
+  const banner = isMobile
+    ? { title: "Calling", subtitle: "Dialing from your phone…", dot: "bg-safety-safe" }
+    : CALL_STATUS[status];
 
   return (
     <div className="mt-4">
-      {/* Live call banner — reflects the real Twilio connection state */}
+      {/* Live call banner — phone dialer on mobile, Twilio connection on desktop */}
       <div className="flex items-center justify-between rounded-2xl bg-ink px-5 py-4 text-white">
         <div className="flex items-start gap-3">
           <span className={`mt-1 h-2.5 w-2.5 rounded-full ${banner.dot}`} />
