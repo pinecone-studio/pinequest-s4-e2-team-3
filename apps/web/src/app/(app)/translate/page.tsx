@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect } from "react";
 import { SwapIcon } from "@/components/icons";
+import { useOnline } from "@/hooks/useOnline";
 
 type Turn = {
   id: string;
@@ -32,18 +33,18 @@ const LANG = {
 };
 
 const QUICK_PHRASES: { en: string; mn: string; audio: string }[] = [
-  { en: "I am lost.",                         mn: "Би төөрчихлөө.",                         audio: "/phrases/phrase-00.wav" },
-  { en: "Where is the nearest bus stop?",     mn: "Ойрын автобусны буудал хаана байна вэ?", audio: "/phrases/phrase-01.wav" },
-  { en: "Where can I find WiFi?",             mn: "Интернет хаана байдаг вэ?",              audio: "/phrases/phrase-02.wav" },
-  { en: "How much does this cost?",           mn: "Энэ хэд вэ?",                            audio: "/phrases/phrase-03.wav" },
-  { en: "Where is the toilet?",               mn: "Жорлон хаана байна вэ?",                 audio: "/phrases/phrase-04.wav" },
-  { en: "Please help me.",                    mn: "Надад тусалж өгнө үү.",                  audio: "/phrases/phrase-05.wav" },
-  { en: "I need a doctor.",                   mn: "Надад эмч хэрэгтэй байна.",              audio: "/phrases/phrase-06.wav" },
-  { en: "Where is the hotel?",                mn: "Зочид буудал хаана байна вэ?",           audio: "/phrases/phrase-07.wav" },
-  { en: "Do you speak English?",              mn: "Та англиар ярьж чадах уу?",              audio: "/phrases/phrase-08.wav" },
-  { en: "Thank you.",                         mn: "Баярлалаа.",                             audio: "/phrases/phrase-09.wav" },
-  { en: "How do I get to the city center?",  mn: "Хот төв рүү хэрхэн очих вэ?",           audio: "/phrases/phrase-10.wav" },
-  { en: "Can you call a taxi for me?",        mn: "Надад такси дуудаж өгнө үү.",           audio: "/phrases/phrase-11.wav" },
+  { en: "I am lost.",                        mn: "Би төөрчихлөө.",                         audio: "/phrases/phrase-00.wav" },
+  { en: "Where is the nearest bus stop?",    mn: "Ойрын автобусны буудал хаана байна вэ?", audio: "/phrases/phrase-01.wav" },
+  { en: "Where can I find WiFi?",            mn: "Интернет хаана байдаг вэ?",              audio: "/phrases/phrase-02.wav" },
+  { en: "How much does this cost?",          mn: "Энэ хэд вэ?",                            audio: "/phrases/phrase-03.wav" },
+  { en: "Where is the toilet?",              mn: "Жорлон хаана байна вэ?",                 audio: "/phrases/phrase-04.wav" },
+  { en: "Please help me.",                   mn: "Надад тусалж өгнө үү.",                  audio: "/phrases/phrase-05.wav" },
+  { en: "I need a doctor.",                  mn: "Надад эмч хэрэгтэй байна.",              audio: "/phrases/phrase-06.wav" },
+  { en: "Where is the hotel?",               mn: "Зочид буудал хаана байна вэ?",           audio: "/phrases/phrase-07.wav" },
+  { en: "Do you speak English?",             mn: "Та англиар ярьж чадах уу?",              audio: "/phrases/phrase-08.wav" },
+  { en: "Thank you.",                        mn: "Баярлалаа.",                             audio: "/phrases/phrase-09.wav" },
+  { en: "How do I get to the city center?", mn: "Хот төв рүү хэрхэн очих вэ?",           audio: "/phrases/phrase-10.wav" },
+  { en: "Can you call a taxi for me?",       mn: "Надад такси дуудаж өгнө үү.",           audio: "/phrases/phrase-11.wav" },
 ];
 
 function FlagIcon({ lang, size = 18 }: { lang: "mn" | "en"; size?: number }) {
@@ -68,7 +69,108 @@ function FlagIcon({ lang, size = 18 }: { lang: "mn" | "en"; size?: number }) {
   );
 }
 
-export default function TranslatePage() {
+function SpeakerIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+    </svg>
+  );
+}
+
+function WifiOffIcon() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="1" y1="1" x2="23" y2="23" />
+      <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55" />
+      <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39" />
+      <path d="M10.71 5.05A16 16 0 0 1 22.56 9" />
+      <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88" />
+      <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+      <circle cx="12" cy="20" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+// ── Offline view ──────────────────────────────────────────────────────────────
+
+function OfflineView() {
+  const [playing, setPlaying] = useState<string | null>(null);
+
+  const playPhrase = (phrase: { en: string; mn: string; audio: string }) => {
+    const audio = new Audio(phrase.audio);
+    setPlaying(phrase.en);
+    audio.onended = () => setPlaying(null);
+    audio.onerror = () => setPlaying(null);
+    audio.play();
+  };
+
+  return (
+    <div className="flex h-[calc(100dvh-7rem)] flex-col lg:h-[calc(100dvh-5rem)]">
+      {/* Header */}
+      <header className="pb-4">
+        <div className="mb-3 flex items-center gap-2 rounded-2xl bg-amber-50 border border-amber-200 px-3 py-2.5">
+          <WifiOffIcon />
+          <div>
+            <p className="text-sm font-bold text-amber-800">You're offline</p>
+            <p className="text-xs text-amber-700">Tap a phrase to play it aloud in Mongolian</p>
+          </div>
+        </div>
+        <h1 className="font-serif text-3xl leading-none tracking-tight text-ink">Quick Phrases</h1>
+        <p className="mt-1 text-sm text-ink-muted">
+          Pre-translated phrases — no internet needed.
+        </p>
+      </header>
+
+      {/* Phrase cards */}
+      <div className="flex-1 overflow-y-auto space-y-2.5 pb-2">
+        {QUICK_PHRASES.map((phrase) => {
+          const isPlaying = playing === phrase.en;
+          return (
+            <button
+              key={phrase.en}
+              onClick={() => playPhrase(phrase)}
+              className={[
+                "w-full rounded-2xl border text-left transition-all active:scale-[0.98]",
+                isPlaying
+                  ? "border-primary-300 bg-primary-50 shadow-md"
+                  : "border-sand-200 bg-white shadow-ink-sm hover:border-primary-200 hover:bg-primary-50/40",
+              ].join(" ")}
+            >
+              <div className="flex items-center justify-between gap-3 px-4 py-3.5">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <FlagIcon lang="en" size={11} />
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-ink-muted">English</p>
+                  </div>
+                  <p className="font-semibold text-sm text-ink leading-snug">{phrase.en}</p>
+                  <div className="flex items-center gap-1.5 mt-2 mb-0.5">
+                    <FlagIcon lang="mn" size={11} />
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-primary-500">Mongolian</p>
+                  </div>
+                  <p className="text-sm text-primary-700 font-medium leading-snug">{phrase.mn}</p>
+                </div>
+                <div className={[
+                  "shrink-0 flex h-10 w-10 items-center justify-center rounded-full transition-all",
+                  isPlaying
+                    ? "bg-primary-600 text-white animate-pulse"
+                    : "bg-primary-100 text-primary-600",
+                ].join(" ")}>
+                  <SpeakerIcon />
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Online view ───────────────────────────────────────────────────────────────
+
+function OnlineView() {
   const recorderRef   = useRef<MediaRecorder | null>(null);
   const chunksRef     = useRef<Blob[]>([]);
   const activeLangRef = useRef<"mn" | "en">("mn");
@@ -83,15 +185,6 @@ export default function TranslatePage() {
   useEffect(() => { setTurns(loadTurns()); }, []);
   useEffect(() => { if (turns.length > 0) saveTurns(turns); }, [turns]);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [turns, loading]);
-
-  const handleQuickPhrase = (phrase: { en: string; mn: string; audio: string }) => {
-    if (loading || activeLang !== null) return;
-    setTurns((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), spokenLang: "en", spokenText: phrase.en, translatedText: phrase.mn, audioUrl: phrase.audio },
-    ]);
-    new Audio(phrase.audio).play();
-  };
 
   const handleMicPress = async (lang: "mn" | "en") => {
     setMicError(null);
@@ -300,23 +393,6 @@ export default function TranslatePage() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Quick phrases */}
-      <div className="pb-2 pt-1">
-        <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink-muted">Quick phrases</p>
-        <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
-          {QUICK_PHRASES.map((p) => (
-            <button
-              key={p.en}
-              onClick={() => handleQuickPhrase(p)}
-              disabled={activeLang !== null}
-              className="shrink-0 rounded-full border border-sand-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-ink-sm hover:bg-sand-50 active:scale-95 disabled:opacity-40"
-            >
-              {p.en}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* Mic buttons */}
       <div className="py-4">
         <div className="flex items-end justify-around">
@@ -349,6 +425,89 @@ export default function TranslatePage() {
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export default function TranslatePage() {
+  const networkOnline = useOnline();
+  const [devOverride, setDevOverride] = useState<"online" | "offline" | null>(null);
+
+  // null override → real network drives the view
+  const isOnline = devOverride !== null ? devOverride === "online" : networkOnline;
+  const usingOverride = devOverride !== null;
+
+  const toggleOverride = (mode: "online" | "offline") => {
+    // clicking the active override resets to auto
+    setDevOverride((prev) => (prev === mode ? null : mode));
+  };
+
+  return (
+    <div className="relative">
+      {/* ── Dev toggle ── remove before shipping ─────────────────────────────── */}
+      <div className="absolute -top-1 right-0 z-50 flex flex-col items-end gap-1">
+        {/* Real network badge */}
+        <div className="flex items-center gap-1 rounded-full bg-black/70 px-2 py-0.5 text-[9px] font-bold text-white backdrop-blur">
+          <span
+            className={[
+              "h-1.5 w-1.5 rounded-full",
+              networkOnline ? "bg-green-400" : "bg-red-400",
+            ].join(" ")}
+          />
+          <span className="opacity-60">real net:</span>
+          <span>{networkOnline ? "online" : "offline"}</span>
+        </div>
+
+        {/* Override buttons */}
+        <div className="flex items-center gap-1 rounded-full bg-black/80 px-2 py-1 text-[10px] font-bold text-white backdrop-blur">
+          <span className="mr-0.5 opacity-60">DEV</span>
+
+          <button
+            onClick={() => toggleOverride("online")}
+            className={[
+              "rounded-full px-2 py-0.5 transition-colors",
+              devOverride === "online"
+                ? "bg-green-500 text-white"
+                : isOnline && !usingOverride
+                  ? "bg-green-500/40 text-white"   // auto-detected online
+                  : "text-white/40 hover:text-white",
+            ].join(" ")}
+            title={devOverride === "online" ? "Click to reset to auto" : "Force online"}
+          >
+            Online{devOverride === "online" ? " ✕" : ""}
+          </button>
+
+          <button
+            onClick={() => toggleOverride("offline")}
+            className={[
+              "rounded-full px-2 py-0.5 transition-colors",
+              devOverride === "offline"
+                ? "bg-amber-500 text-white"
+                : !isOnline && !usingOverride
+                  ? "bg-amber-500/40 text-white"   // auto-detected offline
+                  : "text-white/40 hover:text-white",
+            ].join(" ")}
+            title={devOverride === "offline" ? "Click to reset to auto" : "Force offline"}
+          >
+            Offline{devOverride === "offline" ? " ✕" : ""}
+          </button>
+
+          {usingOverride && (
+            <button
+              onClick={() => setDevOverride(null)}
+              className="rounded-full px-2 py-0.5 text-white/60 hover:text-white transition-colors"
+              title="Back to auto detection"
+            >
+              Auto
+            </button>
+          )}
+        </div>
+      </div>
+      {/* ─────────────────────────────────────────────────────────────────────── */}
+
+      {isOnline ? <OnlineView /> : <OfflineView />}
     </div>
   );
 }
