@@ -2,3 +2,7 @@
 # clerk configuration (can include secrets)
 /.clerk/
 .vercel
+
+# next-pwa build artifacts (generated on every prod build, not needed in repo)
+/public/sw.js
+/public/workbox-*.js
