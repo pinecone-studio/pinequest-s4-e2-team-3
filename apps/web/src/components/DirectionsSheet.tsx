@@ -61,6 +61,7 @@ export function DirectionsSheet({ spot, onClose, origin: originProp }: Props) {
   const [details, setDetails] = useState<PlaceDetails | null>(null);
   const [mode, setMode] = useState<TravelMode>("walking");
   const [routeDuration, setRouteDuration] = useState<string | null>(null);
+  const [routeDistanceM, setRouteDistanceM] = useState<number | null>(null);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -119,7 +120,7 @@ export function DirectionsSheet({ spot, onClose, origin: originProp }: Props) {
               zoomControl={false}
               style={{ width: "100%", height: "100%" }}
             >
-              <RouteLayer origin={origin} destination={destination} mode={mode} onDuration={setRouteDuration} />
+              <RouteLayer origin={origin} destination={destination} mode={mode} onDuration={setRouteDuration} onDistanceM={setRouteDistanceM} />
             </Map>
           </APIProvider>
         ) : (
@@ -143,7 +144,7 @@ export function DirectionsSheet({ spot, onClose, origin: originProp }: Props) {
           {MODES.map(({ mode: m, label, icon }) => (
             <button
               key={m}
-              onClick={() => { setMode(m); setRouteDuration(null); }}
+              onClick={() => { setMode(m); setRouteDuration(null); setRouteDistanceM(null); }}
               className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
                 mode === m
                   ? "bg-white text-ink shadow"
@@ -164,6 +165,7 @@ export function DirectionsSheet({ spot, onClose, origin: originProp }: Props) {
         googleMapsUrl={googleMapsUrl}
         onClose={onClose}
         routeDuration={routeDuration}
+        routeDistanceM={routeDistanceM}
         mode={mode}
       />
     </div>

@@ -27,6 +27,7 @@ export interface SosIncident {
   is_online: boolean | null;
   status: "active" | "resolved";
   check_in_requested: boolean | null;
+  check_in_declined: boolean | null;
   created_at: string;
   resolved_at: string | null;
 }
@@ -86,6 +87,14 @@ export async function confirmSafe(id: string): Promise<{ error: string | null }>
   const { error } = await adminDb()
     .from("sos_incidents")
     .update({ status: "resolved", resolved_at: new Date().toISOString(), check_in_requested: false })
+    .eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+export async function declineCheckIn(id: string): Promise<{ error: string | null }> {
+  const { error } = await adminDb()
+    .from("sos_incidents")
+    .update({ check_in_requested: false, check_in_declined: true })
     .eq("id", id);
   return { error: error?.message ?? null };
 }

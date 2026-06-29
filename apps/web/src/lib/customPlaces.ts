@@ -109,6 +109,32 @@ export async function listAllPlaces(page = 0, pageSize = 50) {
 }
 
 // Admin: upsert a place
+export async function findSimilarPlace(name: string, lat: number, lng: number, excludeId?: string): Promise<DbPlace | null> {
+  const delta = 0.001; // ~100m
+  const n = name.trim();
+
+  // 1. Coordinate check — most reliable (catches script differences)
+  const { data: nearby } = await db()
+    .from("places")
+    .select("id,name,nameEn,nameMn,category,latitude,longitude,description,imageUrl,rating")
+    .gte("latitude", lat - delta)
+    .lte("latitude", lat + delta)
+    .gte("longitude", lng - delta)
+    .lte("longitude", lng + delta)
+    .neq("id", excludeId ?? "")
+    .limit(1);
+  if (nearby?.[0]) return nearby[0] as DbPlace;
+
+  // 2. Name match across all 3 name fields
+  const { data } = await db()
+    .from("places")
+    .select("id,name,nameEn,nameMn,category,latitude,longitude,description,imageUrl,rating")
+    .or(`name.ilike.${n},nameEn.ilike.${n},nameMn.ilike.${n}`)
+    .neq("id", excludeId ?? "")
+    .limit(1);
+  return (data?.[0] as DbPlace) ?? null;
+}
+
 export async function upsertPlace(place: {
   id?: string;
   name: string;

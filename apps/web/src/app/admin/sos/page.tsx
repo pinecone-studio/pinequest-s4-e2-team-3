@@ -116,6 +116,38 @@ function IncidentCard({
       </button>
 
       {open && <div className="px-5 py-4 space-y-4">
+        {/* Declined alert */}
+        {inc.check_in_declined && isActive && (
+          <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🆘</span>
+              <div>
+                <p className="text-sm font-bold text-red-700">Tourist still needs help</p>
+                <p className="text-xs text-red-500">
+                  {inc.coords ?? "Байршил тодорхойгүй"} · {inc.language ?? ""}
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <a
+                href={`tel:${inc.service_number}`}
+                className="flex items-center justify-center gap-1.5 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white"
+              >
+                📞 {inc.service_number} · {inc.service}
+              </a>
+              {inc.lat && inc.lng && (
+                <a
+                  href={`https://www.google.com/maps?q=${inc.lat},${inc.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-white py-2.5 text-sm font-bold text-red-700"
+                >
+                  📍 Share location
+                </a>
+              )}
+            </div>
+          </div>
+        )}
         {/* Action buttons */}
         {isActive && (
           <div className="grid grid-cols-2 gap-2">

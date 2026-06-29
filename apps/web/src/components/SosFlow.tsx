@@ -167,8 +167,15 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
             Yes, I&apos;m safe ✓
           </button>
           <button
-            onClick={() => setCheckInRequested(false)}
-            className="mt-3 w-full rounded-2xl border border-gray-200 py-3 text-sm font-semibold text-gray-600"
+            onClick={async () => {
+              setCheckInRequested(false);
+              await fetch("/api/sos/confirm", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: incidentId, action: "decline" }),
+              }).catch(() => {});
+            }}
+            className="mt-3 w-full rounded-2xl border border-red-200 bg-red-50 py-3 text-sm font-semibold text-red-600"
           >
             No, I still need help
           </button>

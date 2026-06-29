@@ -1,4 +1,4 @@
-import { listAllPlaces, upsertPlace, deletePlace } from "@/lib/customPlaces";
+import { listAllPlaces, upsertPlace, deletePlace, findSimilarPlace } from "@/lib/customPlaces";
 import { embed } from "@/lib/embed";
 import { saveEmbedding, removeEmbedding } from "@/lib/embeddingStore";
 
@@ -12,6 +12,13 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const body = await req.json();
+
+  // Duplicate check for new places (not edits)
+  if (!body.id && !body.force) {
+    const similar = await findSimilarPlace(body.name, body.latitude, body.longitude);
+    if (similar) return Response.json({ duplicate: similar });
+  }
+
   const { id, error } = await upsertPlace(body);
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
