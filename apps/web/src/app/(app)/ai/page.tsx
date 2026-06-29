@@ -76,7 +76,9 @@ export default function AiPage() {
   const [hydrated, setHydrated] = useState(false);
   const scrollAnchor = useRef<HTMLDivElement>(null);
 
-  // Load any saved conversation from the device once on mount.
+  // Load the conversation: local cache first (instant / offline), then the
+  // backend (source of truth when signed in) so the chat follows you across
+  // devices. The backend wins only when it actually has history.
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -85,8 +87,23 @@ export default function AiPage() {
     } catch {
       // ignore corrupt storage
     }
-    setHydrated(true);
+    void fetch("/api/chat-history")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((server: Message[]) => {
+        if (Array.isArray(server) && server.length) setMessages(server);
+      })
+      .catch(() => { /* offline / signed out — keep local */ })
+      .finally(() => setHydrated(true));
   }, []);
+
+  // Append one message to the backend history (no-op when signed out / offline).
+  function persistMessage(message: Message) {
+    fetch("/api/chat-history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    }).catch(() => { /* ignore */ });
+  }
 
   // Persist the conversation whenever it changes (after the initial load).
   useEffect(() => {
@@ -129,6 +146,7 @@ export default function AiPage() {
     };
     const history = [...messages, userMessage];
     setMessages(history);
+    persistMessage(userMessage);
     setInput("");
     setIsLoading(true);
 
@@ -164,18 +182,17 @@ export default function AiPage() {
     pendingPlan?: PendingPlan,
     journeyLink?: boolean,
   ) {
-    setMessages((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content,
-        places,
-        pendingPlan,
-        planStatus: pendingPlan ? "pending" : undefined,
-        journeyLink,
-      },
-    ]);
+    const reply: Message = {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content,
+      places,
+      pendingPlan,
+      planStatus: pendingPlan ? "pending" : undefined,
+      journeyLink,
+    };
+    setMessages((current) => [...current, reply]);
+    persistMessage(reply);
   }
 
   // "Yes, save" — write plan to localStorage immediately so Journey can display it,
@@ -224,11 +241,12 @@ export default function AiPage() {
 
     addAssistantReply("Saved to your journey.", undefined, undefined, true);
 
-    // Background sync to Supabase — failure is silent, plan is already saved locally.
+    // Background sync to Supabase — the FULL plan (stops + places), so it
+    // survives a new device. Failure is silent; the plan is already saved locally.
     fetch("/api/trips", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: plan.title, summary: plan.summary }),
+      body: JSON.stringify({ title: plan.title, summary: plan.summary, stops: plan.stops ?? [], places }),
     }).catch(() => { /* ignore */ });
   }
 

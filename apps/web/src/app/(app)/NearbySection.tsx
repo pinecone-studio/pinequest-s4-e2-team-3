@@ -5,7 +5,6 @@ import { Tag } from "@/components/Tag";
 import { DirectionsSheet } from "@/components/DirectionsSheet";
 import type { ExploreSpot, Tone } from "@/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const DEFAULT_LAT = 47.9077;
 const DEFAULT_LNG = 106.8832;
 
@@ -53,7 +52,7 @@ export function NearbySection() {
     function fetchNearby(lat: number, lng: number) {
       Promise.all(
         CATEGORIES.map((cat) =>
-          fetch(`${API_URL}/api/places?lat=${lat}&lng=${lng}&category=${cat}&limit=5`)
+          fetch(`/api/places?lat=${lat}&lng=${lng}&category=${cat}&limit=5`)
             .then((r) => (r.ok ? r.json() : []))
             .catch(() => [] as NearbyPlace[]),
         ),

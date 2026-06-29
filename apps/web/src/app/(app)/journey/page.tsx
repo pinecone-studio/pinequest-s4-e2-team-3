@@ -111,6 +111,9 @@ export default function JourneyPage() {
   const [activeDayNum, setActiveDayNum] = useState<number>(1);
   // Guided journeys from the backend (falls back to the bundled routes offline).
   const [routes, setRoutes] = useState<DemoRoute[]>(demoRoutes);
+  // True until plans are loaded (auth + /api/trips), so we show a skeleton
+  // instead of flashing the "No plans yet" empty state.
+  const [loading, setLoading] = useState(true);
 
   function startRoute(route: DemoRoute) {
     setRoute(route);
@@ -123,17 +126,27 @@ export default function JourneyPage() {
       plans = JSON.parse(localStorage.getItem("polaris:saved-plans") ?? "[]") as SavedPlan[];
     } catch { /* ignore corrupt storage */ }
 
-    // The guided 3-day demo plan is ONLY for the demo (autofiller) account — it
-    // shouldn't appear in every user's Journey. So we check the signed-in email,
-    // seed the trip plan (each route = a day) only for the demo account, and strip
-    // any previously-seeded trip plan for everyone else.
+    // Saved plans now live in the backend (per user), so they survive a new
+    // device. Load them from /api/trips; fall back to the local cache when signed
+    // out or offline. The guided 3-day demo plan is added on top ONLY for the
+    // demo (autofiller) account, and rebuilt from the routes table each load.
     void (async () => {
       const { data } = await createClient().auth.getUser();
+      const signedIn = !!data.user;
       const isDemo = data.user?.email?.toLowerCase() === DEMO_EMAIL.toLowerCase();
 
-      const userPlans = plans.filter((p) => !p.id.startsWith("route:"));
-      let all = userPlans;
+      let userPlans: SavedPlan[];
+      try {
+        const res = await fetch("/api/trips");
+        userPlans =
+          signedIn && res.ok
+            ? ((await res.json()) as SavedPlan[])
+            : plans.filter((p) => !p.id.startsWith("route:"));
+      } catch {
+        userPlans = plans.filter((p) => !p.id.startsWith("route:"));
+      }
 
+      let all = userPlans;
       if (isDemo) {
         const rts = await getRoutes();
         setRoutes(rts);
@@ -142,7 +155,7 @@ export default function JourneyPage() {
         all = [tripPlan, ...userPlans];
       }
 
-      localStorage.setItem("polaris:saved-plans", JSON.stringify(all));
+      localStorage.setItem("polaris:saved-plans", JSON.stringify(all)); // offline cache
       setSavedPlans(all);
       if (all.length > 0) {
         const first = all[0];
@@ -151,6 +164,7 @@ export default function JourneyPage() {
       } else {
         setActivePlanId(null);
       }
+      setLoading(false);
     })();
   }, []);
 
@@ -180,17 +194,31 @@ export default function JourneyPage() {
     const current = new Set<string>(activePlan.doneStops ?? []);
     if (current.has(key)) current.delete(key);
     else current.add(key);
+    const doneStops = [...current];
     const updated = savedPlans.map((p) =>
-      p.id === activePlan.id ? { ...p, doneStops: [...current] } : p,
+      p.id === activePlan.id ? { ...p, doneStops } : p,
     );
     setSavedPlans(updated);
     localStorage.setItem("polaris:saved-plans", JSON.stringify(updated));
+    // Persist progress to the backend (skip the demo trip plan, which isn't a
+    // trip_plans row). Fire-and-forget — local state already updated.
+    if (!activePlan.id.startsWith("route:")) {
+      fetch("/api/trips", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: activePlan.id, doneStops }),
+      }).catch(() => { /* ignore */ });
+    }
   }
 
   function deletePlan(id: string) {
     const updated = savedPlans.filter((p) => p.id !== id);
     setSavedPlans(updated);
     localStorage.setItem("polaris:saved-plans", JSON.stringify(updated));
+    // Remove from the backend too (skip the demo trip plan).
+    if (!id.startsWith("route:")) {
+      fetch(`/api/trips?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => { /* ignore */ });
+    }
     if (updated.length > 0) {
       setActivePlanId(updated[0].id);
       const stops = toStructured(updated[0].stops);
@@ -210,11 +238,13 @@ export default function JourneyPage() {
             : "Your journey"}
         </p>
         <h1 className="mt-2 font-serif text-4xl leading-tight tracking-tight text-balance text-ink">
-          {activePlan ? activePlan.title : "No plans yet"}
+          {activePlan ? activePlan.title : loading ? "Loading…" : "No plans yet"}
         </h1>
       </header>
 
-      {savedPlans.length === 0 ? (
+      {loading ? (
+        <LoadingState />
+      ) : savedPlans.length === 0 ? (
         <EmptyState />
       ) : (
         <>
@@ -296,6 +326,19 @@ export default function JourneyPage() {
 // ---------------------------------------------------------------------------
 // Empty state
 // ---------------------------------------------------------------------------
+
+// Skeleton shown while plans load (auth + /api/trips), so the empty state never
+// flashes before the data arrives.
+function LoadingState() {
+  return (
+    <div className="space-y-3">
+      <div className="h-12 w-2/3 animate-pulse rounded-2xl bg-white/70" />
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="h-40 animate-pulse rounded-3xl bg-white/70" />
+      ))}
+    </div>
+  );
+}
 
 function EmptyState() {
   return (
