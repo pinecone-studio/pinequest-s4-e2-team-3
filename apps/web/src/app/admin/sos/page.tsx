@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { createClient } from "@supabase/supabase-js";
 import type { SosIncident } from "@/lib/sosIncidents";
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
@@ -12,59 +16,6 @@ const TYPE_COLOR: Record<string, { bg: string; dot: string; label: string }> = {
   "sos-4": { bg: "bg-purple-100 text-purple-800",dot: "bg-purple-400", label: "Unsafe" },
 };
 
-const MOCK_INCIDENTS: SosIncident[] = [
-  {
-    id: "mock-1",
-    type: "sos-3",
-    title: "Medical",
-    service: "Ambulance",
-    service_number: "103",
-    lat: 47.9186,
-    lng: 106.9177,
-    place_name: "Sükhbaatar Square, Ulaanbaatar",
-    coords: "47.9186° N · 106.9177° E",
-    language: "en-US",
-    battery_level: 18,
-    is_online: true,
-    status: "active",
-    created_at: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
-    resolved_at: null,
-  },
-  {
-    id: "mock-2",
-    type: "sos-4",
-    title: "Feel unsafe",
-    service: "Police",
-    service_number: "102",
-    lat: 47.9221,
-    lng: 106.9155,
-    place_name: "State Department Store, Ulaanbaatar",
-    coords: "47.9221° N · 106.9155° E",
-    language: "ko-KR",
-    battery_level: 64,
-    is_online: true,
-    status: "active",
-    created_at: new Date(Date.now() - 11 * 60 * 1000).toISOString(),
-    resolved_at: null,
-  },
-  {
-    id: "mock-3",
-    type: "sos-2",
-    title: "Got lost",
-    service: "Help line",
-    service_number: "108",
-    lat: 47.9108,
-    lng: 106.8860,
-    place_name: "Gandan Monastery, Ulaanbaatar",
-    coords: "47.9108° N · 106.8860° E",
-    language: "zh-CN",
-    battery_level: 91,
-    is_online: true,
-    status: "resolved",
-    created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    resolved_at: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
-  },
-];
 
 const NEARBY_LINKS = [
   { label: "Hospital",  query: "hospital",         icon: "🏥" },
@@ -111,15 +62,20 @@ function StaticMap({ lat, lng }: { lat: number; lng: number }) {
 function IncidentCard({
   inc,
   resolving,
+  checkingIn,
   onResolve,
+  onCheckIn,
 }: {
   inc: SosIncident;
   resolving: string | null;
+  checkingIn: string | null;
   onResolve: (id: string) => void;
+  onCheckIn: (id: string) => void;
 }) {
   const [open, setOpen] = useState(inc.status === "active");
   const tone = TYPE_COLOR[inc.type] ?? { bg: "bg-gray-100 text-gray-800", dot: "bg-gray-400", label: inc.title };
   const isActive = inc.status === "active";
+  const waitingCheckIn = !!inc.check_in_requested;
 
   return (
     <div className={`rounded-2xl border bg-white overflow-hidden ${isActive ? "border-red-200 shadow-md" : "border-gray-100"}`}>
@@ -135,7 +91,15 @@ function IncidentCard({
               <span className={`rounded-lg px-2.5 py-0.5 text-xs font-bold ${tone.bg}`}>{tone.label}</span>
               <span className="text-sm font-semibold text-gray-700">{inc.service} · {inc.service_number}</span>
             </div>
-            <p className="text-xs text-gray-400 mt-0.5" suppressHydrationWarning>{elapsed(inc.created_at)}</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-xs text-gray-400" suppressHydrationWarning>{elapsed(inc.created_at)}</p>
+              {waitingCheckIn && (
+                <span className="flex items-center gap-1 text-xs font-bold text-amber-600 bg-amber-50 rounded-full px-2 py-0.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  Waiting for response…
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-3">
@@ -152,15 +116,24 @@ function IncidentCard({
       </button>
 
       {open && <div className="px-5 py-4 space-y-4">
-        {/* Resolve button inside expanded area */}
+        {/* Action buttons */}
         {isActive && (
-          <button
-            onClick={() => onResolve(inc.id)}
-            disabled={resolving === inc.id}
-            className="w-full rounded-xl bg-gray-900 py-2.5 text-sm font-bold text-white disabled:opacity-40 hover:bg-gray-700 transition-colors"
-          >
-            {resolving === inc.id ? "…" : "Mark as Resolved"}
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => onCheckIn(inc.id)}
+              disabled={checkingIn === inc.id || waitingCheckIn}
+              className="rounded-xl border border-amber-200 bg-amber-50 py-2.5 text-sm font-bold text-amber-700 disabled:opacity-40 hover:bg-amber-100 transition-colors"
+            >
+              {waitingCheckIn ? "Waiting for response…" : checkingIn === inc.id ? "…" : "Are you okay? 👋"}
+            </button>
+            <button
+              onClick={() => onResolve(inc.id)}
+              disabled={resolving === inc.id}
+              className="rounded-xl bg-gray-900 py-2.5 text-sm font-bold text-white disabled:opacity-40 hover:bg-gray-700 transition-colors"
+            >
+              {resolving === inc.id ? "…" : "Resolved ✓"}
+            </button>
+          </div>
         )}
         {/* Device info row */}
         <div className="flex flex-wrap items-center gap-3">
@@ -239,9 +212,10 @@ function IncidentCard({
 }
 
 export default function SosAdminPage() {
-  const [incidents, setIncidents] = useState<SosIncident[]>(MOCK_INCIDENTS);
-  const [loading, setLoading] = useState(false);
+  const [incidents, setIncidents] = useState<SosIncident[]>([]);
+  const [loading, setLoading] = useState(true);
   const [resolving, setResolving] = useState<string | null>(null);
+  const [checkingIn, setCheckingIn] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
   const load = useCallback(async () => {
@@ -253,24 +227,21 @@ export default function SosAdminPage() {
   }, []);
 
   useEffect(() => {
-    // load();
-    // const id = setInterval(load, 15000);
-    // return () => clearInterval(id);
+    load();
+    const interval = setInterval(load, 10000);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+    const channel = supabase
+      .channel("sos_admin_watch")
+      .on("postgres_changes", { event: "*", schema: "public", table: "sos_incidents" }, () => load())
+      .subscribe();
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
   }, [load]);
 
   async function resolve(id: string) {
     setResolving(id);
-    if (id.startsWith("mock-")) {
-      setIncidents((prev) =>
-        prev.map((inc) =>
-          inc.id === id
-            ? { ...inc, status: "resolved", resolved_at: new Date().toISOString() }
-            : inc
-        )
-      );
-      setResolving(null);
-      return;
-    }
     await fetch("/api/admin/sos", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -278,6 +249,17 @@ export default function SosAdminPage() {
     });
     await load();
     setResolving(null);
+  }
+
+  async function checkIn(id: string) {
+    setCheckingIn(id);
+    await fetch("/api/admin/sos", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action: "check_in" }),
+    });
+    await load();
+    setCheckingIn(null);
   }
 
   const active = incidents.filter((i) => i.status === "active");
@@ -300,7 +282,7 @@ export default function SosAdminPage() {
                 {active.length} active
               </span>
             )}
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-gray-400" suppressHydrationWarning>
               {lastRefresh.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </span>
             <button onClick={load} className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-200 transition-colors">
@@ -325,7 +307,7 @@ export default function SosAdminPage() {
                 <p className="text-xs font-bold uppercase tracking-widest text-red-500 mb-3">Active · {active.length}</p>
                 <div className="space-y-4">
                   {active.map((inc) => (
-                    <IncidentCard key={inc.id} inc={inc} resolving={resolving} onResolve={resolve} />
+                    <IncidentCard key={inc.id} inc={inc} resolving={resolving} checkingIn={checkingIn} onResolve={resolve} onCheckIn={checkIn} />
                   ))}
                 </div>
               </section>
@@ -335,7 +317,7 @@ export default function SosAdminPage() {
                 <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">Resolved · {resolved.length}</p>
                 <div className="space-y-4">
                   {resolved.map((inc) => (
-                    <IncidentCard key={inc.id} inc={inc} resolving={resolving} onResolve={resolve} />
+                    <IncidentCard key={inc.id} inc={inc} resolving={resolving} checkingIn={checkingIn} onResolve={resolve} onCheckIn={checkIn} />
                   ))}
                 </div>
               </section>

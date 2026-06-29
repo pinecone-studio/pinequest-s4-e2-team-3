@@ -26,6 +26,7 @@ export interface SosIncident {
   battery_level: number | null;
   is_online: boolean | null;
   status: "active" | "resolved";
+  check_in_requested: boolean | null;
   created_at: string;
   resolved_at: string | null;
 }
@@ -67,7 +68,23 @@ export async function listSosIncidents(): Promise<{ incidents: SosIncident[]; er
 export async function resolveIncident(id: string): Promise<{ error: string | null }> {
   const { error } = await adminDb()
     .from("sos_incidents")
-    .update({ status: "resolved", resolved_at: new Date().toISOString() })
+    .update({ status: "resolved", resolved_at: new Date().toISOString(), check_in_requested: false })
+    .eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+export async function requestCheckIn(id: string): Promise<{ error: string | null }> {
+  const { error } = await adminDb()
+    .from("sos_incidents")
+    .update({ check_in_requested: true })
+    .eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+export async function confirmSafe(id: string): Promise<{ error: string | null }> {
+  const { error } = await adminDb()
+    .from("sos_incidents")
+    .update({ status: "resolved", resolved_at: new Date().toISOString(), check_in_requested: false })
     .eq("id", id);
   return { error: error?.message ?? null };
 }
