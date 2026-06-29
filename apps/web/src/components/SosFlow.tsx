@@ -381,27 +381,22 @@ function CallView({
   const { status, call, hangup } = useTwilioCall();
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // On a phone we dial straight from the user's own number via the native dialer;
-  // on desktop (no SIM) we place the call server-side through Twilio.
-  const isMobile =
-    typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-  const demoNumber = process.env.NEXT_PUBLIC_SOS_DEMO_NUMBER;
-
-  // Start the call once, as soon as the screen opens.
+  // Place the call from the web via Twilio; on answer it speaks the SOS message to
+  // the operator IN MONGOLIAN (Chimege), bridging the language barrier so the
+  // traveller never has to speak Mongolian themselves.
   useEffect(() => {
-    if (isMobile && demoNumber) {
-      // Phone: open the dialer so the user calls from their own number.
-      window.location.href = `tel:${demoNumber}`;
-      return;
-    }
-    // Desktop: Twilio reads the SOS message + location to the operator.
-    const loc = location.place ?? "the traveller's current location";
-    const co = location.coords ? ` Coordinates ${location.coords}.` : "";
-    call(`This is an emergency call for ${option.service}. ${option.message} My location is ${loc}.${co}`);
+    const place = location.place ?? "the traveller's current location";
+    const enCo = location.coords ? ` Coordinates ${location.coords}.` : "";
+    const en = `Emergency call for ${option.service}. ${option.message} My location is ${place}.${enCo}`;
+    // Mongolian spoken text: message + place name only. Coordinates/Latin are
+    // dropped (Chimege can't speak them); the server sanitizes anything left over.
+    const mnPlace = location.place ? ` Миний байршил ${location.place}.` : "";
+    const mn = `${option.messageMn}${mnPlace}`;
+    call(en, mn);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Count up once the call is placed.
+  // Count up once the call connects.
   useEffect(() => {
     if (status !== "connected") return;
     const id = setInterval(() => setSeconds((s) => s + 1), 1000);
@@ -455,15 +450,11 @@ function CallView({
     onEnd();
   }
 
-  // On a phone the dialer takes over, so show a phone-call banner instead of the
-  // Twilio connection state.
-  const banner = isMobile
-    ? { title: "Calling", subtitle: "Dialing from your phone…", dot: "bg-safety-safe" }
-    : CALL_STATUS[status];
+  const banner = CALL_STATUS[status];
 
   return (
     <div className="mt-4">
-      {/* Live call banner — phone dialer on mobile, Twilio connection on desktop */}
+      {/* Live call banner — reflects the real Twilio connection state */}
       <div className="flex items-center justify-between rounded-2xl bg-ink px-5 py-4 text-white">
         <div className="flex items-start gap-3">
           <span className={`mt-1 h-2.5 w-2.5 rounded-full ${banner.dot}`} />
@@ -521,7 +512,7 @@ function CallView({
 // Banner wording + dot colour for each live call state.
 const CALL_STATUS = {
   connecting: { title: "Calling", subtitle: "Dialing the operator…", dot: "bg-safety-armed animate-pulse" },
-  connected: { title: "On call", subtitle: "Connected · the operator is being read your message", dot: "bg-safety-safe" },
+  connected: { title: "On call", subtitle: "Reading your message to the operator in Mongolian", dot: "bg-safety-safe" },
   ended: { title: "Call ended", subtitle: "You can call again if you need to", dot: "bg-ink-muted" },
   unavailable: { title: "Couldn’t place call", subtitle: "Tap End and try again", dot: "bg-safety-critical" },
 } as const;
