@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ChatIcon, MicIcon, SendIcon, SparklesIcon, StarIcon, WalkIcon } from "@/components/icons";
+import { ChatIcon, MicIcon, SendIcon, StarIcon, WalkIcon } from "@/components/icons";
+import { GuideAvatar, type GuideAvatarState } from "@/components/GuideAvatar";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { aiQuickReplies, guide } from "@/lib/mockData";
 
@@ -129,6 +130,13 @@ export default function AiPage() {
     if (voice.isListening) voice.stop();
     else voice.start();
   }
+
+  // Drive the avatar from real app state — listening > thinking > idle.
+  const avatarState = useMemo<GuideAvatarState>(() => {
+    if (voice.isListening) return 'listening';
+    if (isLoading) return 'thinking';
+    return 'idle';
+  }, [voice.isListening, isLoading]);
 
   // Keep the latest message in view as the conversation grows.
   useEffect(() => {
@@ -272,11 +280,22 @@ export default function AiPage() {
   return (
     <div className="flex h-[calc(100dvh-7rem)] flex-col lg:h-[calc(100dvh-5rem)]">
       <ChatHeader
+        avatarState={avatarState}
         onSave={savable ? () => savePlan(savable.id, savable.pendingPlan!) : undefined}
         disabled={isLoading}
       />
 
       <div className="flex-1 space-y-3 overflow-y-auto py-4">
+        {/* Large focused avatar — shown on empty state, collapses once the
+            conversation starts. Demonstrates the "centred above chat input"
+            context alongside the small header widget. */}
+        {messages.length === 1 && messages[0].id === 'welcome' && (
+          <div className="flex flex-col items-center gap-3 pb-2 pt-6">
+            <GuideAvatar size="lg" state={avatarState} />
+            <p className="text-sm font-medium text-ink-muted">{guide.name} · {guide.status}</p>
+          </div>
+        )}
+
         {messages.map((message) => (
           <MessageBubble
             key={message.id}
@@ -305,17 +324,18 @@ export default function AiPage() {
 }
 
 function ChatHeader({
+  avatarState,
   onSave,
   disabled,
 }: {
+  avatarState: GuideAvatarState;
   onSave?: () => void;
   disabled: boolean;
 }) {
   return (
     <header className="flex items-center gap-3 border-b border-sand-200 pb-4">
-      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-600 text-white">
-        <SparklesIcon size={20} />
-      </span>
+      {/* Small floating presence — the corner-widget context */}
+      <GuideAvatar size="sm" state={avatarState} />
       <div className="flex-1">
         <p className="font-bold text-ink">{guide.name}</p>
         <p className="text-sm text-ink-muted">{guide.status}</p>
