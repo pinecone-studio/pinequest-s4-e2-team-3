@@ -13,7 +13,7 @@ export default function RegisterPage() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
@@ -24,7 +24,15 @@ export default function RegisterPage() {
         password,
         options: { data: { full_name: fullName } },
       });
-      if (error) { setError(error.message); return; }
+      if (error) {
+        console.error("Signup error:", { message: error.message, status: error.status, name: error.name });
+        const raw = error.message?.trim();
+        const msg = raw && raw !== "0"
+          ? raw
+          : `Sign up failed (status ${error.status ?? "unknown"}). Most likely cause: Supabase email rate limit hit, or email confirmation is enabled without SMTP. Go to Supabase → Authentication → Providers → Email → turn off "Confirm email".`;
+        setError(msg);
+        return;
+      }
       setDone(true);
     } finally {
       setSubmitting(false);

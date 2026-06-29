@@ -17,9 +17,14 @@ const instrument = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Polaris · AI Travel Companion",
-  description:
-    "A flexible AI travel companion that reshapes your day around the weather, crowds and how you feel.",
+  title: "PineQuest",
+  description: "AI travel companion for Mongolia",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "PineQuest",
+  },
 };
 
 export default function RootLayout({
