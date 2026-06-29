@@ -1,7 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
 import type { BrowsePlace } from "@/lib/places";
-import { cosineSimilarity } from "@/lib/embed";
-import { loadEmbeddings } from "@/lib/embeddingStore";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -148,28 +146,19 @@ export async function deletePlace(id: string) {
   return { error };
 }
 
-// RAG: vector similarity search over custom places
+// RAG: vector similarity search over custom places — runs IN the database via
+// pgvector (match_places RPC), so we don't load every embedding into JS.
 export async function searchCustomPlacesByVector(
   lat: number,
   lng: number,
   queryVector: number[],
   threshold = 0.3,
 ): Promise<BrowsePlace[]> {
-  const embeddings = await loadEmbeddings();
-  const entries = Object.entries(embeddings);
-  if (!entries.length) return [];
-
-  const scored = entries
-    .map(([id, vec]) => ({ id, score: cosineSimilarity(queryVector, vec) }))
-    .filter((x) => x.score >= threshold)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 15);
-
-  if (!scored.length) return [];
-
-  const ids = scored.map((x) => x.id);
-  const { data, error } = await db().from("places").select("*").in("id", ids);
+  const { data, error } = await db().rpc("match_places", {
+    query_embedding: JSON.stringify(queryVector), // pgvector text form: "[…]"
+    match_threshold: threshold,
+    match_count: 15,
+  });
   if (error || !data) return [];
-
   return (data as DbPlace[]).map((p) => toSpot(p, lat, lng));
 }
