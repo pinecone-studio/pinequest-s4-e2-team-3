@@ -174,7 +174,7 @@ export interface LocalPhrase {
   roman: string;
 }
 
-export type RouteRegion = "ulaanbaatar" | "khuvsgul" | "gobi";
+export type RouteRegion = "ulaanbaatar" | "selenge" | "khuvsgul" | "gobi";
 
 export interface DemoRoute {
   id: string;

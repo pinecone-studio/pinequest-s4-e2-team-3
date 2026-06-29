@@ -10,8 +10,9 @@ import {
   TrashIcon,
   WalkIcon,
 } from "@/components/icons";
-import { demoRoutes } from "@/lib/routes";
+import { demoRoutes, getRoutes } from "@/lib/routes";
 import { useLiveStore } from "@/stores/liveStore";
+import type { DemoRoute } from "@/types";
 
 interface PlanStop {
   day: number;
@@ -68,6 +69,34 @@ function matchPlace(title: string, places: PlanPlace[]): PlanPlace | undefined {
     ?? places.find((p) => key.includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(key));
 }
 
+function regionLabel(region: string): string {
+  return region.charAt(0).toUpperCase() + region.slice(1);
+}
+
+// The guided demo routes as ONE saved-plan: each route is a day (day 1 =
+// Ulaanbaatar, day 2 = Khövsgöl, day 3 = Gobi), its stops the day's timeline. So
+// it renders in the same day-tab/timeline UI as Michelle's plans. id "route:trip"
+// lets us map the active day back to its DemoRoute for "Start live guide".
+function routesToPlan(routes: DemoRoute[]): SavedPlan {
+  return {
+    id: "route:trip",
+    title: `Mongolia in ${routes.length} days`,
+    summary: routes.map((r) => regionLabel(r.region)).join(" → "),
+    stops: routes.flatMap((route, i) =>
+      route.stops.map((s) => ({ day: i + 1, time: "", title: s.name, note: s.context })),
+    ),
+    places: routes.flatMap((route) =>
+      route.stops.map((s) => ({ name: s.name, imageUrl: s.imageUrl })),
+    ),
+    savedAt: new Date().toISOString(),
+  };
+}
+
+// Day number → region label, for the day tabs (Day 1 · Ulaanbaatar, …).
+function routeDayLabels(routes: DemoRoute[]): Record<number, string> {
+  return Object.fromEntries(routes.map((r, i) => [i + 1, regionLabel(r.region)]));
+}
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -78,25 +107,43 @@ export default function JourneyPage() {
   const [savedPlans, setSavedPlans] = useState<SavedPlan[]>([]);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [activeDayNum, setActiveDayNum] = useState<number>(1);
+  // Guided journeys from the backend (falls back to the bundled routes offline).
+  const [routes, setRoutes] = useState<DemoRoute[]>(demoRoutes);
+
+  function startRoute(route: DemoRoute) {
+    setRoute(route);
+    router.push("/live");
+  }
 
   useEffect(() => {
+    let plans: SavedPlan[] = [];
     try {
-      const raw = localStorage.getItem("polaris:saved-plans");
-      if (raw) {
-        const plans = JSON.parse(raw) as SavedPlan[];
-        setSavedPlans(plans);
-        if (plans.length > 0) {
-          const first = plans[0];
-          setActivePlanId(first.id);
-          const stops = toStructured(first.stops);
-          const doneSet = new Set<string>(first.doneStops ?? []);
-          setActiveDayNum(firstActiveDay(stops, doneSet));
-        }
-      }
-    } catch { /* ignore */ }
+      plans = JSON.parse(localStorage.getItem("polaris:saved-plans") ?? "[]") as SavedPlan[];
+    } catch { /* ignore corrupt storage */ }
+
+    // The demo routes appear as ONE ready-made plan (each route = a day) using the
+    // same day-tab/timeline UI as Michelle's plans. It's DERIVED from the backend
+    // routes, so rebuild it on every load (carrying over the done-state) — that
+    // way it always reflects the current routes instead of a stale cached copy.
+    void getRoutes().then((rts) => {
+      setRoutes(rts);
+      const userPlans = plans.filter((p) => !p.id.startsWith("route:"));
+      const prevTrip = plans.find((p) => p.id === "route:trip");
+      const tripPlan: SavedPlan = { ...routesToPlan(rts), doneStops: prevTrip?.doneStops ?? [] };
+      const all = [tripPlan, ...userPlans];
+      localStorage.setItem("polaris:saved-plans", JSON.stringify(all));
+      setSavedPlans(all);
+      const first = all[0];
+      setActivePlanId(first.id);
+      setActiveDayNum(firstActiveDay(toStructured(first.stops), new Set(first.doneStops ?? [])));
+    });
   }, []);
 
   const activePlan = savedPlans.find((p) => p.id === activePlanId) ?? null;
+  // The seeded trip plan maps each day to a route, so "Start live guide" launches
+  // the route for the day currently being viewed (day 1 → UB, day 2 → Khövsgöl…).
+  const isTripPlan = activePlan?.id === "route:trip";
+  const activeRoute = isTripPlan ? routes[activeDayNum - 1] ?? null : null;
   const structuredStops = toStructured(activePlan?.stops);
   const dayNumbers = [...new Set(structuredStops.map((s) => s.day))].sort((a, b) => a - b);
   const doneSet = new Set<string>(activePlan?.doneStops ?? []);
@@ -173,6 +220,7 @@ export default function JourneyPage() {
                   doneSet={doneSet}
                   stops={structuredStops}
                   onSelect={setActiveDayNum}
+                  labels={isTripPlan ? routeDayLabels(routes) : undefined}
                 />
               )}
 
@@ -197,13 +245,23 @@ export default function JourneyPage() {
               )}
 
               <div className="flex gap-3 pt-1">
-                <Link
-                  href="/ai"
-                  className="flex flex-1 items-center justify-center gap-2 rounded-full bg-primary-600 py-3 text-sm font-bold text-white hover:bg-primary-700"
-                >
-                  <SparklesIcon size={14} />
-                  Plan more with Michelle
-                </Link>
+                {activeRoute ? (
+                  <button
+                    onClick={() => startRoute(activeRoute)}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-full bg-primary-600 py-3 text-sm font-bold text-white hover:bg-primary-700"
+                  >
+                    <SparklesIcon size={14} />
+                    Start live guide →
+                  </button>
+                ) : (
+                  <Link
+                    href="/ai"
+                    className="flex flex-1 items-center justify-center gap-2 rounded-full bg-primary-600 py-3 text-sm font-bold text-white hover:bg-primary-700"
+                  >
+                    <SparklesIcon size={14} />
+                    Plan more with Michelle
+                  </Link>
+                )}
                 <button
                   onClick={() => deletePlan(activePlan.id)}
                   className="flex h-12 w-12 items-center justify-center rounded-full bg-sand-100 text-ink-muted hover:bg-red-50 hover:text-safety-critical"
@@ -214,16 +272,6 @@ export default function JourneyPage() {
             </>
           )}
 
-          <button
-            onClick={() => {
-              const route = demoRoutes.find((r) => r.region === "ulaanbaatar") ?? demoRoutes[0];
-              setRoute(route);
-              router.push("/live");
-            }}
-            className="block w-full rounded-full bg-primary-600 py-3.5 text-center text-sm font-bold text-white hover:bg-primary-700"
-          >
-            Start the live guide
-          </button>
         </>
       )}
     </div>
@@ -303,12 +351,15 @@ function DayTabs({
   doneSet,
   stops,
   onSelect,
+  labels,
 }: {
   days: number[];
   activeDay: number;
   doneSet: Set<string>;
   stops: PlanStop[];
   onSelect: (day: number) => void;
+  // Optional per-day caption (e.g. the region for the guided trip plan).
+  labels?: Record<number, string>;
 }) {
   return (
     <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
@@ -328,6 +379,9 @@ function DayTabs({
           >
             <span className="text-[10px] font-bold uppercase tracking-widest opacity-70">Day</span>
             <span className="text-xl font-bold leading-tight">{day}</span>
+            {labels?.[day] && (
+              <span className="mt-0.5 text-[11px] font-bold leading-tight">{labels[day]}</span>
+            )}
             <span className={[
               "text-[10px] font-semibold",
               isActive ? "text-white/70" : allDone ? "text-green-500" : "text-ink-muted/50",

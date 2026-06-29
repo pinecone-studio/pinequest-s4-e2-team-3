@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { HeaderActions } from "@/components/HeaderActions";
-import { LiveClock } from "@/components/LiveClock";
+import { LiveClock, LiveWeekday } from "@/components/LiveClock";
 import { SectionHeader } from "@/components/SectionHeader";
 import { MapPinIcon, MicIcon, PlayIcon, ShieldIcon } from "@/components/icons";
 import { guide, todaysJourney, trip, weather } from "@/lib/mockData";
@@ -76,7 +76,7 @@ function StatStrip() {
         sub={weather.description}
       />
       <StatCard label="Local time" value={<LiveClock />} sub="Ulaanbaatar" />
-      <StatCard label="Day" value={trip.dayLabel} />
+      <StatCard label="Day" value={<LiveWeekday />} />
     </div>
   );
 }

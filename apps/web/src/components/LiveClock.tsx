@@ -25,3 +25,25 @@ export function LiveClock() {
 
   return <span suppressHydrationWarning>{time || "—"}</span>;
 }
+
+// Current weekday in Ulaanbaatar (Monday, Tuesday, …) — shown instead of a
+// trip-day counter. Filled on mount to keep server/client markup in sync.
+function ulaanbaatarWeekday(): string {
+  return new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    timeZone: "Asia/Ulaanbaatar",
+  });
+}
+
+export function LiveWeekday() {
+  const [weekday, setWeekday] = useState("");
+
+  useEffect(() => {
+    const tick = () => setWeekday(ulaanbaatarWeekday());
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  return <span suppressHydrationWarning>{weekday || "—"}</span>;
+}

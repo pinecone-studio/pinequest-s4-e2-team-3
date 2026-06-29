@@ -16,7 +16,7 @@ import {
   SparklesIcon,
   WalkIcon,
 } from "@/components/icons";
-import { demoRoutes } from "@/lib/routes";
+import { demoRoutes, getRoutes } from "@/lib/routes";
 import type { BusLeg, BusRoute, BusStep } from "@/lib/transit";
 import { googleMapsDirectionsUrl } from "@/lib/maps";
 import { GOOGLE_MAPS_KEY, hasGoogleMapsKey, loadGoogleMaps } from "@/lib/googlemaps";
@@ -242,6 +242,11 @@ function RoutePicker({
 }) {
   const setRoute = useLiveStore((s) => s.setRoute);
   const setSimulated = useLiveStore((s) => s.setSimulated);
+  // Journeys from the backend; falls back to the bundled routes offline.
+  const [routes, setRoutes] = useState<DemoRoute[]>(demoRoutes);
+  useEffect(() => {
+    void getRoutes().then(setRoutes);
+  }, []);
 
   const start = (route: DemoRoute) => {
     setRoute(route); // resets simulatedCoords to null…
@@ -271,7 +276,7 @@ function RoutePicker({
       </h1>
 
       <div className="mt-5 space-y-3">
-        {demoRoutes.map((route) => (
+        {routes.map((route) => (
           <button
             key={route.id}
             onClick={() => start(route)}
@@ -313,6 +318,7 @@ function LiveExperience({
     offlineReadyIds,
     forceOffline,
     returnTarget,
+    busLegs,
     setSimulated,
     advanceStop,
     reset,
@@ -531,16 +537,25 @@ function LiveExperience({
     // that. Main routes keep the per-leg equal-time default.
     const stepsPerLeg = detour ? 48 : 14; // detour: enough points for smooth motion
 
-    // Prefer real road geometry; fall back to straight legs if it can't load.
+    // A recommended bus route: walk exactly the geometry drawn on the map (walk
+    // legs + transit legs), not a straight driving line to returnTarget.
+    const busPts: Coords[] | null =
+      busLegs && busLegs.length ? busLegs.flatMap((l) => l.pts) : null;
+
     let pts: Coords[] = [];
-    try {
-      const google = await loadGoogleMaps(GOOGLE_MAPS_KEY);
-      pts = (await buildRoutePath(google, legStops, stepsPerLeg)).map((p) => ({
-        latitude: p.lat,
-        longitude: p.lng,
-      }));
-    } catch {
-      pts = [];
+    if (busPts && busPts.length > 1) {
+      pts = busPts;
+    } else {
+      // Prefer real road geometry; fall back to straight legs if it can't load.
+      try {
+        const google = await loadGoogleMaps(GOOGLE_MAPS_KEY);
+        pts = (await buildRoutePath(google, legStops, stepsPerLeg)).map((p) => ({
+          latitude: p.lat,
+          longitude: p.lng,
+        }));
+      } catch {
+        pts = [];
+      }
     }
     if (!simActiveRef.current) return; // user stopped while the path loaded
 
