@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 import Link from "next/link";
 import {
   CloseIcon,
@@ -40,11 +41,35 @@ type Step = "choose" | "countdown" | "ready" | "calling";
 // if it finishes, the prepared call screen appears.
 // `onClose` lets the modal dismiss with router.back(); without it the close
 // button falls back to a link home (used by the standalone /sos page).
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+
 export function SosFlow({ onClose }: { onClose?: () => void }) {
   const [step, setStep] = useState<Step>("choose");
   const [selected, setSelected] = useState<SosOption | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(COUNTDOWN_SECONDS);
+  const [incidentId, setIncidentId] = useState<string | null>(null);
+  const [checkInRequested, setCheckInRequested] = useState(false);
   const location = useEmergencyLocation();
+
+  useEffect(() => {
+    if (!incidentId) return;
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+    const channel = supabase
+      .channel(`incident_${incidentId}`)
+      .on("postgres_changes", {
+        event: "UPDATE",
+        schema: "public",
+        table: "sos_incidents",
+        filter: `id=eq.${incidentId}`,
+      }, (payload) => {
+        const row = payload.new as { check_in_requested?: boolean; status?: string };
+        if (row.check_in_requested) setCheckInRequested(true);
+        if (row.status === "resolved") setCheckInRequested(false);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [incidentId]);
 
   useEffect(() => {
     if (step !== "countdown") return;
@@ -66,6 +91,9 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
     setStep("choose");
     setSelected(null);
     setSecondsLeft(COUNTDOWN_SECONDS);
+    setIncidentId(null);
+    setCheckInRequested(false);
+    localStorage.removeItem("sos_incident_id");
   }
 
   return (
@@ -102,6 +130,11 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
               language,
               battery_level: batteryLevel,
               is_online: isOnline,
+            }).then((id) => {
+              if (id) {
+                setIncidentId(id);
+                localStorage.setItem("sos_incident_id", id);
+              }
             }).catch(() => {});
             setStep("calling");
           }}
@@ -110,6 +143,37 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
       {step === "calling" && selected ? (
         <CallView option={selected} location={location} onEnd={cancel} />
       ) : null}
+
+      {/* Check-in overlay — admin asked "Are you okay?" */}
+      {checkInRequested && incidentId && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center rounded-t-[28px] bg-white/95 backdrop-blur-sm px-6 text-center z-10">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 mb-4">
+            <span className="text-3xl">👋</span>
+          </div>
+          <h3 className="text-xl font-bold text-gray-900">Are you okay?</h3>
+          <p className="mt-2 text-sm text-gray-500">The support team is checking on you</p>
+          <button
+            onClick={async () => {
+              setCheckInRequested(false);
+              await fetch("/api/sos/confirm", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: incidentId }),
+              }).catch(() => {});
+              cancel();
+            }}
+            className="mt-6 w-full rounded-2xl bg-green-500 py-4 text-base font-bold text-white"
+          >
+            Yes, I&apos;m safe ✓
+          </button>
+          <button
+            onClick={() => setCheckInRequested(false)}
+            className="mt-3 w-full rounded-2xl border border-gray-200 py-3 text-sm font-semibold text-gray-600"
+          >
+            No, I still need help
+          </button>
+        </div>
+      )}
     </div>
   );
 }
