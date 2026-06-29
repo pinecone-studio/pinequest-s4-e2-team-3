@@ -148,62 +148,60 @@ export const demoRoutes: DemoRoute[] = [
     id: "selenge-day2",
     title: "Day 2 · Selenge",
     region: "selenge",
-    summary: "Mongolia's green north — Saikhny Khutul pass and Amarbayasgalant Monastery.",
+    summary: "North along the highway — Khutul, Darkhan and the Selenge river town of Sükhbaatar.",
     stops: [
       {
-        id: "selenge-arrival",
-        name: "Sükhbaatar (Selenge)",
-        kind: "Town · province centre",
-        // TODO: verify coords — Sükhbaatar city, Selenge (approximate).
-        latitude: 50.2342,
-        longitude: 106.2017,
-        arrivalRadius: 600,
-        narration:
-          "Good morning — you've arrived in Selenge, Mongolia's green northern province along the Selenge and Orkhon rivers. This is farming country, softer and wetter than the steppe further south. Stretch your legs and grab breakfast. Today we'll cross a mountain pass and visit one of the most beautiful monasteries in the country.",
-        context:
-          "Selenge is Mongolia's breadbasket — wheat fields and river valleys. Mornings can be cool and damp; bring a light layer.",
-        transport: [{ mode: "drive", label: "Local driver to Saikhny Khutul" }],
-        askLocalPhrases: [
-          {
-            en: "Where can I get breakfast?",
-            mn: "Өглөөний цайг хаанаас идэх вэ?",
-            roman: "Öglöönii tsaig khaanaas idekh ve?",
-          },
-        ],
-      },
-      {
-        id: "saikhny-khutul",
-        name: "Saikhny Khutul (pass)",
-        kind: "Mountain pass · ovoo",
-        // TODO: verify coords — Saikhny Khutul pass, Selenge (approximate).
-        latitude: 49.78,
-        longitude: 105.85,
+        id: "selenge-khutul",
+        name: "Khutul",
+        kind: "Town",
+        // Real on-highway town — keeps the route on routable roads.
+        latitude: 49.0981,
+        longitude: 105.5561,
         arrivalRadius: 500,
         narration:
-          "We're at Saikhny Khutul — a high pass with wide views over the rolling Selenge hills. Mongolians honour a pass like this with an ovoo, a sacred cairn of stones. If you'd like to follow the custom, walk clockwise around it three times and add a stone for safe travels. Take in the view, then we'll continue to Amarbayasgalant.",
+          "You've crossed into the green north. Khutul is a small town on the main northern highway — a good place to stretch and grab something warm before the road carries on. Selenge is Mongolia's river-fed farming country, softer than the steppe down south. Next we follow the highway up to Darkhan.",
         context:
-          "An ovoo marks a sacred high point. Walking around it three times clockwise is a traveller's blessing for the road ahead.",
-        transport: [{ mode: "drive", label: "Drive on to Amarbayasgalant · ~1–2 hr" }],
+          "This is the paved northern corridor toward Russia, so the road here is good and the driving is easy.",
+        transport: [{ mode: "drive", label: "Highway north to Darkhan · ~1 hr · 55 km" }],
         askLocalPhrases: [
           {
-            en: "What is this ovoo for?",
-            mn: "Энэ овоо юунд зориулагдсан бэ?",
-            roman: "Ene ovoo yuund zoriulagdsan be?",
+            en: "Where can I get something to eat?",
+            mn: "Хаана хоол идэж болох вэ?",
+            roman: "Khaana khool idej bolokh ve?",
           },
         ],
       },
       {
-        id: "amarbayasgalant",
-        name: "Amarbayasgalant Monastery",
-        kind: "Monastery",
-        // TODO: verify coords — Amarbayasgalant Monastery, Baruunbüren, Selenge (approximate).
-        latitude: 49.4775,
-        longitude: 105.0853,
-        arrivalRadius: 400,
+        id: "selenge-darkhan",
+        name: "Darkhan",
+        kind: "City · gateway",
+        latitude: 49.464,
+        longitude: 105.9688,
+        arrivalRadius: 600,
         narration:
-          "This is Amarbayasgalant, one of the three largest monasteries in Mongolia and among the best preserved. It was built in the 18th century in honour of Zanabazar, Mongolia's first spiritual leader and great artist. The symmetrical Manchu-style halls sit in a quiet valley by the Iven river. Walk the grounds slowly and clockwise — this is the highlight of Selenge.",
+          "This is Darkhan, Mongolia's second-largest city and the gateway to the far north. Wide planned streets, a couple of museums and the famous Kharagiin monastery. It's the best place to refuel, change money and stock up before the smaller towns. From here it's a straight run north to Sükhbaatar.",
         context:
-          "The monastery survived the purges largely intact. It's peaceful and far from crowds; dress modestly and keep noise down inside.",
+          "Darkhan has everything you'll need — ATMs, shops, fuel. The last reliable city before the quieter river towns.",
+        transport: [{ mode: "drive", label: "Highway north to Sükhbaatar · ~1.5 hr · 101 km" }],
+        askLocalPhrases: [
+          {
+            en: "Where is the nearest ATM?",
+            mn: "Хамгийн ойрын банкомат хаана байна вэ?",
+            roman: "Khamgiin oiryn bankomat khaana baina ve?",
+          },
+        ],
+      },
+      {
+        id: "selenge-sukhbaatar",
+        name: "Sükhbaatar (Selenge)",
+        kind: "Town · province centre",
+        latitude: 50.239,
+        longitude: 106.2028,
+        arrivalRadius: 600,
+        narration:
+          "You've reached Sükhbaatar, the capital of Selenge province, where the Selenge and Orkhon rivers meet near the Russian border. It's a quiet riverside town — the green heart of the north, and a world away from the desert. Rest up here by the water; tomorrow we head west to Lake Khövsgöl.",
+        context:
+          "A relaxed river town. Mornings can be cool and damp by the water — bring a light layer.",
         askLocalPhrases: [
           {
             en: "Thank you, this is beautiful.",
