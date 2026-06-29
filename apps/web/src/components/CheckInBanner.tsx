@@ -12,6 +12,7 @@ export function CheckInBanner() {
   const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
+    if (window.location.pathname.startsWith("/admin")) return;
     const id = localStorage.getItem("sos_incident_id");
     if (!id) return;
     setIncidentId(id);
@@ -51,8 +52,13 @@ export function CheckInBanner() {
     setConfirming(false);
   }
 
-  function stillNeedHelp() {
+  async function stillNeedHelp() {
     setShow(false);
+    await fetch("/api/sos/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: incidentId, action: "decline" }),
+    }).catch(() => {});
   }
 
   return (

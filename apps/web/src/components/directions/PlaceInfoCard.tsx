@@ -25,6 +25,21 @@ function taxiLink(app: (typeof TAXI_APPS)[number]) {
   return /iphone|ipad|ipod/i.test(navigator.userAgent) ? app.ios : app.android;
 }
 
+function parseDurationMinutes(duration: string): number {
+  const hours = parseInt(duration.match(/(\d+)\s*hour/)?.[1] ?? "0");
+  const mins  = parseInt(duration.match(/(\d+)\s*min/)?.[1]  ?? "0");
+  return hours * 60 + mins;
+}
+
+function estimateFare(distanceM: number, durationStr: string) {
+  const km   = distanceM / 1000;
+  const mins = parseDurationMinutes(durationStr);
+  const est  = 1000 + km * 1800 + mins * 200;
+  const lo   = Math.round(est * 0.85 / 100) * 100;
+  const hi   = Math.round(est * 1.30 / 100) * 100;
+  return `${lo.toLocaleString()}₮ – ${hi.toLocaleString()}₮`;
+}
+
 const MODE_LABEL: Record<TravelMode, string> = {
   walking: "walk",
   driving: "drive",
@@ -70,10 +85,11 @@ interface Props {
   googleMapsUrl: string | null;
   onClose: () => void;
   routeDuration?: string | null;
+  routeDistanceM?: number | null;
   mode?: TravelMode;
 }
 
-export function PlaceInfoCard({ spot, details, googleMapsUrl, onClose, routeDuration, mode = "walking" }: Props) {
+export function PlaceInfoCard({ spot, details, googleMapsUrl, onClose, routeDuration, routeDistanceM, mode = "walking" }: Props) {
   const [tab, setTab] = useState<"overview" | "reviews">("overview");
   const [hoursOpen, setHoursOpen] = useState(false);
 
@@ -112,6 +128,15 @@ export function PlaceInfoCard({ spot, details, googleMapsUrl, onClose, routeDura
         {mode === "driving" && (
           <div className="mb-3 rounded-2xl bg-amber-50 border border-amber-100 px-3.5 py-3">
             <p className="text-xs font-bold text-amber-700 mb-2">Book a taxi</p>
+            {routeDistanceM != null && routeDuration ? (
+              <div className="mb-2.5 rounded-xl bg-white border border-amber-200 px-3 py-2">
+                <p className="text-[10px] text-amber-500 font-semibold uppercase tracking-wide">Estimated fare</p>
+                <p className="text-base font-bold text-amber-900 mt-0.5">
+                  {estimateFare(routeDistanceM, routeDuration)}
+                </p>
+                <p className="text-[10px] text-amber-500 mt-0.5">Based on distance & traffic time</p>
+              </div>
+            ) : null}
             <div className="flex gap-2">
               {TAXI_APPS.map((app) => (
                 <a
@@ -125,7 +150,7 @@ export function PlaceInfoCard({ spot, details, googleMapsUrl, onClose, routeDura
                 </a>
               ))}
             </div>
-            <p className="mt-2 text-[10px] text-amber-600">Tap to open the app if installed</p>
+            <p className="mt-2 text-[10px] text-amber-600">Tap to open the app · prices may vary</p>
           </div>
         )}
       </div>

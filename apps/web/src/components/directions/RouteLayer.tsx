@@ -28,11 +28,13 @@ export function RouteLayer({
   destination,
   mode,
   onDuration,
+  onDistanceM,
 }: {
   origin: LatLng;
   destination: LatLng;
   mode: TravelMode;
   onDuration?: (duration: string) => void;
+  onDistanceM?: (meters: number) => void;
 }) {
   const map = useMap();
   const routesLib = useMapsLibrary("routes");
@@ -83,6 +85,7 @@ export function RouteLayer({
           renderer.setDirections(result);
           const leg = result.routes[0]?.legs[0];
           if (leg?.duration?.text) onDuration?.(leg.duration.text);
+          if (leg?.distance?.value) onDistanceM?.(leg.distance.value);
         }
       },
     );

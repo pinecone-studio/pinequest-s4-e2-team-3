@@ -83,6 +83,7 @@ export default function AdminPlacesPage() {
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<FormState>({ ...EMPTY });
   const [saving, setSaving] = useState(false);
+  const [duplicate, setDuplicate] = useState<Place | null>(null);
   const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [search, setSearch] = useState("");
@@ -135,11 +136,17 @@ export default function AdminPlacesPage() {
       body: JSON.stringify(body),
     });
     const data = await res.json();
+    if (data.duplicate) {
+      setDuplicate(data.duplicate);
+      setSaving(false);
+      return;
+    }
     if (data.error) {
       setMsg({ text: `Алдаа: ${data.error}`, ok: false });
     } else {
       setMsg({ text: form.id ? "Амжилттай засагдлаа ✓" : "Амжилттай нэмэгдлээ ✓", ok: true });
       setForm({ ...EMPTY });
+      setDuplicate(null);
       load(0); setPage(0);
     }
     setSaving(false);
@@ -275,13 +282,61 @@ export default function AdminPlacesPage() {
           </p>
         )}
 
+        {duplicate && (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 space-y-2">
+            <p className="text-sm font-bold text-amber-800">⚠️ Ижил төстэй газар олдлоо</p>
+            <p className="text-xs text-amber-700">
+              <span className="font-semibold">{duplicate.nameEn ?? duplicate.name}</span>
+              {duplicate.category ? ` · ${duplicate.category}` : ""}
+            </p>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => { edit(duplicate); setDuplicate(null); }}
+                className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
+              >
+                Байгааг нь засах
+              </button>
+              <button
+                onClick={async () => {
+                  setDuplicate(null);
+                  setSaving(true);
+                  const body = {
+                    ...(form.id ? { id: form.id } : {}),
+                    force: true,
+                    name: form.name.trim(),
+                    nameEn: form.nameEn?.trim() || undefined,
+                    nameMn: form.nameMn?.trim() || undefined,
+                    category: form.category ?? "Food",
+                    latitude: parseFloat(form.latitude),
+                    longitude: parseFloat(form.longitude),
+                    description: form.description?.trim() || undefined,
+                    imageUrl: form.imageUrl?.trim() || undefined,
+                    rating: parseFloat(form.rating) || 4.2,
+                  };
+                  const res = await fetch("/api/admin/places", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+                  const data = await res.json();
+                  if (data.error) { setMsg({ text: `Алдаа: ${data.error}`, ok: false }); }
+                  else { setMsg({ text: "Шинээр нэмэгдлээ ✓", ok: true }); setForm({ ...EMPTY }); load(0); setPage(0); }
+                  setSaving(false);
+                }}
+                className="rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
+              >
+                Шинэ болгон нэм
+              </button>
+              <button onClick={() => setDuplicate(null)} className="ml-auto text-xs text-amber-500 hover:underline">
+                Хаах
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="mt-4 flex gap-2">
           <button onClick={save} disabled={saving}
             className="rounded-xl bg-gray-900 px-5 py-2 text-sm font-semibold text-white disabled:opacity-50 hover:bg-gray-700">
             {saving ? "Хадгалж байна…" : form.id ? "Хадгалах" : "Нэмэх"}
           </button>
           {form.id && (
-            <button onClick={() => { setForm({ ...EMPTY }); setMsg(null); }}
+            <button onClick={() => { setForm({ ...EMPTY }); setMsg(null); setDuplicate(null); }}
               className="rounded-xl border border-gray-200 px-5 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50">
               Болих
             </button>
