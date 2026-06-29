@@ -28,6 +28,10 @@ export async function POST(req: Request) {
     );
   }
 
+  // Chimege only accepts Mongolian Cyrillic + basic punctuation — digits, Latin
+  // and symbols make it fail. Strip anything it can't speak so it never errors.
+  const clean = text.replace(/[^Ѐ-ӿ\s?!.\-'":,]/g, " ").replace(/\s+/g, " ").trim();
+
   const res = await fetch("https://api.chimege.com/v1.2/synthesize", {
     method: "POST",
     headers: {
@@ -35,7 +39,7 @@ export async function POST(req: Request) {
       "Content-Type": "text/plain",
       "voice-id": "FEMALE4v2",
     },
-    body: text,
+    body: clean,
   });
 
   if (!res.ok) {

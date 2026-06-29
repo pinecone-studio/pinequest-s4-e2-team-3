@@ -51,7 +51,8 @@ export async function logSosIncident(payload: LogIncidentPayload): Promise<strin
     .insert({ ...payload, status: "active" })
     .select("id")
     .single();
-  if (error) { console.error("[sos] log failed", error); return null; }
+  // Incident logging is best-effort — never surface a red error overlay for it.
+  if (error) { console.warn("[sos] log skipped:", error.message); return null; }
   return data?.id ?? null;
 }
 

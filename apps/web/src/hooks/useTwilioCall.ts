@@ -15,13 +15,13 @@ export function useTwilioCall() {
   const [status, setStatus] = useState<CallStatus>("connecting");
   const sidRef = useRef<string | null>(null);
 
-  async function call(message: string) {
+  async function call(message: string, messageMn: string) {
     try {
       setStatus("connecting");
       const res = await fetch("/api/voice/call", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, messageMn }),
       });
       if (!res.ok) {
         setStatus("unavailable");

@@ -1,9 +1,9 @@
 import twilio from "twilio";
 
-// Places a REAL outbound call straight from the server via Twilio's REST API.
-// Unlike the browser Voice SDK, this needs no WebRTC and no public callback URL —
-// so it works even when the traveller's network blocks Twilio's signaling.
-// Twilio rings TWILIO_SOS_DEMO_NUMBER and reads the SOS message aloud on answer.
+// Places a REAL outbound call from the server via Twilio's REST API and, on
+// answer, speaks the SOS message to the operator IN MONGOLIAN using Chimege TTS
+// (via <Play> of /api/voice/sos-audio) — so the traveller's language barrier is
+// bridged. Falls back to an English Polly voice if no Mongolian text is given.
 export async function POST(req: Request) {
   const {
     TWILIO_ACCOUNT_SID,
@@ -16,18 +16,30 @@ export async function POST(req: Request) {
     return Response.json({ error: "twilio_not_configured" }, { status: 503 });
   }
 
-  const { message } = (await req.json()) as { message?: string };
-  const spoken = message?.trim() || "Emergency call from a traveller. Please send help.";
+  const { message, messageMn } = (await req.json()) as { message?: string; messageMn?: string };
 
-  const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+  // Twilio <Play> needs an absolute, public URL it can reach — the ngrok/Vercel
+  // host this request came in on.
+  const host = req.headers.get("host");
+  const proto = req.headers.get("x-forwarded-proto") ?? "https";
+  const origin = host ? `${proto}://${host}` : "";
 
-  // Read the message twice with a short pause, so the operator catches it.
   const twiml = new twilio.twiml.VoiceResponse();
-  twiml.say({ voice: "Polly.Joanna" }, spoken);
-  twiml.pause({ length: 1 });
-  twiml.say({ voice: "Polly.Joanna" }, spoken);
+
+  if (messageMn?.trim() && origin) {
+    // Speak ONLY the traveller's Mongolian SOS message (Chimege), read twice.
+    const audioUrl = `${origin}/api/voice/sos-audio?text=${encodeURIComponent(messageMn.trim())}`;
+    twiml.play(audioUrl);
+    twiml.pause({ length: 1 });
+    twiml.play(audioUrl);
+  } else {
+    // Fallback only when no Mongolian text / public URL is available.
+    const spoken = message?.trim() || "A traveller needs emergency help.";
+    twiml.say({ voice: "Polly.Joanna" }, spoken);
+  }
 
   try {
+    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
     const call = await client.calls.create({
       to: TWILIO_SOS_DEMO_NUMBER,
       from: TWILIO_CALLER_ID,
