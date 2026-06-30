@@ -22,11 +22,8 @@ import {
   type EmergencyLocation,
 } from "@/hooks/useEmergencyLocation";
 import { useTwilioCall } from "@/hooks/useTwilioCall";
-<<<<<<< HEAD
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
-=======
 import { useOnlineStatus } from "@/context/OnlineStatus";
->>>>>>> e4b9516 (a)
 import type { SosOption } from "@/types";
 
 const OPTION_ICON: Record<string, (props: { size?: number }) => React.ReactNode> = {
@@ -78,8 +75,8 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
   const [customText, setCustomText] = useState("");
   const [translating, setTranslating] = useState(false);
   const location = useEmergencyLocation();
-<<<<<<< HEAD
   const voice = useSpeechRecognition(setCustomText);
+  const { online } = useOnlineStatus();
 
   // Free-form SOS: the traveller describes their emergency in their own words
   // (typed or spoken), we translate it to Mongolian, then the same call flow reads
@@ -114,9 +111,6 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
       serviceNumber: "103",
     });
   }
-=======
-  const { online } = useOnlineStatus();
->>>>>>> e4b9516 (a)
 
   useEffect(() => {
     if (!incidentId) return;
@@ -689,12 +683,8 @@ function CallView({
         ) : null}
       </div>
 
-<<<<<<< HEAD
       {/* Operator's replies — their Mongolian speech transcribed + translated to English */}
-      <div className="mt-4 rounded-3xl border border-ink/5 bg-sand-50 p-4">
-=======
       <div className="mt-4 rounded-3xl border border-ink/5 bg-sand-50 p-5">
->>>>>>> e4b9516 (a)
         <div className="flex items-center justify-between">
           <p className="text-sm font-bold text-ink">Operator · {option.serviceNumber}</p>
           <span className="flex items-center gap-1.5 rounded-full bg-primary-50 px-3 py-1 text-xs font-bold text-primary-600">
