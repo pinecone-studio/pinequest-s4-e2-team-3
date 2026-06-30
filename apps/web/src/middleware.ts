@@ -4,6 +4,26 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Admin protection — both the /admin pages AND the /api/admin/* routes need
+  // the admin_token cookie. /admin/login (page) and /api/admin/auth (sets the
+  // cookie) are the only public exceptions.
+  const isAdminArea =
+    (pathname.startsWith("/admin") && !pathname.startsWith("/admin/login")) ||
+    (pathname.startsWith("/api/admin") && !pathname.startsWith("/api/admin/auth"));
+  if (isAdminArea) {
+    const token = request.cookies.get("admin_token")?.value;
+    const secret = process.env.ADMIN_SECRET;
+    if (!secret || token !== secret) {
+      // Pages redirect to login; API calls get a 401 (no point redirecting JSON).
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+      }
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = "/admin/login";
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(

@@ -16,8 +16,8 @@ drop policy if exists own_trip_plans on public.trip_plans;
 create policy own_trip_plans on public.trip_plans
   for all
   to authenticated
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using (auth.uid()::text = user_id::text)
+  with check (auth.uid()::text = user_id::text);
 
 -- chat_messages: same — owner only.
 alter table public.chat_messages enable row level security;
@@ -25,5 +25,5 @@ drop policy if exists own_chat_messages on public.chat_messages;
 create policy own_chat_messages on public.chat_messages
   for all
   to authenticated
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using (auth.uid()::text = user_id::text)
+  with check (auth.uid()::text = user_id::text);
