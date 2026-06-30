@@ -4,10 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChatIcon, MicIcon, SendIcon, StarIcon, WalkIcon } from "@/components/icons";
+import { ChatIcon, MicIcon, PencilIcon, SendIcon, StarIcon, WalkIcon } from "@/components/icons";
 import { GuideAvatar, type GuideAvatarState } from "@/components/GuideAvatar";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
-import { aiQuickReplies, guide } from "@/lib/mockData";
+import { guide } from "@/lib/mockData";
 import { FeatureGate } from "@/components/FeatureGate";
 
 // A place Michelle recommends, shown as a card under her reply.
@@ -45,6 +45,260 @@ interface Message {
   pendingPlan?: PendingPlan;
   planStatus?: "pending" | "saved" | "dismissed";
   journeyLink?: boolean;
+  suggestions?: string[];
+}
+
+const INITIAL_SUGGESTIONS = [
+  "Plan my 5-day trip",
+  "I'm visiting in July",
+  "Best time to visit Mongolia?",
+  "What food should I try?",
+];
+
+type ConvStage =
+  | "collecting-info"
+  | "planning"
+  | "recommending-place"
+  | "nearby"
+  | "food"
+  | "transport"
+  | "finished"
+  | "fallback";
+
+function shuffled<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+const STAGE_POOLS: Record<ConvStage, string[]> = {
+  "collecting-info": [],
+  "planning": [
+    "Continue", "Next day", "Change this stop", "Add a stop",
+    "Show lunch nearby", "Coffee break", "Skip this", "Another option",
+    "Tell me why", "What's nearby?", "I'm done, save the plan",
+  ],
+  "recommending-place": [
+    "Add this stop", "Skip it", "Tell me more", "Nearby cafés",
+    "How do I get there?", "Another option", "Photo spots", "Best time to visit",
+    "History", "Horse riding",
+  ],
+  "nearby": [
+    "Show directions", "Any alternatives?", "More details", "Is it open now?",
+    "Price range?", "Add to plan", "Something else nearby",
+  ],
+  "food": [
+    "Traditional Mongolian", "Budget option", "Vegetarian", "Coffee nearby",
+    "Show directions", "Open now?", "Another restaurant", "Skip this",
+  ],
+  "transport": [
+    "How much does it cost?", "Walking directions", "Bus route",
+    "How far is it?", "Best route", "Book a taxi",
+  ],
+  "finished": [
+    "Yes, save this plan!", "Add one more stop", "Change something", "Start over",
+  ],
+  "fallback": [
+    "Continue", "Show nearby places", "Any local food?", "Another idea",
+    "Tell me why", "What's next?", "Change the plan", "Show alternatives",
+    "Add this stop", "Skip it",
+  ],
+};
+
+function detectStage(messages: Message[]): ConvStage {
+  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+  if (!lastAssistant || lastAssistant.id === "welcome") return "collecting-info";
+  if (messages.some((m) => m.pendingPlan && m.planStatus === "pending")) return "finished";
+
+  const t = lastAssistant.content.toLowerCase();
+
+  // Planning wins if ANY day number is mentioned — even "nearby dinner" during planning
+  // must stay in planning context so we don't show live-GPS suggestions.
+  if (/\bday [1-9]\b|\bday one\b|\bmidday:|\bmorning:|\bafternoon:|\bevening:\b/.test(t)) return "planning";
+
+  // Real place cards mean the AI ran a live or name-lookup search this turn.
+  if (lastAssistant.places?.length) return "recommending-place";
+
+  // "Nearby" only when there's no day-planning context already matched above.
+  if (/\b(nearby|walk|min away|around you|closest|nearest)\b/.test(t)) return "nearby";
+  if (/\b(restaurant|lunch|dinner|breakfast|café|cafe|eat|food|meal)\b/.test(t)) return "food";
+  if (/\b(taxi|bus|transport|getting there|directions|how to get|route)\b/.test(t)) return "transport";
+  return "fallback";
+}
+
+// How many days the user originally requested ("5-day trip", "7 days", etc.)
+function getRequestedDays(messages: Message[]): number {
+  for (const m of [...messages]) {
+    const src = m.content;
+    const match = src.match(/(\d+)[- ]day/i) ?? src.match(/(\d+)\s+days?/i);
+    if (match) return parseInt(match[1]);
+  }
+  return 0;
+}
+
+// Highest day number that was actually PLANNED (not just mentioned in "Ready for Day X?")
+function getPlannedDays(messages: Message[]): number {
+  let max = 0;
+  for (const m of messages) {
+    if (m.role !== "assistant") continue;
+    // Strip "Ready for/to plan Day X" and "Shall I plan Day X" so the
+    // next-day question doesn't count as that day being planned yet.
+    const stripped = m.content
+      .replace(/ready (?:to plan |for )?day\s*\d+/gi, "")
+      .replace(/shall i (?:plan|show|build) day\s*\d+/gi, "");
+    // Only look inside messages that contain actual plan content.
+    if (!/morning|midday|afternoon|evening|breakfast|lunch|dinner/i.test(stripped)) continue;
+    for (const match of stripped.matchAll(/\bday\s*(\d+)\b/gi)) {
+      const n = parseInt(match[1]);
+      if (n > max) max = n;
+    }
+  }
+  return max;
+}
+
+function getContextualSuggestions(messages: Message[]): string[] {
+  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+  if (!lastAssistant || lastAssistant.id === "welcome") return INITIAL_SUGGESTIONS;
+
+  // API-supplied suggestions take priority.
+  if (lastAssistant.suggestions?.length) return lastAssistant.suggestions;
+
+  const t = lastAssistant.content.toLowerCase();
+  const stage = detectStage(messages);
+
+  const requestedDays = getRequestedDays(messages);
+  const plannedDays = getPlannedDays(messages);
+  const allDaysDone = requestedDays > 0 && plannedDays >= requestedDays;
+  const nextDay = plannedDays + 1;
+
+  // ── FINISHED: plan is ready to save ──────────────────────────────────────
+  if (stage === "finished")
+    return ["Yes, save this plan!", `Edit Day ${plannedDays}`, "Add one more stop", "Start a completely new plan"];
+
+  // ── PLANNING: content-driven by time-of-day and place type ───────────────
+  if (stage === "planning") {
+    // Day-to-day transition ("Ready for Day 3?", "Shall I plan Day 2?")
+    if (/\b(ready for day|shall i plan day|let'?s? (move|continue) (on )?to day|day [2-9])\b/.test(t)) {
+      if (allDaysDone)
+        return ["Yes, save this plan!", "Add one more stop", "Change something", "Start over"];
+      return [`Yes, let's plan Day ${nextDay}!`, "Take a rest day", "Change something", "Skip ahead"];
+    }
+
+    // Preference question during planning ("nature or cultural?", "active or relaxed?")
+    if (/\b(nature|countryside|outdoor).{0,60}\bor\b|\bor\b.{0,60}\b(nature|countryside|outdoor)\b/.test(t))
+      return ["Start with nature!", "Cultural sites first", "Mix of both", "Surprise me!"];
+    if (/\b(active|hik|trek|adventure).{0,60}\bor\b|\bor\b.{0,60}\b(active|hik|trek|relaxed|easy)\b/.test(t))
+      return ["Very active — hiking!", "Moderate walks", "Easy & relaxed", "Mix of both"];
+    if (/\b(history|culture|museum|temple|monument).{0,60}\bor\b|\bor\b.{0,60}\b(history|culture|museum|temple)\b/.test(t))
+      return ["History & culture first", "Nature & outdoors", "Mix of both", "Surprise me!"];
+    if (/\b(morning|afternoon|early|late).{0,60}\bor\b|\bor\b.{0,60}\b(morning|afternoon|early|late)\b/.test(t))
+      return ["Early morning start", "Late morning", "Afternoon arrival", "Flexible"];
+
+    // Evening / dinner
+    if (/\b(evening|dinner|night|19:|20:|21:)\b/.test(t)) {
+      if (allDaysDone)
+        return ["Show me dinner spots", "Any bars nearby?", "Save this plan!", "Add another stop"];
+      return ["Show me dinner spots", "Any bars or live music?", `Plan Day ${nextDay}`, "Change something"];
+    }
+
+    // Dinner mentioned during planning
+    if (/\b(dinner|evening meal|supper|restaurant for dinner)\b/.test(t))
+      return ["Sounds great!", "Vegetarian option?", "Budget-friendly alternative?", `Continue to Day ${nextDay}`];
+
+    // Afternoon activity during planning
+    if (/\b(afternoon|coffee break|14:|15:|16:|17:)\b/.test(t))
+      return ["Sounds good!", "How long should we stay?", "What's for dinner?", "Add another stop"];
+
+    // Lunch during planning
+    if (/\b(lunch|12:|13:)\b/.test(t))
+      return ["Traditional Mongolian?", "Vegetarian options?", "Budget-friendly?", "Continue to afternoon"];
+
+    // Morning / first stop of the day
+    if (/\b(morning|breakfast|08:|09:|10:|first stop|start with|explore)\b/.test(t)) {
+      if (/monastery|temple|gandan|gandantegchinlen|lama/.test(t))
+        return ["Sounds amazing!", "Entry fee?", "What's for lunch after?", "Add another morning stop"];
+      if (/museum|gallery|palace|monument/.test(t))
+        return ["Sounds great!", "How long to visit?", "What's for lunch after?", "Add another morning stop"];
+      if (/park|nature|hike|trek|terelj|gobi|lake|mountain/.test(t))
+        return ["Let's do it!", "What activities are there?", "What's for lunch?", "Add another stop"];
+      if (/horse|camel|ride/.test(t))
+        return ["Sounds fun!", "How long is the ride?", "Any safety tips?", "What's next after?"];
+      return ["Sounds great!", "Any tips?", "What's for lunch?", "Add another stop"];
+    }
+
+    return ["Sounds good!", "Add a stop", "Change this", "What's for lunch?"];
+  }
+
+  // ── RECOMMENDING PLACE: specific to place type ────────────────────────────
+  if (stage === "recommending-place") {
+    if (/monastery|temple|gandan|erdene|lama/.test(t))
+      return ["Best time to visit?", "Is there an entry fee?", "Lunch spots nearby", "Add to itinerary"];
+    if (/museum|gallery|palace|history/.test(t))
+      return ["Opening hours?", "How long to visit?", "Lunch spots nearby", "Add to itinerary"];
+    if (/park|terelj|gobi|nature|steppe|mountain/.test(t))
+      return ["Horse riding available?", "Best hiking trail?", "Camping nearby?", "Add to itinerary"];
+    if (/market|bazaar|shop|mall/.test(t))
+      return ["What's worth buying?", "Best prices?", "Opening hours?", "Add to itinerary"];
+    if (/restaurant|cafe|food|eat|lunch|dinner/.test(t))
+      return ["What's their specialty?", "Price range?", "Vegetarian-friendly?", "Add to itinerary"];
+    return ["Add to my itinerary", "How far is it?", "Is there an entry fee?", "Show alternatives"];
+  }
+
+  // ── NEARBY: live location search results ──────────────────────────────────
+  if (stage === "nearby")
+    return ["Give me walking directions", "Is it open right now?", "Show cheaper options", "Something else nearby"];
+
+  // ── FOOD: meal-specific ───────────────────────────────────────────────────
+  if (stage === "food") {
+    if (/\b(lunch)\b/.test(t))
+      return ["Traditional Mongolian", "Something quick & cheap", "Vegetarian options?", "Skip lunch"];
+    if (/\b(dinner)\b/.test(t))
+      return ["Traditional restaurant", "Modern dining", "Cheap & local", "Plan tomorrow instead"];
+    if (/\b(breakfast|brunch)\b/.test(t))
+      return ["Hotel breakfast ok?", "Local café nearby?", "What time to eat?", "Skip, start early"];
+    if (/\b(buuz|khuushuur|tsuivan|khuurga)\b/.test(t))
+      return ["Where's the best one?", "Price range?", "Vegetarian version?", "Add to plan"];
+    return ["Traditional Mongolian", "Western / Modern", "Best coffee nearby", "Show directions"];
+  }
+
+  // ── TRANSPORT ─────────────────────────────────────────────────────────────
+  if (stage === "transport")
+    return ["How much is a taxi?", "Can I walk there?", "Which bus route?", "Share my location"];
+
+  // ── COLLECTING INFO: answer the specific question asked ───────────────────
+  if (/which month|what month|when.*visit|time of year/.test(t))
+    return ["July (Naadam season)", "June (pleasant weather)", "August", "Winter (Ice Festival)"];
+  if (/how many days|how long|length of.*trip/.test(t))
+    return ["3 Days (Quick UB & Terelj)", "5 Days (Classic trip)", "7 Days (Countryside tour)", "2 Weeks+"];
+  if (/(city|ulaanbaatar).{0,80}or.{0,80}(countryside|nature)|(countryside|nature).{0,80}or.{0,80}(city|ulaanbaatar)/.test(t))
+    return ["Mainly countryside & nature", "Explore Ulaanbaatar city", "A perfect mix of both"];
+  if (/gobi|khövsgöl|khovsgol|terelj/.test(t))
+    return ["Gobi Desert", "Northern Mongolia", "Terelj / Gorkhi", "Lake Khövsgöl"];
+  if (/interests|what.*enjoy|what.*like|history.*nature|nature.*adventure/.test(t))
+    return ["Nomadic culture & history", "Hiking & pure nature", "Adventure & horse riding", "Food & photography"];
+  if (/solo|traveling with|group|how many (people|of you)/.test(t))
+    return ["Solo", "With a partner", "Small group", "Family with kids"];
+  if (/budget|price|afford|luxury|cost/.test(t))
+    return ["Backpacker / budget", "Mid-range comfortable", "Luxury & ger camps"];
+  if (/morning or afternoon|early or later/.test(t))
+    return ["Early morning", "Late morning", "Afternoon", "Flexible"];
+  if (/safe|emergency|hospital/.test(t))
+    return ["Find nearest hospital", "Emergency contacts", "Is it safe?", "Call for help"];
+  if (/naadam|tsagaan sar|festival|national holiday/.test(t))
+    return ["Yes, I'd love it!", "Tell me more", "I prefer quieter times", "What else is on?"];
+  if (/car|driver|transport|getting around|taxi/.test(t))
+    return ["Need a rental car + driver", "Using public transport", "I will drive myself"];
+
+  // ── FALLBACK: shuffle pool, filter recently clicked ───────────────────────
+  const pool = STAGE_POOLS[stage] ?? STAGE_POOLS.fallback;
+  const recentClicked = new Set(
+    messages.filter((m) => m.role === "user").slice(-5).map((m) => m.content.toLowerCase().trim()),
+  );
+  const fresh = pool.filter((s) => !recentClicked.has(s.toLowerCase().trim()));
+  return shuffled(fresh.length >= 3 ? fresh : pool).slice(0, 4);
 }
 
 const WELCOME: Message = {
@@ -58,7 +312,7 @@ const WELCOME: Message = {
 const STORAGE_KEY = "lumo:chat";
 
 // Separates the streamed reply text from the metadata tail — must match the API route.
-const META_DELIM = " __POLARIS_META__ ";
+const META_DELIM = "\n\nPINEQUEST_META:";
 
 // Resolve the device location, returning null if it's blocked or unavailable.
 function requestLocation(): Promise<{ lat: number; lng: number } | null> {
@@ -144,6 +398,8 @@ export default function AiPage() {
     return 'idle';
   }, [voice.isListening, isLoading]);
 
+  const suggestions = useMemo(() => getContextualSuggestions(messages), [messages]);
+
   // Keep the latest message in view as the conversation grows.
   useEffect(() => {
     scrollAnchor.current?.scrollIntoView({ behavior: "smooth" });
@@ -190,15 +446,18 @@ export default function AiPage() {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        const i = buffer.indexOf(META_DELIM);
-        const text = i >= 0 ? buffer.slice(0, i) : buffer;
-        setMessages((c) => c.map((m) => (m.id === assistantId ? { ...m, content: text } : m)));
+        // Strip META_DELIM (or its partial prefix) so it never flashes in the bubble
+        const metaStart = buffer.indexOf("\n\nPINEQUEST_META:");
+        const displayText = metaStart >= 0 ? buffer.slice(0, metaStart) : buffer;
+        setMessages((c) => c.map((m) => (m.id === assistantId ? { ...m, content: displayText } : m)));
       }
+      // Flush any bytes the decoder buffered for multi-byte characters
+      buffer += decoder.decode();
 
       // Split the streamed text from the metadata tail (place cards + pending plan).
       const i = buffer.indexOf(META_DELIM);
       const text = i >= 0 ? buffer.slice(0, i) : buffer;
-      let meta: { places?: PlaceCard[]; pendingPlan?: PendingPlan; error?: boolean } = {};
+      let meta: { places?: PlaceCard[]; pendingPlan?: PendingPlan; suggestions?: string[]; error?: boolean } = {};
       if (i >= 0) {
         try { meta = JSON.parse(buffer.slice(i + META_DELIM.length)); } catch { /* ignore */ }
       }
@@ -210,6 +469,7 @@ export default function AiPage() {
         places: meta.places,
         pendingPlan: meta.pendingPlan,
         planStatus: meta.pendingPlan ? "pending" : undefined,
+        suggestions: meta.suggestions,
       };
       setMessages((c) => c.map((m) => (m.id === assistantId ? reply : m)));
       persistMessage(reply);
@@ -313,7 +573,7 @@ export default function AiPage() {
     sendMessage("I'd like to add another stop to my plan.");
   }
 
-  function handleSubmit(event: React.FormEvent) {
+  function handleSubmit(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     sendMessage(input);
   }
@@ -322,11 +582,19 @@ export default function AiPage() {
   // always-visible Save button in the header.
   const savable = [...messages].reverse().find((m) => m.pendingPlan && m.planStatus !== "saved");
 
+  function newChat() {
+    setMessages([WELCOME]);
+    setInput("");
+    try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+    fetch("/api/chat-history", { method: "DELETE" }).catch(() => { /* ignore */ });
+  }
+
   return (
     <div className="flex h-[calc(100dvh-7rem)] flex-col lg:h-[calc(100dvh-5rem)]">
       <ChatHeader
         avatarState={avatarState}
         onSave={savable ? () => savePlan(savable.id, savable.pendingPlan!) : undefined}
+        onNewChat={newChat}
         disabled={isLoading}
       />
 
@@ -350,12 +618,15 @@ export default function AiPage() {
             disabled={isLoading}
           />
         ))}
-        {isLoading && messages[messages.length - 1]?.role === "user" ? <TypingBubble /> : null}
+        {isLoading && (
+          messages[messages.length - 1]?.role === "user" ||
+          messages[messages.length - 1]?.content === ""
+        ) ? <TypingBubble /> : null}
         <div ref={scrollAnchor} />
       </div>
 
       <FeatureGate feature="aiChat">
-        <QuickReplies onPick={sendMessage} disabled={isLoading} />
+        <QuickReplies suggestions={suggestions} onPick={sendMessage} disabled={isLoading} />
         <MessageInput
           value={input}
           onChange={setInput}
@@ -373,15 +644,16 @@ export default function AiPage() {
 function ChatHeader({
   avatarState,
   onSave,
+  onNewChat,
   disabled,
 }: {
   avatarState: GuideAvatarState;
   onSave?: () => void;
+  onNewChat: () => void;
   disabled: boolean;
 }) {
   return (
     <header className="flex items-center gap-3 border-b border-sand-200 pb-4">
-      {/* Small floating presence — the corner-widget context */}
       <GuideAvatar size="sm" state={avatarState} />
       <div className="flex-1">
         <p className="font-bold text-ink">{guide.name}</p>
@@ -396,6 +668,14 @@ function ChatHeader({
           Save plan
         </button>
       ) : null}
+      <button
+        onClick={onNewChat}
+        disabled={disabled}
+        aria-label="New chat"
+        className="flex h-9 w-9 items-center justify-center rounded-full text-ink-muted hover:bg-sand-100 hover:text-ink disabled:opacity-40"
+      >
+        <PencilIcon size={18} />
+      </button>
     </header>
   );
 }
@@ -576,15 +856,17 @@ function Dot({ delay }: { delay: string }) {
 }
 
 function QuickReplies({
+  suggestions,
   onPick,
   disabled,
 }: {
+  suggestions: string[];
   onPick: (text: string) => void;
   disabled: boolean;
 }) {
   return (
     <div className="flex flex-wrap gap-2 py-3">
-      {aiQuickReplies.map((reply) => (
+      {suggestions.map((reply) => (
         <button
           key={reply}
           onClick={() => onPick(reply)}
@@ -609,7 +891,7 @@ function MessageInput({
 }: {
   value: string;
   onChange: (value: string) => void;
-  onSubmit: (event: React.FormEvent) => void;
+  onSubmit: (event: React.SyntheticEvent<HTMLFormElement>) => void;
   disabled: boolean;
   isListening: boolean;
   voiceSupported: boolean;
