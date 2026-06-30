@@ -70,6 +70,26 @@ export async function createIncident(payload: LogIncidentPayload): Promise<strin
   return data?.id ?? null;
 }
 
+export interface OperatorMessage {
+  mn: string;
+  en: string;
+  at: string;
+}
+
+// Append a transcribed + translated operator reply to an incident.
+export async function appendOperatorMessage(id: string, mn: string, en: string): Promise<void> {
+  const { data } = await adminDb().from("sos_incidents").select("operator_msgs").eq("id", id).single();
+  const msgs: OperatorMessage[] = Array.isArray(data?.operator_msgs) ? data.operator_msgs : [];
+  msgs.push({ mn, en, at: new Date().toISOString() });
+  await adminDb().from("sos_incidents").update({ operator_msgs: msgs }).eq("id", id);
+}
+
+// The operator replies so far, for the traveller's screen to poll.
+export async function getOperatorMessages(id: string): Promise<OperatorMessage[]> {
+  const { data } = await adminDb().from("sos_incidents").select("operator_msgs").eq("id", id).single();
+  return Array.isArray(data?.operator_msgs) ? data.operator_msgs : [];
+}
+
 export async function listSosIncidents(): Promise<{ incidents: SosIncident[]; error: string | null }> {
   const { data, error } = await adminDb()
     .from("sos_incidents")

@@ -55,3 +55,12 @@ create policy "anon can read incidents"
 
 -- Realtime so the check-in overlay updates instantly.
 alter publication supabase_realtime add table public.sos_incidents;
+
+-- last_seen heartbeat — lets the admin spot a long network blackout (offline 3h+).
+alter table public.sos_incidents
+  add column if not exists last_seen timestamptz default now();
+
+-- operator_msgs — what the 103 operator said, transcribed (mn) + translated (en),
+-- so the traveller sees the operator's replies in their own language.
+alter table public.sos_incidents
+  add column if not exists operator_msgs jsonb not null default '[]'::jsonb;

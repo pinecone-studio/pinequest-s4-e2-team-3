@@ -16,13 +16,18 @@ export async function POST(req: Request) {
     return Response.json({ error: "twilio_not_configured" }, { status: 503 });
   }
 
-  const { message, messageMn } = (await req.json()) as { message?: string; messageMn?: string };
+  const { message, messageMn, incidentId } = (await req.json()) as {
+    message?: string;
+    messageMn?: string;
+    incidentId?: string;
+  };
 
-  // Twilio <Play> needs an absolute, public URL it can reach — the ngrok/Vercel
-  // host this request came in on.
+  // Twilio <Play> needs an absolute, public URL it can reach. Prefer an explicit
+  // PUBLIC_BASE_URL (the ngrok/Vercel address) so it works even when the app is
+  // opened on localhost; otherwise fall back to the request host.
   const host = req.headers.get("host");
   const proto = req.headers.get("x-forwarded-proto") ?? "https";
-  const origin = host ? `${proto}://${host}` : "";
+  const origin = process.env.PUBLIC_BASE_URL || (host ? `${proto}://${host}` : "");
 
   const twiml = new twilio.twiml.VoiceResponse();
 
@@ -37,6 +42,13 @@ export async function POST(req: Request) {
     const spoken = message?.trim() || "A traveller needs emergency help.";
     twiml.say({ voice: "Polly.Joanna" }, spoken);
   }
+
+  // Keep the line open so the traveller can keep sending translated phrases
+  // (see /api/voice/say). NOTE: operator-reply transcription via <Gather mn-MN>
+  // proved unreliable (Twilio Mongolian support) and dropped the call, so we hold
+  // with <Pause> for a rock-solid EN→MN direction instead.
+  void incidentId;
+  twiml.pause({ length: 3600 });
 
   try {
     const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
