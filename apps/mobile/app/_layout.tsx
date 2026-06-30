@@ -1,47 +1,97 @@
 import "../global.css";
-import { ClerkProvider, useAuth } from "@clerk/clerk-expo";
-import { tokenCache } from "@clerk/clerk-expo/token-cache";
-import { SplashScreen, Stack, useRouter, useSegments } from "expo-router";
+import { supabase } from "@/lib/supabase";
+import { useAuthStore } from "@/stores/authStore";
+import { useDeadSwitchStore } from "@/stores/deadSwitchStore";
+import { DeadSwitchOverlay } from "@/components/DeadSwitchOverlay";
 import { WaypointLoader } from "@/components/WaypointLoader";
-import { useEffect, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { SplashScreen, Stack, useRouter, useSegments } from "expo-router";
+import { useEffect, useRef, useState } from "react";
+import { AppState, StyleSheet, View } from "react-native";
 
 SplashScreen.preventAutoHideAsync();
 
-const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
-
-// Minimum ms to show the loader so the animation is always visible.
-// Clerk resolves instantly when the token is cached, so without this
-// the loader would flash for < 16ms and never be seen.
 const MIN_LOADER_MS = 1500;
+// Poll every 30 s to see if a check-in is overdue (works offline)
+const CHECK_INTERVAL_MS = 30_000;
 
-// Keeps the user in the right place: signed-in users land in the tabs, and
-// everyone else is sent to the auth screens. Runs once Clerk has loaded.
 function InitialLayout() {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { session, loading, setSession, setLoading } = useAuthStore();
+  const { load: loadSwitch, isCheckInOverdue, triggerOverlay, showOverlay } =
+    useDeadSwitchStore();
+
   const [minTimeElapsed, setMinTimeElapsed] = useState(false);
   const segments = useSegments();
   const router = useRouter();
+  const appState = useRef(AppState.currentState);
 
+  // ── Splash / loader ────────────────────────────────────────────────────────
   useEffect(() => {
-    // Hide the native splash immediately so our WaypointLoader is visible.
     SplashScreen.hideAsync();
     const t = setTimeout(() => setMinTimeElapsed(true), MIN_LOADER_MS);
     return () => clearTimeout(t);
   }, []);
 
+  // ── Supabase auth listener ─────────────────────────────────────────────────
   useEffect(() => {
-    if (!isLoaded || !minTimeElapsed) return;
+    // Get current session on mount
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+    });
+
+    // Listen for future auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, newSession) => {
+        setSession(newSession);
+      },
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ── Dead switch initialisation ─────────────────────────────────────────────
+  useEffect(() => {
+    loadSwitch();
+  }, []);
+
+  // ── Dead switch timer (polls every 30 s; also fires on foreground) ─────────
+  useEffect(() => {
+    function check() {
+      if (isCheckInOverdue()) triggerOverlay();
+    }
+
+    const timer = setInterval(check, CHECK_INTERVAL_MS);
+
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextState === "active"
+      ) {
+        check();
+      }
+      appState.current = nextState;
+    });
+
+    return () => {
+      clearInterval(timer);
+      sub.remove();
+    };
+  }, [isCheckInOverdue, triggerOverlay]);
+
+  // ── Route guard ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (loading || !minTimeElapsed) return;
 
     const inAuthGroup = segments[0] === "(auth)";
+    const isSignedIn = session !== null;
+
     if (isSignedIn && inAuthGroup) {
       router.replace("/(tabs)");
     } else if (!isSignedIn && !inAuthGroup) {
       router.replace("/(auth)/login");
     }
-  }, [isLoaded, isSignedIn, segments, minTimeElapsed]);
+  }, [loading, session, segments, minTimeElapsed]);
 
-  const showLoader = !isLoaded || !minTimeElapsed;
+  const showLoader = loading || !minTimeElapsed;
 
   return (
     <View style={{ flex: 1 }}>
@@ -50,21 +100,22 @@ function InitialLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="+not-found" />
       </Stack>
+
       {showLoader && (
         <View style={styles.overlay}>
           <WaypointLoader variant="fullscreen" />
         </View>
       )}
+
+      {/* Dead man's switch full-screen overlay — rendered at root so it
+          appears above all tabs and screens */}
+      <DeadSwitchOverlay />
     </View>
   );
 }
 
 export default function RootLayout() {
-  return (
-    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
-      <InitialLayout />
-    </ClerkProvider>
-  );
+  return <InitialLayout />;
 }
 
 const styles = StyleSheet.create({

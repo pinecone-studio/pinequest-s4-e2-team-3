@@ -1,11 +1,9 @@
 import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity } from "react-native";
 import { Link, useRouter } from "expo-router";
-import { useSignIn } from "@clerk/clerk-expo";
-import { isClerkAPIResponseError } from "@clerk/clerk-expo";
+import { supabase } from "@/lib/supabase";
 
 export default function LoginScreen() {
-  const { isLoaded, signIn, setActive } = useSignIn();
   const router = useRouter();
 
   const [email, setEmail] = useState("");
@@ -14,23 +12,21 @@ export default function LoginScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSignIn() {
-    if (!isLoaded || submitting) return;
+    if (submitting) return;
     setError(null);
     setSubmitting(true);
     try {
-      const result = await signIn.create({ identifier: email, password });
-      if (result.status === "complete") {
-        await setActive({ session: result.createdSessionId });
-        router.replace("/(tabs)");
+      const { error: err } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (err) {
+        setError(err.message);
       } else {
-        setError("Couldn't complete sign in. Please try again.");
+        router.replace("/(tabs)");
       }
-    } catch (err) {
-      setError(
-        isClerkAPIResponseError(err)
-          ? (err.errors[0]?.longMessage ?? err.errors[0]?.message ?? "Sign in failed")
-          : "Something went wrong. Please try again.",
-      );
+    } catch {
+      setError("Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -69,8 +65,8 @@ export default function LoginScreen() {
 
       <TouchableOpacity
         className="bg-primary-600 rounded-xl py-4 items-center mb-4"
-        style={{ opacity: !isLoaded || submitting ? 0.6 : 1 }}
-        disabled={!isLoaded || submitting}
+        style={{ opacity: submitting ? 0.6 : 1 }}
+        disabled={submitting}
         onPress={handleSignIn}
       >
         <Text className="text-white font-semibold text-base">

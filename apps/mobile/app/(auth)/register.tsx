@@ -1,71 +1,79 @@
 import { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView } from "react-native";
 import { Link, useRouter } from "expo-router";
-import { useSignUp, isClerkAPIResponseError } from "@clerk/clerk-expo";
+import { supabase } from "@/lib/supabase";
 
 export default function RegisterScreen() {
-  const { isLoaded, signUp, setActive } = useSignUp();
   const router = useRouter();
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [emergencyName, setEmergencyName] = useState("");
+  const [emergencyPhone, setEmergencyPhone] = useState("");
+
   const [code, setCode] = useState("");
   const [pendingVerification, setPendingVerification] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  function describeError(err: unknown): string {
-    return isClerkAPIResponseError(err)
-      ? (err.errors[0]?.longMessage ?? err.errors[0]?.message ?? "Something went wrong")
-      : "Something went wrong. Please try again.";
-  }
-
   async function handleSignUp() {
-    if (!isLoaded || submitting) return;
+    if (submitting) return;
     setError(null);
     setSubmitting(true);
     try {
-      await signUp.create({
-        emailAddress: email,
+      const { error: err } = await supabase.auth.signUp({
+        email,
         password,
-        unsafeMetadata: { fullName },
+        options: {
+          data: {
+            fullName,
+            emergencyContact: emergencyName
+              ? { name: emergencyName, phone: emergencyPhone }
+              : null,
+          },
+        },
       });
-      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-      setPendingVerification(true);
-    } catch (err) {
-      setError(describeError(err));
+      if (err) {
+        setError(err.message);
+      } else {
+        setPendingVerification(true);
+      }
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleVerify() {
+    if (submitting) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      const { error: err } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: "signup",
+      });
+      if (err) {
+        setError(err.message);
+      } else {
+        router.replace("/(tabs)");
+      }
+    } catch {
+      setError("Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
     }
   }
 
   async function handleResend() {
-    if (!isLoaded || submitting) return;
     setError(null);
     try {
-      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-    } catch (err) {
-      setError(describeError(err));
-    }
-  }
-
-  async function handleVerify() {
-    if (!isLoaded || submitting) return;
-    setError(null);
-    setSubmitting(true);
-    try {
-      const result = await signUp.attemptEmailAddressVerification({ code });
-      if (result.status === "complete") {
-        await setActive({ session: result.createdSessionId });
-        router.replace("/(tabs)");
-      } else {
-        setError("Couldn't verify that code. Please try again.");
-      }
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setSubmitting(false);
+      await supabase.auth.resend({ type: "signup", email });
+    } catch {
+      setError("Failed to resend. Please try again.");
     }
   }
 
@@ -90,8 +98,8 @@ export default function RegisterScreen() {
 
         <TouchableOpacity
           className="bg-primary-600 rounded-xl py-4 items-center mb-4"
-          style={{ opacity: !isLoaded || submitting ? 0.6 : 1 }}
-          disabled={!isLoaded || submitting}
+          style={{ opacity: submitting ? 0.6 : 1 }}
+          disabled={submitting}
           onPress={handleVerify}
         >
           <Text className="text-white font-semibold text-base">
@@ -118,7 +126,11 @@ export default function RegisterScreen() {
   }
 
   return (
-    <View className="flex-1 justify-center px-6 bg-white">
+    <ScrollView
+      className="flex-1 bg-white"
+      contentContainerStyle={{ justifyContent: "center", paddingHorizontal: 24, paddingVertical: 48 }}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text className="text-3xl font-bold text-primary-900 mb-2">
         Create Account
       </Text>
@@ -146,12 +158,36 @@ export default function RegisterScreen() {
         onChangeText={setPassword}
       />
 
+      {/* Emergency contact section */}
+      <View className="border border-amber-200 bg-amber-50 rounded-xl p-4 mb-6">
+        <Text className="text-sm font-semibold text-amber-800 mb-1">
+          Emergency Contact
+        </Text>
+        <Text className="text-xs text-amber-700 mb-3">
+          Required for the Dead Man&apos;s Switch safety feature. This person will be
+          alerted if you don&apos;t respond to a check-in.
+        </Text>
+        <TextInput
+          className="border border-amber-200 bg-white rounded-xl px-4 py-3 mb-3"
+          placeholder="Contact name"
+          value={emergencyName}
+          onChangeText={setEmergencyName}
+        />
+        <TextInput
+          className="border border-amber-200 bg-white rounded-xl px-4 py-3"
+          placeholder="Phone number"
+          keyboardType="phone-pad"
+          value={emergencyPhone}
+          onChangeText={setEmergencyPhone}
+        />
+      </View>
+
       {error && <Text className="text-red-600 mb-4">{error}</Text>}
 
       <TouchableOpacity
         className="bg-primary-600 rounded-xl py-4 items-center mb-4"
-        style={{ opacity: !isLoaded || submitting ? 0.6 : 1 }}
-        disabled={!isLoaded || submitting}
+        style={{ opacity: submitting ? 0.6 : 1 }}
+        disabled={submitting}
         onPress={handleSignUp}
       >
         <Text className="text-white font-semibold text-base">
@@ -164,6 +200,6 @@ export default function RegisterScreen() {
           <Text className="text-primary-600">Already have an account? Sign in</Text>
         </TouchableOpacity>
       </Link>
-    </View>
+    </ScrollView>
   );
 }

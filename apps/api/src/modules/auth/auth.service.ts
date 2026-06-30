@@ -1,40 +1,40 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { createClerkClient, type ClerkClient } from "@clerk/backend";
+import { createClient } from "@supabase/supabase-js";
 import { PrismaService } from "@/prisma/prisma.service";
 
 @Injectable()
 export class AuthService {
-  private readonly clerk: ClerkClient;
-
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
-  ) {
-    this.clerk = createClerkClient({
-      secretKey: this.config.get<string>("clerk.secretKey"),
+  ) {}
+
+  // Loads the local Profile for a Supabase user, creating it (or refreshing
+  // cached fields) from Supabase metadata on each call.
+  async syncProfile(supabaseId: string) {
+    const supabaseUrl = this.config.get<string>("supabase.url")!;
+    const serviceRoleKey = this.config.get<string>("supabase.serviceRoleKey")!;
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
     });
-  }
 
-  // Loads the local Profile for a Clerk user, creating it (or refreshing the
-  // cached email/name) from Clerk on each call. This is a lazy sync so no
-  // webhook is required to get a Profile row — it appears on first /auth/me.
-  async syncProfile(clerkId: string) {
-    const user = await this.clerk.users.getUser(clerkId);
+    const { data, error } = await supabase.auth.admin.getUserById(supabaseId);
+    if (error || !data.user) {
+      throw new Error(`Supabase user not found: ${supabaseId}`);
+    }
 
-    const email =
-      user.primaryEmailAddress?.emailAddress ??
-      user.emailAddresses[0]?.emailAddress ??
-      "";
-
-    const metaName = (user.unsafeMetadata?.fullName as string | undefined) ?? "";
-    const joinedName = [user.firstName, user.lastName].filter(Boolean).join(" ");
-    const fullName = metaName || joinedName || null;
+    const user = data.user;
+    const email = user.email ?? "";
+    const meta = user.user_metadata ?? {};
+    const fullName = (meta.fullName as string | undefined) ?? null;
+    const avatarUrl = (meta.avatarUrl as string | undefined) ?? null;
 
     return this.prisma.profile.upsert({
-      where: { clerkId },
-      create: { clerkId, email, fullName, avatarUrl: user.imageUrl },
-      update: { email, fullName, avatarUrl: user.imageUrl },
+      where: { supabaseId },
+      create: { supabaseId, email, fullName, avatarUrl },
+      update: { email, fullName, avatarUrl },
     });
   }
 }
