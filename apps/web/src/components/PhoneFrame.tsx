@@ -284,12 +284,8 @@ export function PhoneFrame({
     if (!src) return;
     let stored: string | null = null;
     try { stored = sessionStorage.getItem(FRAME_PATH_KEY); } catch { /* ignore */ }
-<<<<<<< HEAD
-    setResolvedSrc(stored && isKnownRoute(stored) ? stored : src);
-=======
     setIframeReady(false);
-    setResolvedSrc(stored || src);
->>>>>>> e4b9516 (a)
+    setResolvedSrc(stored && isKnownRoute(stored) ? stored : src);
   }, [src]);
 
   // The app navigates client-side (no iframe load event per route), so poll the
