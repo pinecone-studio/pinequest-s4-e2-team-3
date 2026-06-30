@@ -1,9 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import type { BrowsePlace } from "@/lib/places";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
+// Reads use the anon client (places is a public, RLS-readable catalog). Writes
+// must use the service-role client so RLS can block direct anon-key inserts.
 function db() {
   return createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
 }
@@ -162,13 +165,15 @@ export async function upsertPlace(place: {
     updatedAt: now,
     ...(place.id ? {} : { createdAt: now }),
   };
-  const { data, error } = await db().from("places").upsert(row).select("id").single();
+  if (!supabaseAdmin) return { id: undefined, error: { message: "service role not configured" } };
+  const { data, error } = await supabaseAdmin.from("places").upsert(row).select("id").single();
   return { id: data?.id as string | undefined, error };
 }
 
 // Admin: delete a place
 export async function deletePlace(id: string) {
-  const { error } = await db().from("places").delete().eq("id", id);
+  if (!supabaseAdmin) return { error: { message: "service role not configured" } };
+  const { error } = await supabaseAdmin.from("places").delete().eq("id", id);
   return { error };
 }
 
