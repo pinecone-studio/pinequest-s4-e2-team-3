@@ -30,7 +30,9 @@ export async function POST(req: Request) {
   }
 
   // Keep listening for the operator's next reply.
-  const origin = `${req.headers.get("x-forwarded-proto") ?? "https"}://${req.headers.get("host")}`;
+  const origin =
+    process.env.PUBLIC_BASE_URL ||
+    `${req.headers.get("x-forwarded-proto") ?? "https"}://${req.headers.get("host")}`;
   const twiml = new twilio.twiml.VoiceResponse();
   twiml.gather({
     input: ["speech"],

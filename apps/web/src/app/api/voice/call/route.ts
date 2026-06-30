@@ -43,12 +43,19 @@ export async function POST(req: Request) {
     twiml.say({ voice: "Polly.Joanna" }, spoken);
   }
 
-  // Keep the line open so the traveller can keep sending translated phrases
-  // (see /api/voice/say). NOTE: operator-reply transcription via <Gather mn-MN>
-  // proved unreliable (Twilio Mongolian support) and dropped the call, so we hold
-  // with <Pause> for a rock-solid EN→MN direction instead.
-  void incidentId;
-  twiml.pause({ length: 3600 });
+  // Listen to the operator's reply (transcribe → translate → show via
+  // /api/voice/heard), which also keeps the line open for follow-ups.
+  if (origin) {
+    twiml.gather({
+      input: ["speech"],
+      language: "mn-MN",
+      speechTimeout: "auto",
+      action: `${origin}/api/voice/heard?id=${incidentId ?? ""}`,
+      method: "POST",
+    });
+  } else {
+    twiml.pause({ length: 3600 });
+  }
 
   try {
     const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
