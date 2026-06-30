@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   CloseIcon,
   MapPinIcon,
+  MicIcon,
   PhoneIcon,
   PlusIcon,
   RunIcon,
@@ -21,6 +22,7 @@ import {
   type EmergencyLocation,
 } from "@/hooks/useEmergencyLocation";
 import { useTwilioCall } from "@/hooks/useTwilioCall";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import type { SosOption } from "@/types";
 
 // Map each emergency option to its icon. Kept here so the data stays plain.
@@ -50,7 +52,44 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
   const [secondsLeft, setSecondsLeft] = useState(COUNTDOWN_SECONDS);
   const [incidentId, setIncidentId] = useState<string | null>(null);
   const [checkInRequested, setCheckInRequested] = useState(false);
+  const [customText, setCustomText] = useState("");
+  const [translating, setTranslating] = useState(false);
   const location = useEmergencyLocation();
+  const voice = useSpeechRecognition(setCustomText);
+
+  // Free-form SOS: the traveller describes their emergency in their own words
+  // (typed or spoken), we translate it to Mongolian, then the same call flow reads
+  // the translation aloud to the operator.
+  async function startCustomCall() {
+    const text = customText.trim();
+    if (!text || translating) return;
+    setTranslating(true);
+    let messageMn = text;
+    try {
+      const res = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, from: "en", to: "mn" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.translation) messageMn = data.translation;
+      }
+    } catch {
+      /* fall back to the original text */
+    }
+    setTranslating(false);
+    startCountdown({
+      id: "sos-custom",
+      title: "Emergency",
+      subtitle: "Your description",
+      tone: "amber",
+      message: text,
+      messageMn,
+      service: "Emergency",
+      serviceNumber: "103",
+    });
+  }
 
   useEffect(() => {
     if (!incidentId) return;
@@ -100,7 +139,18 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
     <div className="relative mx-auto w-full max-w-md rounded-t-[28px] bg-white px-5 pb-8 pt-3">
       <div className="mx-auto h-1.5 w-10 rounded-full bg-sand-300" />
       <Header onClose={onClose} location={location} />
-      {step === "choose" ? <ChooseGrid onChoose={startCountdown} /> : null}
+      {step === "choose" ? (
+        <>
+          <ChooseGrid onChoose={startCountdown} />
+          <CustomEmergency
+            text={customText}
+            onText={setCustomText}
+            onSubmit={startCustomCall}
+            translating={translating}
+            voice={voice}
+          />
+        </>
+      ) : null}
       {step === "countdown" && selected ? (
         <CountdownView option={selected} secondsLeft={secondsLeft} onCancel={cancel} />
       ) : null}
@@ -141,7 +191,7 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
         />
       ) : null}
       {step === "calling" && selected ? (
-        <CallView option={selected} location={location} onEnd={cancel} />
+        <CallView option={selected} location={location} incidentId={incidentId} onEnd={cancel} />
       ) : null}
 
       {/* Check-in overlay — admin asked "Are you okay?" */}
@@ -264,6 +314,61 @@ function ChooseGrid({ onChoose }: { onChoose: (option: SosOption) => void }) {
   );
 }
 
+// Free-form emergency: the traveller types or speaks what's wrong in their own
+// language; we translate it to Mongolian and call the operator with it.
+function CustomEmergency({
+  text,
+  onText,
+  onSubmit,
+  translating,
+  voice,
+}: {
+  text: string;
+  onText: (v: string) => void;
+  onSubmit: () => void;
+  translating: boolean;
+  voice: { isListening: boolean; isSupported: boolean; start: () => void; stop: () => void };
+}) {
+  return (
+    <div className="mt-5 rounded-3xl border border-ink/5 bg-sand-50 p-4">
+      <p className="text-sm font-bold text-ink">Or describe it in your own words</p>
+      <p className="mt-0.5 text-xs text-ink-muted">
+        Type or speak what&apos;s wrong — we translate it to Mongolian and read it to the operator.
+      </p>
+      <div className="mt-3 flex items-end gap-2">
+        <textarea
+          value={text}
+          onChange={(e) => onText(e.target.value)}
+          rows={2}
+          placeholder={voice.isListening ? "Listening…" : "e.g. My friend is unconscious and not breathing"}
+          className="flex-1 resize-none rounded-2xl border border-ink/10 bg-white px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-500"
+        />
+        {voice.isSupported ? (
+          <button
+            type="button"
+            onClick={() => (voice.isListening ? voice.stop() : voice.start())}
+            aria-label={voice.isListening ? "Stop voice" : "Speak"}
+            className={
+              voice.isListening
+                ? "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-safety-critical text-white animate-pulse"
+                : "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-ink-muted shadow-sm"
+            }
+          >
+            <MicIcon size={20} />
+          </button>
+        ) : null}
+      </div>
+      <button
+        onClick={onSubmit}
+        disabled={!text.trim() || translating}
+        className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#d96a5f] py-3 text-sm font-bold text-white disabled:opacity-50"
+      >
+        {translating ? "Translating…" : "Translate & get help"}
+      </button>
+    </div>
+  );
+}
+
 function CountdownView({
   option,
   secondsLeft,
@@ -378,15 +483,65 @@ function ReadyView({
 function CallView({
   option,
   location,
+  incidentId,
   onEnd,
 }: {
   option: SosOption;
   location: EmergencyLocation;
+  incidentId: string | null;
   onEnd: () => void;
 }) {
   const [seconds, setSeconds] = useState(0);
-  const { status, call, hangup } = useTwilioCall();
+  const { status, call, hangup, say } = useTwilioCall();
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [followUp, setFollowUp] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState<{ en: string; mn: string }[]>([]);
+  const [operatorMsgs, setOperatorMsgs] = useState<{ mn: string; en: string }[]>([]);
+  const followUpVoice = useSpeechRecognition(setFollowUp);
+
+  // Poll the operator's transcribed + translated replies while on the call.
+  useEffect(() => {
+    if (!incidentId) return;
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/sos/status?id=${incidentId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.messages)) setOperatorMsgs(data.messages);
+        }
+      } catch { /* ignore */ }
+    };
+    load();
+    const t = setInterval(load, 4000);
+    return () => clearInterval(t);
+  }, [incidentId]);
+
+  // Mid-call: translate a new English phrase to Mongolian and speak it to the
+  // operator on the live call — so the traveller keeps the conversation going.
+  async function sendFollowUp() {
+    const text = followUp.trim();
+    if (!text || sending) return;
+    setSending(true);
+    let mn = text;
+    try {
+      const res = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, from: "en", to: "mn" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.translation) mn = data.translation;
+      }
+    } catch {
+      /* fall back to original text */
+    }
+    await say(mn);
+    setSent((s) => [...s, { en: text, mn }]);
+    setFollowUp("");
+    setSending(false);
+  }
 
   // Place the call from the web via Twilio; on answer it speaks the SOS message to
   // the operator IN MONGOLIAN (Chimege), bridging the language barrier so the
@@ -399,7 +554,7 @@ function CallView({
     // dropped (Chimege can't speak them); the server sanitizes anything left over.
     const mnPlace = location.place ? ` Миний байршил ${location.place}.` : "";
     const mn = `${option.messageMn}${mnPlace}`;
-    call(en, mn);
+    call(en, mn, incidentId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -420,7 +575,6 @@ function CallView({
 
   const place = location.place ?? "your current location";
   const coords = location.coords;
-  const englishLocation = `My location is ${place}.${coords ? ` Coordinates ${coords}.` : ""}`;
   const mongolianLocation = `Миний байршил: ${place}.${coords ? ` Координат: ${coords}.` : ""}`;
 
   // Read the Mongolian message aloud with Chimege's Mongolian voice; fall back to
@@ -477,25 +631,26 @@ function CallView({
         ) : null}
       </div>
 
-      {/* The message the operator hears, in English and Mongolian */}
-      <div className="mt-4 rounded-3xl border border-ink/5 bg-sand-50 p-5">
+      {/* Operator's replies — their Mongolian speech transcribed + translated to English */}
+      <div className="mt-4 rounded-3xl border border-ink/5 bg-sand-50 p-4">
         <div className="flex items-center justify-between">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-ink-muted">
-            Your message
-          </p>
+          <p className="text-sm font-bold text-ink">Operator · {option.serviceNumber}</p>
           <span className="flex items-center gap-1.5 rounded-full bg-primary-50 px-3 py-1 text-xs font-bold text-primary-600">
-            EN <span aria-hidden>→</span> MN
+            MN <span aria-hidden>→</span> EN
           </span>
         </div>
-
-        <p className="mt-3 text-base leading-relaxed text-ink-muted">
-          {option.message} {englishLocation}
-        </p>
-
-        <div className="my-4 h-px bg-ink/10" />
-
-        <p className="text-lg font-bold leading-relaxed text-ink">{option.messageMn}</p>
-        <p className="mt-2 text-base leading-relaxed text-ink-muted">{mongolianLocation}</p>
+        {operatorMsgs.length === 0 ? (
+          <p className="mt-2 text-sm text-ink-muted">Listening for the operator&apos;s reply…</p>
+        ) : (
+          <div className="mt-2 space-y-1.5">
+            {operatorMsgs.map((m, i) => (
+              <div key={i} className="rounded-xl bg-white px-3 py-2">
+                <p className="text-sm font-semibold text-ink">{m.en}</p>
+                <p className="text-xs text-ink-muted">{m.mn}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <button
@@ -505,6 +660,51 @@ function CallView({
         <SpeakerIcon size={20} />
         Read aloud in Mongolian
       </button>
+
+      {/* Say more — translate a new phrase and speak it to the operator live */}
+      <div className="mt-4 rounded-3xl border border-ink/5 bg-sand-50 p-4">
+        <p className="text-sm font-bold text-ink">Say more to the operator</p>
+        {sent.length > 0 && (
+          <div className="mt-2 space-y-1.5">
+            {sent.map((s, i) => (
+              <div key={i} className="rounded-xl bg-white px-3 py-2">
+                <p className="text-xs text-ink-muted">{s.en}</p>
+                <p className="text-sm font-semibold text-ink">{s.mn}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="mt-2 flex items-end gap-2">
+          <textarea
+            value={followUp}
+            onChange={(e) => setFollowUp(e.target.value)}
+            rows={1}
+            placeholder={followUpVoice.isListening ? "Listening…" : "Type or speak in English…"}
+            className="flex-1 resize-none rounded-2xl border border-ink/10 bg-white px-3 py-2.5 text-sm text-ink outline-none focus:border-primary-500"
+          />
+          {followUpVoice.isSupported ? (
+            <button
+              type="button"
+              onClick={() => (followUpVoice.isListening ? followUpVoice.stop() : followUpVoice.start())}
+              aria-label={followUpVoice.isListening ? "Stop voice" : "Speak"}
+              className={
+                followUpVoice.isListening
+                  ? "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-safety-critical text-white animate-pulse"
+                  : "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-ink-muted shadow-sm"
+              }
+            >
+              <MicIcon size={20} />
+            </button>
+          ) : null}
+        </div>
+        <button
+          onClick={sendFollowUp}
+          disabled={!followUp.trim() || sending}
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary-600 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+        >
+          {sending ? "Translating…" : "Translate & say it"}
+        </button>
+      </div>
 
       <button
         onClick={endCall}

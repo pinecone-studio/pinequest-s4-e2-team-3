@@ -14,14 +14,16 @@ export type CallStatus =
 export function useTwilioCall() {
   const [status, setStatus] = useState<CallStatus>("connecting");
   const sidRef = useRef<string | null>(null);
+  const incidentRef = useRef<string | null>(null);
 
-  async function call(message: string, messageMn: string) {
+  async function call(message: string, messageMn: string, incidentId?: string | null) {
+    incidentRef.current = incidentId ?? null;
     try {
       setStatus("connecting");
       const res = await fetch("/api/voice/call", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, messageMn }),
+        body: JSON.stringify({ message, messageMn, incidentId }),
       });
       if (!res.ok) {
         setStatus("unavailable");
@@ -32,6 +34,21 @@ export function useTwilioCall() {
       setStatus("connected");
     } catch {
       setStatus("unavailable");
+    }
+  }
+
+  // Mid-call: speak a new Mongolian phrase to the operator on the live call.
+  async function say(messageMn: string): Promise<boolean> {
+    if (!sidRef.current) return false;
+    try {
+      const res = await fetch("/api/voice/say", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sid: sidRef.current, messageMn, incidentId: incidentRef.current }),
+      });
+      return res.ok;
+    } catch {
+      return false;
     }
   }
 
@@ -46,5 +63,5 @@ export function useTwilioCall() {
     setStatus("ended");
   }
 
-  return { status, call, hangup };
+  return { status, call, hangup, say };
 }
