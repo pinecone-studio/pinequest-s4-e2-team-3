@@ -167,7 +167,9 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
         batteryLevel = Math.round(bat.level * 100);
       } catch { /* unsupported */ }
     }
-    logSosIncident({
+    // Log the incident and wait for its id BEFORE starting the call, so the call
+    // can pass it to Twilio and the operator's replies attach to this incident.
+    const id = await logSosIncident({
       type: selected.id,
       title: selected.title,
       service: selected.service,
@@ -179,12 +181,11 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
       language,
       battery_level: batteryLevel,
       is_online: true,
-    }).then((id) => {
-      if (id) {
-        setIncidentId(id);
-        localStorage.setItem("sos_incident_id", id);
-      }
-    }).catch(() => {});
+    }).catch(() => null);
+    if (id) {
+      setIncidentId(id);
+      localStorage.setItem("sos_incident_id", id);
+    }
     setStep("calling");
   }
 
@@ -783,6 +784,7 @@ function CallView({
 
 const CALL_STATUS = {
   connecting: { title: "Calling", subtitle: "Dialing the operator…", dot: "bg-safety-armed animate-pulse" },
+  ringing: { title: "Ringing", subtitle: "Waiting for the operator to answer…", dot: "bg-safety-armed animate-pulse" },
   connected: { title: "On call", subtitle: "Reading your message to the operator in Mongolian", dot: "bg-safety-safe" },
   ended: { title: "Call ended", subtitle: "You can call again if you need to", dot: "bg-ink-muted" },
   unavailable: { title: "Couldn't place call", subtitle: "Tap End and try again", dot: "bg-safety-critical" },

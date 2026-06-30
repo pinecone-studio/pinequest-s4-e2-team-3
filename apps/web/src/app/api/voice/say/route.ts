@@ -25,7 +25,18 @@ export async function POST(req: Request) {
   void incidentId;
   const twiml = new twilio.twiml.VoiceResponse();
   twiml.play(`${origin}/api/voice/sos-audio?text=${encodeURIComponent(messageMn.trim())}`);
-  twiml.pause({ length: 3600 }); // keep the line open for the next phrase
+  // Resume listening to the operator (keeps the line open too).
+  if (origin) {
+    twiml.gather({
+      input: ["speech"],
+      language: "mn-MN",
+      speechTimeout: "auto",
+      action: `${origin}/api/voice/heard?id=${incidentId ?? ""}`,
+      method: "POST",
+    });
+  } else {
+    twiml.pause({ length: 3600 });
+  }
 
   try {
     const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
