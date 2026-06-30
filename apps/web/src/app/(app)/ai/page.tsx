@@ -8,6 +8,7 @@ import { ChatIcon, MicIcon, SendIcon, StarIcon, WalkIcon } from "@/components/ic
 import { GuideAvatar, type GuideAvatarState } from "@/components/GuideAvatar";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { aiQuickReplies, guide } from "@/lib/mockData";
+import { FeatureGate } from "@/components/FeatureGate";
 
 // A place Michelle recommends, shown as a card under her reply.
 interface PlaceCard {
@@ -353,16 +354,18 @@ export default function AiPage() {
         <div ref={scrollAnchor} />
       </div>
 
-      <QuickReplies onPick={sendMessage} disabled={isLoading} />
-      <MessageInput
-        value={input}
-        onChange={setInput}
-        onSubmit={handleSubmit}
-        disabled={isLoading}
-        isListening={voice.isListening}
-        voiceSupported={voice.isSupported}
-        onToggleVoice={toggleVoice}
-      />
+      <FeatureGate feature="aiChat">
+        <QuickReplies onPick={sendMessage} disabled={isLoading} />
+        <MessageInput
+          value={input}
+          onChange={setInput}
+          onSubmit={handleSubmit}
+          disabled={isLoading}
+          isListening={voice.isListening}
+          voiceSupported={voice.isSupported}
+          onToggleVoice={toggleVoice}
+        />
+      </FeatureGate>
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Tag } from "@/components/Tag";
 import { DirectionsSheet } from "@/components/DirectionsSheet";
+import { useOnlineStatus } from "@/context/OnlineStatus";
 import type { ExploreSpot, Tone } from "@/types";
 
 const DEFAULT_LAT = 47.9077;
@@ -47,6 +48,7 @@ function toSpot(p: NearbyPlace): ExploreSpot {
 export function NearbySection() {
   const [spots, setSpots] = useState<NearbyPlace[]>([]);
   const [loading, setLoading] = useState(true);
+  const { online } = useOnlineStatus();
 
   useEffect(() => {
     function fetchNearby(lat: number, lng: number) {
@@ -85,6 +87,17 @@ export function NearbySection() {
     );
   }, []);
 
+  if (!online) {
+    return (
+      <div className="flex h-44 items-center justify-center rounded-3xl border border-ink/5 bg-white/60 px-6 text-center">
+        <div>
+          <p className="text-sm font-semibold text-ink-muted">Nearby places need a connection</p>
+          <p className="mt-1 text-xs text-ink-muted/60">Reconnect to see what&apos;s around you</p>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="flex gap-3 overflow-x-auto pb-1">
@@ -113,7 +126,7 @@ function NearbyCard({ spot }: { spot: NearbyPlace }) {
         onClick={() => setOpen(true)}
         className="w-44 shrink-0 overflow-hidden rounded-3xl bg-white shadow-ink-sm text-left transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:shadow-ink-md active:translate-y-0 active:shadow-ink-sm"
       >
-        <div className="relative h-28">
+        <div className="relative h-28 bg-sand-200">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={spot.imageUrl} alt={spot.title} className="h-full w-full object-cover" />
           <div className="absolute left-2 top-2">

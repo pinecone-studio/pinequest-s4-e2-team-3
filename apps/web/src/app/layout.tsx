@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Instrument_Serif, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { CheckInBanner } from "@/components/CheckInBanner";
+import { OnlineStatusProvider } from "@/context/OnlineStatus";
 
 // The Polaris design pairs two typefaces:
 // Plus Jakarta Sans for body/UI, Instrument Serif for display headings.
@@ -36,8 +37,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${jakarta.variable} ${instrument.variable}`}>
       <body className="bg-sand text-ink antialiased">
-        {children}
-        <CheckInBanner />
+        <OnlineStatusProvider>
+          {children}
+          <CheckInBanner />
+        </OnlineStatusProvider>
       </body>
     </html>
   );

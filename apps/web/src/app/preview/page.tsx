@@ -17,6 +17,7 @@ export default function PreviewPage() {
         scale={0.92}
         statusBarTheme="light"
         screenBg="#F3EEE6"
+        demoToggle
       />
     </main>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MapPinLoader } from "./MapPinLoader";
 
 // ─── Device constants (iPhone 15 Pro logical resolution) ─────────────────────
 const S_W = 393;            // screen width  (px)
@@ -235,36 +236,14 @@ function isKnownRoute(path: string): boolean {
 }
 
 export interface PhoneFrameProps {
-  /**
-   * Load a URL in an iframe — gives the content its own 393×793 px viewport so
-   * Tailwind breakpoints, 100dvh, and position:fixed all behave like a real
-   * mobile device (identical to Chrome DevTools "iPhone 15 Pro" mode).
-   */
   src?: string;
-  /**
-   * Alternative: render children directly.  Use for simple/static content;
-   * Tailwind responsive breakpoints still respond to the browser viewport here.
-   */
   children?: React.ReactNode;
-  /**
-   * Optional CSS scale applied as a unit to the whole frame (bezel + screen).
-   * The wrapper box is sized to the scaled footprint so it fits in flex/grid
-   * contexts without collapsing neighbours.
-   */
   scale?: number;
-  /**
-   * Status-bar and home-indicator colour mode.
-   * "dark" = white icons (default, since the status bar sits on the black screen chrome).
-   * "light" = dark icons (only use if the status bar overlays a white/light surface).
-   */
   statusBarTheme?: "dark" | "light";
-  /**
-   * Background of the screen behind the app content. The status bar overlays the
-   * top STATUS_H px, so set this to the app's own background colour for a
-   * seamless edge-to-edge look (no black "forehead" band above the content).
-   */
   screenBg?: string;
   className?: string;
+  /** Renders a floating offline/online demo toggle button on the right side of the frame. Only works in iframe (src) mode. */
+  demoToggle?: boolean;
 }
 
 export function PhoneFrame({
@@ -274,10 +253,22 @@ export function PhoneFrame({
   statusBarTheme = "dark",
   screenBg = "#0a0a0a",
   className = "",
+  demoToggle = false,
 }: PhoneFrameProps) {
   const deviceRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const dark = statusBarTheme === "dark";
+  const [demoOffline, setDemoOffline] = useState(false);
+  const [iframeReady, setIframeReady] = useState(false);
+
+  function handleDemoToggle() {
+    const next = !demoOffline;
+    setDemoOffline(next);
+    frameRef.current?.contentWindow?.postMessage(
+      { type: "PINEQUEST_DEMO_OFFLINE", forced: next },
+      "*",
+    );
+  }
 
   // Remember the route the app is on INSIDE the frame, so a full-page refresh
   // restores the current screen instead of resetting to the iframe's start URL
@@ -293,7 +284,12 @@ export function PhoneFrame({
     if (!src) return;
     let stored: string | null = null;
     try { stored = sessionStorage.getItem(FRAME_PATH_KEY); } catch { /* ignore */ }
+<<<<<<< HEAD
     setResolvedSrc(stored && isKnownRoute(stored) ? stored : src);
+=======
+    setIframeReady(false);
+    setResolvedSrc(stored || src);
+>>>>>>> e4b9516 (a)
   }, [src]);
 
   // The app navigates client-side (no iframe load event per route), so poll the
@@ -356,10 +352,88 @@ export function PhoneFrame({
   return (
     <div
       className={className}
-      style={wrapperStyle}
+      style={{ ...wrapperStyle, overflow: "visible" }}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
+      {demoToggle && (
+        <button
+          onClick={handleDemoToggle}
+          aria-label={demoOffline ? "Demo offline — click to restore online" : "Demo online — click to force offline"}
+          style={{
+            position: "absolute",
+            right: -72,
+            top: 210,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 5,
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: 0,
+            zIndex: 100,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 8,
+              fontWeight: 700,
+              letterSpacing: "0.1em",
+              color: "rgba(255,255,255,0.28)",
+              textTransform: "uppercase",
+              userSelect: "none",
+            }}
+          >
+            DEMO
+          </span>
+          <span
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 6,
+              background: demoOffline ? "rgba(251,191,36,0.18)" : "rgba(255,255,255,0.07)",
+              border: `1px solid ${demoOffline ? "rgba(251,191,36,0.5)" : "rgba(255,255,255,0.12)"}`,
+              borderRadius: 14,
+              padding: "10px 6px",
+              width: 44,
+              transition: "background 0.2s, border-color 0.2s",
+            }}
+          >
+            {demoOffline ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FCD34D" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="1" y1="1" x2="23" y2="23" />
+                <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55" />
+                <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39" />
+                <path d="M10.71 5.05A16 16 0 0 1 22.56 9" />
+                <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88" />
+                <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+                <circle cx="12" cy="20" r="1" fill="#FCD34D" />
+              </svg>
+            ) : (
+              <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
+                <circle cx="8" cy="11" r="1.5" fill="rgba(255,255,255,0.6)" />
+                <path d="M4.6 7.6a4.8 4.8 0 0 1 6.8 0" stroke="rgba(255,255,255,0.6)" strokeWidth="1.5" strokeLinecap="round" />
+                <path d="M1.8 4.9A9 9 0 0 1 14.2 4.9" stroke="rgba(255,255,255,0.6)" strokeWidth="1.5" strokeLinecap="round" opacity=".5" />
+              </svg>
+            )}
+            <span
+              style={{
+                fontSize: 8,
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                color: demoOffline ? "#FCD34D" : "rgba(255,255,255,0.45)",
+                textTransform: "uppercase",
+                userSelect: "none",
+                lineHeight: 1,
+              }}
+            >
+              {demoOffline ? "Offline" : "Online"}
+            </span>
+          </span>
+        </button>
+      )}
       <div style={{ ...innerStyle, perspective: "1200px" }}>
         {/* ── Device chrome ── */}
         <div
@@ -410,26 +484,54 @@ export function PhoneFrame({
               // Subtle pressed-in look — thin dark ring around the screen
               boxShadow:
                 "inset 0 0 0 1px rgba(0,0,0,0.55), inset 0 2px 6px rgba(0,0,0,0.45)",
+              // Forces a GPU composited layer. Without this, the iframe's
+              // position:fixed bottom nav bar (bg-white) triggers a repaint that
+              // skips the overflow:hidden + border-radius clip, making the bottom
+              // corners appear square on hover. The compositor always clips to the
+              // rounded rect when this element is on its own layer.
+              transform: "translateZ(0)",
             }}
           >
             {/* App content — iframe starts BELOW the status bar so the app
                 sees a clean 393 × 793 px viewport with no overlapping chrome */}
             {src ? (
-              <iframe
-                ref={frameRef}
-                src={resolvedSrc ?? undefined}
-                title="App preview"
-                allow="microphone; camera"
-                style={{
-                  position: "absolute",
-                  top: STATUS_H,
-                  left: 0,
-                  width: S_W,
-                  height: S_H - STATUS_H,
-                  border: "none",
-                  display: "block",
-                }}
-              />
+              <>
+                <iframe
+                  ref={frameRef}
+                  src={resolvedSrc ?? undefined}
+                  title="App preview"
+                  allow="microphone; camera"
+                  onLoad={() => setIframeReady(true)}
+                  style={{
+                    position: "absolute",
+                    top: STATUS_H,
+                    left: 0,
+                    width: S_W,
+                    height: S_H - STATUS_H,
+                    border: "none",
+                    display: "block",
+                    opacity: iframeReady ? 1 : 0,
+                    transition: "opacity 0.3s ease",
+                  }}
+                />
+                {!iframeReady && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: STATUS_H,
+                      left: 0,
+                      width: S_W,
+                      height: S_H - STATUS_H,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: screenBg,
+                    }}
+                  >
+                    <MapPinLoader variant="inline" />
+                  </div>
+                )}
+              </>
             ) : (
               <div
                 style={{

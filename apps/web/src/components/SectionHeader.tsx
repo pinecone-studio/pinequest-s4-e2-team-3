@@ -8,7 +8,7 @@ type SectionHeaderProps = {
 
 export function SectionHeader({ title, action, actionHref }: SectionHeaderProps) {
   return (
-    <div className="mb-3 flex items-center justify-between">
+    <div className="mb-1.5 flex items-center justify-between">
       <h2 className="text-lg font-bold text-ink">{title}</h2>
       {action ? (
         actionHref ? (

@@ -1,5 +1,7 @@
+import { View } from "react-native";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { OfflineStatusPill } from "@/components/OfflineStatusPill";
 
 type IconName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -15,49 +17,54 @@ function TabIcon({ name, focused }: { name: IconName; focused: boolean }) {
 
 export default function TabsLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: "#2563eb",
-        tabBarInactiveTintColor: "#9ca3af",
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Home",
-          tabBarIcon: ({ focused }) => (
-            <TabIcon name={focused ? "home" : "home-outline"} focused={focused} />
-          ),
+    <View style={{ flex: 1 }}>
+      <Tabs
+        initialRouteName="index"
+        screenOptions={{
+          headerShown: false,
+          tabBarActiveTintColor: "#2563eb",
+          tabBarInactiveTintColor: "#9ca3af",
         }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: "Explore",
-          tabBarIcon: ({ focused }) => (
-            <TabIcon name={focused ? "map" : "map-outline"} focused={focused} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="guide"
-        options={{
-          title: "AI Guide",
-          tabBarIcon: ({ focused }) => (
-            <TabIcon name={focused ? "mic" : "mic-outline"} focused={focused} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "Profile",
-          tabBarIcon: ({ focused }) => (
-            <TabIcon name={focused ? "person" : "person-outline"} focused={focused} />
-          ),
-        }}
-      />
-    </Tabs>
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: "Home",
+            tabBarIcon: ({ focused }) => (
+              <TabIcon name={focused ? "home" : "home-outline"} focused={focused} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="explore"
+          options={{
+            title: "Explore",
+            tabBarIcon: ({ focused }) => (
+              <TabIcon name={focused ? "map" : "map-outline"} focused={focused} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="guide"
+          options={{
+            title: "AI Guide",
+            tabBarIcon: ({ focused }) => (
+              <TabIcon name={focused ? "mic" : "mic-outline"} focused={focused} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: "Profile",
+            tabBarIcon: ({ focused }) => (
+              <TabIcon name={focused ? "person" : "person-outline"} focused={focused} />
+            ),
+          }}
+        />
+      </Tabs>
+      {/* Floating connectivity pill — sits above the tab bar */}
+      <OfflineStatusPill />
+    </View>
   );
 }

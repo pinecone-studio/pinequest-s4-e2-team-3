@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { Layers, Moon, Sun } from "lucide-react";
+import { ChevronDown, Layers, Moon, RotateCcw, Sun } from "lucide-react";
 import {
   BarsIcon,
   ChevronLeftIcon,
@@ -29,7 +29,7 @@ import { weatherEmoji, weatherLabel, type WeatherNow } from "@/lib/weather";
 import { useLiveStore } from "@/stores/liveStore";
 import { useLocationStore } from "@/stores/locationStore";
 import { useLocation } from "@/hooks/useLocation";
-import { useOnline } from "@/hooks/useOnline";
+import { useOnlineStatus } from "@/context/OnlineStatus";
 import type { Coords, DemoRoute, PlaceOption, RouteStop } from "@/types";
 
 // Loaded lazily + client-only because the Google Maps SDK touches `window`.
@@ -165,7 +165,7 @@ function LiveBackground({ theme }: { theme: Theme }) {
   const realCoords = useLocationStore((s) => s.coordinates);
   const position: Coords | null = resolvePosition(simulatedCoords, realCoords, activeRoute);
 
-  const online = useOnline();
+  const { online } = useOnlineStatus();
   const [mapFailed, setMapFailed] = useState(false);
 
   if (!activeRoute) return <MapBackdrop />;
@@ -334,8 +334,10 @@ function LiveExperience({
     forceOffline,
     returnTarget,
     busLegs,
+    currentStopIndex,
     setSimulated,
     advanceStop,
+    goToStop,
     reset,
     setSuggestions,
     setReturnTarget,
@@ -346,7 +348,7 @@ function LiveExperience({
 
   // Offline (real signal loss or the demo toggle): the chat/Places-backed features
   // (nearby suggestions, asking Michelle) can't reach the network, so we hide them.
-  const online = useOnline();
+  const { online } = useOnlineStatus();
   const offline = forceOffline || !online;
 
   const {
@@ -506,6 +508,13 @@ function LiveExperience({
       longitude: nextStop.longitude,
     });
   };
+  const restartRoute = () => {
+    stopSimulation();
+    const first = activeRoute?.stops[0];
+    if (!first) return;
+    goToStop(0);
+    setSimulated({ latitude: first.latitude, longitude: first.longitude });
+  };
 
   // --- Auto-walk: animate the position ALONG THE ROAD so a demo "walks" the
   // journey hands-free (the arrival logic narrates each stop as we pass it).
@@ -656,11 +665,54 @@ function LiveExperience({
     <>
       <TopBar theme={theme} onToggleTheme={onToggleTheme} />
 
-      <JourneyPill
-        currentName={currentStop?.name ?? ""}
-        nextName={nextStop?.name}
-        weather={weather}
-      />
+      {/* HUD row: location pill + stop counter + quick demo actions */}
+      <div className="pointer-events-auto mt-3 flex items-center gap-2">
+        <JourneyPill currentName={currentStop?.name ?? ""} weather={weather} />
+
+        {/* Stop number badge — shows current position in the route */}
+        {activeRoute && (
+          <span className="flex items-baseline gap-0.5 rounded-full bg-ink/[0.08] px-2.5 py-1.5 text-xs font-bold leading-none backdrop-blur-sm dark:bg-white/[0.12]">
+            <span className="text-ink dark:text-white">{currentStopIndex + 1}</span>
+            <span className="text-ink-muted/60 dark:text-white/30">/{activeRoute.stops.length}</span>
+          </span>
+        )}
+
+        {/* Quick action buttons — icon-only so the row fits on any screen width */}
+        {nextStop && (
+          <button
+            type="button"
+            onClick={walkToNext}
+            aria-label="Walk to next stop"
+            title="Next stop"
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-ink/[0.08] backdrop-blur-sm dark:bg-white/[0.12]"
+          >
+            <WalkIcon size={13} />
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() => { simActiveRef.current ? stopSimulation() : void startSimulation(); }}
+          aria-label={simulating ? "Stop auto-walk" : "Start auto-walk"}
+          title={simulating ? "Stop" : "Auto-walk"}
+          className={[
+            "flex h-7 w-7 items-center justify-center rounded-full backdrop-blur-sm",
+            simulating ? "bg-safety-safe text-white" : "bg-ink/[0.08] dark:bg-white/[0.12]",
+          ].join(" ")}
+        >
+          {simulating ? <PauseIcon size={13} /> : <PlayIcon size={13} />}
+        </button>
+
+        <button
+          type="button"
+          onClick={restartRoute}
+          aria-label="Restart route from the beginning"
+          title="Reset to start"
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-ink/[0.08] backdrop-blur-sm dark:bg-white/[0.12]"
+        >
+          <RotateCcw size={13} />
+        </button>
+      </div>
 
       {savingProgress && (
         <div className="pointer-events-none mt-2 flex items-center gap-2 self-start rounded-full bg-ink/5 px-3 py-1.5 text-xs font-semibold text-ink-muted dark:bg-white/10 dark:text-white/60">
@@ -682,19 +734,6 @@ function LiveExperience({
       {/* Scrollable bottom cluster — keeps the demo controls (Routes, Auto-walk)
           reachable when suggestions/tips push the stack past the screen. */}
       <div className="pointer-events-auto flex max-h-[58vh] shrink-0 flex-col overflow-y-auto">
-      <button
-        onClick={() => setShowExtras(!showExtras)}
-        className="mb-3 ml-auto flex items-center gap-1.5 rounded-full bg-ink/5 px-3 py-1.5 text-xs font-bold text-ink-muted backdrop-blur hover:bg-ink/10 dark:bg-white/10 dark:text-white/70 dark:hover:bg-white/15"
-      >
-        {showExtras ? "Hide details" : "Tips & controls"}
-        <ChevronRightIcon
-          size={14}
-          className={[
-            "transition-transform",
-            showExtras ? "-rotate-90" : "rotate-90",
-          ].join(" ")}
-        />
-      </button>
 
       {showExtras && currentStop && (
         <LocalTips
@@ -706,8 +745,7 @@ function LiveExperience({
         />
       )}
 
-      {/* The conversational hub. Priority: transport choice → decision card →
-          nearby picks → a quiet "What's next?" entry. */}
+      {/* The conversational hub. Priority: transport choice → decision card → nearby picks. */}
       {target ? (
         <TransportCard
           origin={effectiveCoords}
@@ -718,6 +756,7 @@ function LiveExperience({
             setTarget(null);
             setReturnTarget(null);
             setBusLegs(null);
+            setCardOpen(true);
           }}
         />
       ) : intentOpen ? (
@@ -750,18 +789,6 @@ function LiveExperience({
           }
           onClose={() => setCardOpen(false)}
         />
-      ) : suggestions.length === 0 && !busPlan ? (
-        <button
-          onClick={() => setCardOpen(true)}
-          className={[
-            "pointer-events-auto mt-3 flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-sm font-bold",
-            detour
-              ? "bg-primary-600 text-white"
-              : "bg-ink/5 text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15",
-          ].join(" ")}
-        >
-          {detour ? "↩ Back to my route" : "What's next? →"}
-        </button>
       ) : null}
 
       {busPlan && <BusPlanCard steps={busPlan} onClose={() => setBusPlan(null)} />}
@@ -795,6 +822,29 @@ function LiveExperience({
         onPause={pause}
         onMic={startListening}
         onAsk={ask}
+        footer={
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setShowExtras(!showExtras)}
+              className="text-[11px] font-semibold text-ink-muted/60 hover:text-ink-muted dark:text-white/30 dark:hover:text-white/50"
+            >
+              {showExtras ? "Less" : "···"}
+            </button>
+            {!target && !intentOpen && !cardOpen && suggestions.length === 0 && !busPlan ? (
+              <button
+                onClick={() => setCardOpen(true)}
+                className={[
+                  "text-xs font-bold",
+                  detour
+                    ? "text-primary-600 dark:text-primary-400"
+                    : "text-ink-muted hover:text-ink dark:text-white/40 dark:hover:text-white/70",
+                ].join(" ")}
+              >
+                {detour ? "↩ Back to route" : "What's next? →"}
+              </button>
+            ) : null}
+          </div>
+        }
       />
 
       {showExtras && (
@@ -827,12 +877,12 @@ function TopBar({
   const mapType = useLiveStore((s) => s.mapType);
   const toggleMapType = useLiveStore((s) => s.toggleMapType);
   const forceOffline = useLiveStore((s) => s.forceOffline);
-  const online = useOnline();
+  const { online } = useOnlineStatus();
   const satellite = mapType === "hybrid";
   // The satellite/map toggle only affects the online Google map — hide it offline.
   const showLayers = online && !forceOffline;
   return (
-    <div className="pointer-events-auto flex items-center gap-2">
+    <div className="pointer-events-auto flex items-center gap-3">
       <Link
         href="/"
         aria-label="Back"
@@ -873,47 +923,28 @@ function TopBar({
   );
 }
 
-// Shows where you are now and where you're heading next — the whole point of the
-// guide is the journey, so both stops stay visible.
+// Compact HUD pill overlaid on the map — current location + weather on one line.
+// "Next stop" lives only in NextStepCard to avoid showing the same info twice.
 function JourneyPill({
   currentName,
-  nextName,
   weather,
 }: {
   currentName: string;
-  nextName?: string;
   weather: WeatherNow | null;
 }) {
   return (
-    <div className="pointer-events-auto mt-3 flex items-center gap-3 rounded-2xl bg-ink/5 px-3 py-2.5 dark:bg-white/10">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white">
-        <MapPinIcon size={16} />
+    <div className="flex items-center gap-2 rounded-full bg-ink/[0.08] px-2.5 py-1.5 backdrop-blur-sm dark:bg-white/[0.12]">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white">
+        <MapPinIcon size={11} />
       </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-bold leading-tight">
-          <span className="text-ink-muted dark:text-white/50">Now · </span>
-          {currentName}
-        </p>
-        {nextName ? (
-          <p className="mt-0.5 truncate text-xs font-semibold leading-tight text-ink-muted dark:text-white/60">
-            Next · {nextName}
-          </p>
-        ) : (
-          <p className="mt-0.5 text-xs font-semibold leading-tight text-ink-muted/70 dark:text-white/40">
-            Final stop
-          </p>
-        )}
-      </div>
-
+      <p className="max-w-[7rem] truncate text-xs font-bold leading-none">
+        <span className="text-ink-muted dark:text-white/50">Now · </span>
+        {currentName}
+      </p>
       {weather && (
-        <div className="shrink-0 text-right">
-          <p className="text-sm font-bold leading-none">
-            {weatherEmoji(weather.weatherCode)} {weather.temperature}°
-          </p>
-          <p className="mt-1 text-[10px] font-semibold capitalize leading-none text-ink-muted dark:text-white/50">
-            {weatherLabel(weather.weatherCode)}
-          </p>
-        </div>
+        <p className="shrink-0 text-xs font-semibold leading-none text-ink-muted dark:text-white/60">
+          {weatherEmoji(weather.weatherCode)} {weather.temperature}°
+        </p>
       )}
     </div>
   );
@@ -1278,9 +1309,6 @@ function NextStepCard({
   onPickStop: (stop: RouteStop) => void;
   onClose: () => void;
 }) {
-  const secondary =
-    "flex w-full items-center justify-center gap-2 rounded-full bg-ink/5 py-2.5 text-sm font-bold text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15";
-
   return (
     <div className="pointer-events-auto animate-rise mt-3 rounded-3xl bg-white p-3 shadow-sm dark:bg-white/[0.07] dark:shadow-none">
       <div className="flex items-center justify-between px-1 pb-2">
@@ -1292,7 +1320,7 @@ function NextStepCard({
         </button>
       </div>
 
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col items-center gap-2">
         {nextStop && (
           <button
             onClick={onTakeMeThere}
@@ -1301,15 +1329,23 @@ function NextStepCard({
             Take me there
           </button>
         )}
-        {/* "Somewhere else" needs the chat + Places API — hidden offline. */}
-        {!offline && (
-          <button onClick={onSomewhereElse} className={secondary}>
-            Somewhere else
+        {/* Secondary actions as lightweight text links */}
+        <div className="flex items-center gap-5 py-0.5">
+          {!offline && (
+            <button
+              onClick={onSomewhereElse}
+              className="text-xs font-semibold text-ink-muted hover:text-ink dark:text-white/50 dark:hover:text-white/80"
+            >
+              Somewhere else
+            </button>
+          )}
+          <button
+            onClick={onToggleFullPlan}
+            className="text-xs font-semibold text-ink-muted hover:text-ink dark:text-white/50 dark:hover:text-white/80"
+          >
+            {fullPlanOpen ? "Hide full plan" : "View full plan"}
           </button>
-        )}
-        <button onClick={onToggleFullPlan} className={secondary}>
-          {fullPlanOpen ? "Hide full plan" : "View full plan"}
-        </button>
+        </div>
       </div>
 
       {fullPlanOpen && (
@@ -1358,6 +1394,7 @@ function NarrationCard({
   onPause,
   onMic,
   onAsk,
+  footer,
 }: {
   speaking: boolean;
   thinking: boolean;
@@ -1372,15 +1409,18 @@ function NarrationCard({
   onPause: () => void;
   onMic: () => void;
   onAsk: (q: string) => void;
+  footer?: ReactNode;
 }) {
   const [draft, setDraft] = useState("");
   const [expanded, setExpanded] = useState(false);
+  // Panel starts collapsed — one-line teaser; user taps to expand.
+  const [panelOpen, setPanelOpen] = useState(false);
   const isLong = text.length > 150;
 
-  // Re-collapse whenever the narration / answer changes.
+  // Re-collapse text expansion when narration changes.
   useEffect(() => setExpanded(false), [text]);
 
-  const loading = thinking || audioLoading; // working, no audio yet
+  const loading = thinking || audioLoading;
   // Michelle is "busy" whenever she's thinking, preparing, or speaking — the user
   // must pause her before they can talk (otherwise the voices overlap and lag).
   const busy = loading || speaking;
@@ -1412,43 +1452,78 @@ function NarrationCard({
     setDraft("");
   };
 
+  // Collapsed teaser — avatar + name + truncated message + expand chevron.
+  if (!panelOpen) {
+    return (
+      <div className="pointer-events-auto rounded-3xl bg-white px-4 py-3 shadow-sm backdrop-blur dark:bg-white/[0.07] dark:shadow-none">
+        <button
+          type="button"
+          onClick={() => setPanelOpen(true)}
+          aria-label="Expand Michelle assistant"
+          aria-expanded={false}
+          className="flex w-full items-center gap-2.5"
+        >
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white">
+            <SparklesIcon size={14} />
+          </span>
+          <p className="min-w-0 flex-1 truncate text-left text-sm leading-tight">
+            <span className="font-bold text-ink dark:text-white">Michelle</span>
+            {text ? (
+              <span className="ml-1.5 text-ink-muted dark:text-white/55">
+                {text.length > 72 ? `${text.slice(0, 72)}…` : text}
+              </span>
+            ) : null}
+          </p>
+          {loading ? (
+            <span
+              className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-primary-500/30 border-t-primary-500"
+              role="status"
+              aria-label="Michelle is preparing"
+            />
+          ) : (
+            <ChevronDown size={16} className="shrink-0 text-ink-muted/60 dark:text-white/30" />
+          )}
+        </button>
+      </div>
+    );
+  }
+
+  // Expanded full panel.
   return (
     <div className="pointer-events-auto rounded-3xl bg-white p-5 shadow-sm backdrop-blur dark:bg-white/[0.07] dark:shadow-none">
-      <div className="flex items-center gap-3">
-        <span
-          className={[
-            "flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white",
-            speaking ? "animate-pulse" : "",
-          ].join(" ")}
-        >
-          <SparklesIcon size={18} />
+      <div className="flex items-center gap-2.5">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white">
+          <SparklesIcon size={14} />
         </span>
-        <div className="min-w-0">
-          <p className="font-bold">Michelle</p>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold leading-tight">Michelle</p>
           {voiceError ? (
             <p className="text-xs font-semibold text-safety-critical">{voiceError}</p>
-          ) : (
+          ) : status !== "your guide" ? (
             <p className="flex items-center gap-1.5 text-xs text-ink-muted dark:text-white/60">
               <span className={["h-1.5 w-1.5 rounded-full", dotColor].join(" ")} />
               {status}
             </p>
-          )}
+          ) : null}
         </div>
         {loading ? (
           <span
-            className="ml-auto h-5 w-5 animate-spin rounded-full border-2 border-primary-500/30 border-t-primary-500"
+            className="h-5 w-5 animate-spin rounded-full border-2 border-primary-500/30 border-t-primary-500"
             role="status"
             aria-label="Michelle is preparing"
           />
         ) : (
-          <BarsIcon
-            size={22}
-            className={[
-              "ml-auto transition-colors",
-              speaking ? "text-primary-500" : "text-ink-muted/50 dark:text-white/30",
-            ].join(" ")}
-          />
+          <BarsIcon size={22} className="text-primary-500 transition-colors" />
         )}
+        <button
+          type="button"
+          onClick={() => setPanelOpen(false)}
+          aria-label="Collapse Michelle assistant"
+          aria-expanded={true}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-ink-muted/60 hover:bg-ink/5 dark:text-white/30 dark:hover:bg-white/10"
+        >
+          <ChevronDown size={16} className="rotate-180" />
+        </button>
       </div>
 
       <p
@@ -1469,22 +1544,22 @@ function NarrationCard({
         </button>
       )}
 
-      <div className="mt-5 flex items-center gap-3">
+      <div className="mt-4 flex items-center gap-2">
         <button
           onClick={speaking ? onPause : onReplay}
           disabled={loading}
           className={[
-            "flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white transition-opacity",
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-600 text-white transition-opacity",
             loading ? "opacity-70" : "",
           ].join(" ")}
           aria-label={loading ? "Preparing" : speaking ? "Pause" : "Replay"}
         >
           {loading ? (
-            <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
           ) : speaking ? (
-            <PauseIcon size={20} />
+            <PauseIcon size={18} />
           ) : (
-            <PlayIcon size={18} />
+            <PlayIcon size={16} />
           )}
         </button>
 
@@ -1500,7 +1575,7 @@ function NarrationCard({
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()}
             disabled={offline}
-            placeholder={offline ? "Offline — questions need a connection" : "Ask Michelle…"}
+            placeholder={offline ? "Offline — no connection" : "Ask Michelle…"}
             className="w-full bg-transparent text-sm outline-none placeholder:text-ink-muted disabled:cursor-not-allowed dark:placeholder:text-white/40"
           />
           <button
@@ -1513,7 +1588,7 @@ function NarrationCard({
                 : "text-ink-muted dark:text-white/40"
             }
           >
-            <SendIcon size={18} />
+            <SendIcon size={16} />
           </button>
         </div>
 
@@ -1524,7 +1599,7 @@ function NarrationCard({
             aria-label={offline ? "Offline — voice needs a connection" : busy ? "Pause Michelle to talk" : "Talk to Michelle"}
             title={offline ? "Offline — voice needs a connection" : busy ? "Pause Michelle to talk" : "Talk to Michelle"}
             className={[
-              "flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition-colors",
+              "flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors",
               busy || offline
                 ? "cursor-not-allowed bg-ink/5 text-ink-muted/40 dark:bg-white/5 dark:text-white/20"
                 : listening
@@ -1532,10 +1607,16 @@ function NarrationCard({
                   : "bg-ink/5 text-ink dark:bg-white/10 dark:text-white",
             ].join(" ")}
           >
-            <MicIcon size={20} />
+            <MicIcon size={18} />
           </button>
         )}
       </div>
+
+      {footer && (
+        <div className="mt-3 border-t border-ink/5 pt-3 dark:border-white/[0.06]">
+          {footer}
+        </div>
+      )}
     </div>
   );
 }
