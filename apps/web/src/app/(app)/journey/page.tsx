@@ -10,6 +10,7 @@ import {
   TrashIcon,
   WalkIcon,
 } from "@/components/icons";
+import { FeatureGate } from "@/components/FeatureGate";
 import { demoRoutes, getRoutes } from "@/lib/routes";
 import { useLiveStore } from "@/stores/liveStore";
 import { createClient } from "@/lib/supabase";
@@ -254,9 +255,14 @@ export default function JourneyPage() {
 
           {activePlan && (
             <>
-              <div className="rounded-3xl bg-primary-50 px-4 py-3">
-                <p className="text-sm text-primary-700 leading-snug">{activePlan.summary}</p>
-              </div>
+              <FeatureGate
+                feature="journeyPlanning"
+                degradedNote="Using saved itinerary — live weather and crowd updates need a connection"
+              >
+                <div className="rounded-3xl bg-primary-50 px-4 py-3">
+                  <p className="text-sm text-primary-700 leading-snug">{activePlan.summary}</p>
+                </div>
+              </FeatureGate>
 
               {dayNumbers.length > 1 && (
                 <DayTabs

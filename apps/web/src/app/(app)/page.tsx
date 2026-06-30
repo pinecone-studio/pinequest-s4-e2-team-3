@@ -27,10 +27,7 @@ export default function HomePage() {
     setFramed(true);
   }, []);
 
-  if (framed !== true) {
-    // Top-level: redirecting to /preview. Match the frame backdrop to avoid a flash.
-    return <div style={{ minHeight: "100dvh", background: "#09090b" }} />;
-  }
+  if (framed !== true) return null;
 
   return (
     <div className="space-y-6">
@@ -38,7 +35,7 @@ export default function HomePage() {
       <StatStrip />
       <LiveGuideCard />
 
-      <section>
+      <section className="!mt-3">
         <SectionHeader
           title="Right now, near you"
           action="Explore"
@@ -52,17 +49,19 @@ export default function HomePage() {
 
 function Header() {
   return (
-    <header className="flex items-start justify-between">
-      <div>
+    <header className="flex items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-ink-muted">
           {trip.weekday} · {trip.city}
         </p>
-        <h1 className="mt-1 font-serif text-4xl leading-none tracking-tight text-balance text-ink">
+        <h1 className="mt-1 font-serif text-4xl leading-none tracking-tight text-ink">
           {trip.greeting}
         </h1>
       </div>
 
-      <HeaderActions />
+      <div className="shrink-0">
+        <HeaderActions />
+      </div>
     </header>
   );
 }
@@ -101,35 +100,50 @@ function StatCard({
   );
 }
 
-// The hero: your AI local guide, ready to walk a route with you (→ /live).
-// Kept deliberately minimal — presence, name, one line, one action.
 function LiveGuideCard() {
   return (
-    <section className="relative overflow-hidden rounded-3xl bg-primary-950 p-6 shadow-ink-lg">
-      <div className="absolute inset-0 bg-[radial-gradient(120%_90%_at_80%_10%,#1f56e0_0%,#16233d_45%,#0d1422_75%)]" />
-      <div className="relative flex flex-col gap-5">
-        <div className="flex w-fit items-center gap-2 rounded-full bg-white/10 py-1.5 pl-2 pr-3 backdrop-blur">
-          <span className="h-4 w-4 rounded-full bg-gradient-to-br from-primary-500 to-primary-700" />
-          <span className="text-xs font-bold text-white">
-            {guide.name} is ready
+    <section className="relative overflow-hidden rounded-3xl bg-primary-900 shadow-ink-lg">
+      {/* Corner-focused gradient: bright blue at top-right, deep navy elsewhere */}
+      <div className="absolute inset-0 bg-[radial-gradient(140%_130%_at_105%_-5%,#2f6bff_0%,#14213d_58%)]" />
+
+      {/* Concentric depth rings — purely decorative, clipped by overflow-hidden */}
+      <svg
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-8 -right-8 h-52 w-52 text-white opacity-[0.07]"
+        viewBox="0 0 100 100"
+        fill="none"
+      >
+        <circle cx="50" cy="50" r="48" stroke="currentColor" strokeWidth="1" />
+        <circle cx="50" cy="50" r="34" stroke="currentColor" strokeWidth="0.8" />
+        <circle cx="50" cy="50" r="20" stroke="currentColor" strokeWidth="0.6" />
+        <circle cx="50" cy="50" r="8" fill="currentColor" opacity="0.35" />
+      </svg>
+
+      <div className="relative p-5">
+        {/* Live indicator — a pulse dot + label, no pill wrapper */}
+        <div className="mb-4 flex items-center gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-safety-safe opacity-60" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-safety-safe" />
+          </span>
+          <span className="text-[11px] font-bold uppercase tracking-widest text-white/50">
+            {guide.name} · Ready
           </span>
         </div>
 
-        <div>
-          <h2 className="font-serif text-3xl leading-tight text-white">
-            Live Guide
-          </h2>
-          <p className="mt-1 text-sm text-white/70">
-            Your voice companion for Mongolia.
-          </p>
-        </div>
+        <h2 className="font-serif text-[28px] leading-[1.1] text-white">
+          Live Guide
+        </h2>
+        <p className="mt-2 text-sm leading-snug text-white/55">
+          Voice narration, real-time tips, and answers for your journey.
+        </p>
 
         <Link
           href="/live"
-          className="flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-bold text-primary-900"
+          className="mt-5 inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-bold text-primary-900 transition-opacity hover:opacity-90"
         >
-          <PlayIcon size={14} className="text-primary-600" />
-          Start live guide
+          <PlayIcon size={12} className="text-primary-600" />
+          Start guide
         </Link>
       </div>
     </section>

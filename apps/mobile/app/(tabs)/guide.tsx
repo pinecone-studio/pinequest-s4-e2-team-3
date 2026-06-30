@@ -1,6 +1,7 @@
 import { View, Text, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { FeatureGate } from "@/components/FeatureGate";
 
 export default function GuideScreen() {
   return (
@@ -18,16 +19,18 @@ export default function GuideScreen() {
           <Text className="text-gray-400">Conversation history placeholder</Text>
         </View>
 
-        {/* TODO: voice input (Chimege STT) + text input + send */}
-        <View className="flex-row items-center border border-gray-200 rounded-2xl px-4 py-3 mb-2">
-          <Text className="flex-1 text-gray-400">Ask the AI guide...</Text>
-          <TouchableOpacity className="ml-2">
-            <Ionicons name="mic-outline" size={22} color="#9ca3af" />
-          </TouchableOpacity>
-          <TouchableOpacity className="ml-2 bg-primary-600 rounded-xl p-2">
-            <Ionicons name="send" size={18} color="#fff" />
-          </TouchableOpacity>
-        </View>
+        {/* Input bar gated on connectivity — dimmed with "Needs connection" label offline */}
+        <FeatureGate feature="aiChat">
+          <View className="flex-row items-center border border-gray-200 rounded-2xl px-4 py-3 mb-2">
+            <Text className="flex-1 text-gray-400">Ask the AI guide...</Text>
+            <TouchableOpacity className="ml-2">
+              <Ionicons name="mic-outline" size={22} color="#9ca3af" />
+            </TouchableOpacity>
+            <TouchableOpacity className="ml-2 bg-primary-600 rounded-xl p-2">
+              <Ionicons name="send" size={18} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </FeatureGate>
       </View>
     </SafeAreaView>
   );

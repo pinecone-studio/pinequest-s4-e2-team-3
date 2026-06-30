@@ -22,10 +22,13 @@ import {
   type EmergencyLocation,
 } from "@/hooks/useEmergencyLocation";
 import { useTwilioCall } from "@/hooks/useTwilioCall";
+<<<<<<< HEAD
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+=======
+import { useOnlineStatus } from "@/context/OnlineStatus";
+>>>>>>> e4b9516 (a)
 import type { SosOption } from "@/types";
 
-// Map each emergency option to its icon. Kept here so the data stays plain.
 const OPTION_ICON: Record<string, (props: { size?: number }) => React.ReactNode> = {
   "sos-1": RunIcon,
   "sos-2": MapPinIcon,
@@ -33,18 +36,38 @@ const OPTION_ICON: Record<string, (props: { size?: number }) => React.ReactNode>
   "sos-4": ShieldIcon,
 };
 
-// How long the "getting help ready" countdown runs before showing the call screen.
 const COUNTDOWN_SECONDS = 5;
 
 type Step = "choose" | "countdown" | "ready" | "calling";
 
-// The Emergency sheet (the white card only — the backdrop is supplied by the
-// caller). Tapping an option starts a short countdown that the user can cancel;
-// if it finishes, the prepared call screen appears.
-// `onClose` lets the modal dismiss with router.back(); without it the close
-// button falls back to a link home (used by the standalone /sos page).
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+
+// Writes a single incident to the offline queue in localStorage.
+function enqueueOfflineIncident(
+  option: SosOption,
+  location: EmergencyLocation,
+  language: string,
+) {
+  try {
+    const incident = {
+      type: option.id,
+      title: option.title,
+      service: option.service,
+      service_number: option.serviceNumber,
+      lat: location.rawLat,
+      lng: location.rawLng,
+      place_name: location.place,
+      coords: location.coords,
+      language,
+      queuedAt: Date.now(),
+    };
+    const prev = JSON.parse(localStorage.getItem("sos:queued_incidents") ?? "[]");
+    localStorage.setItem("sos:queued_incidents", JSON.stringify([...prev, incident]));
+  } catch {
+    // ignore storage errors
+  }
+}
 
 export function SosFlow({ onClose }: { onClose?: () => void }) {
   const [step, setStep] = useState<Step>("choose");
@@ -55,6 +78,7 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
   const [customText, setCustomText] = useState("");
   const [translating, setTranslating] = useState(false);
   const location = useEmergencyLocation();
+<<<<<<< HEAD
   const voice = useSpeechRecognition(setCustomText);
 
   // Free-form SOS: the traveller describes their emergency in their own words
@@ -90,6 +114,9 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
       serviceNumber: "103",
     });
   }
+=======
+  const { online } = useOnlineStatus();
+>>>>>>> e4b9516 (a)
 
   useEffect(() => {
     if (!incidentId) return;
@@ -135,6 +162,38 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
     localStorage.removeItem("sos_incident_id");
   }
 
+  // Initiates the Twilio-assisted in-app call (online only).
+  async function handleTwilioCall() {
+    if (!selected) return;
+    const language = navigator.language;
+    let batteryLevel: number | null = null;
+    if ("getBattery" in navigator) {
+      try {
+        const bat = await (navigator as unknown as { getBattery(): Promise<{ level: number }> }).getBattery();
+        batteryLevel = Math.round(bat.level * 100);
+      } catch { /* unsupported */ }
+    }
+    logSosIncident({
+      type: selected.id,
+      title: selected.title,
+      service: selected.service,
+      service_number: selected.serviceNumber,
+      lat: location.rawLat,
+      lng: location.rawLng,
+      place_name: location.place,
+      coords: location.coords,
+      language,
+      battery_level: batteryLevel,
+      is_online: true,
+    }).then((id) => {
+      if (id) {
+        setIncidentId(id);
+        localStorage.setItem("sos_incident_id", id);
+      }
+    }).catch(() => {});
+    setStep("calling");
+  }
+
   return (
     <div className="relative mx-auto w-full max-w-md rounded-t-[28px] bg-white px-5 pb-8 pt-3">
       <div className="mx-auto h-1.5 w-10 rounded-full bg-sand-300" />
@@ -158,36 +217,8 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
         <ReadyView
           option={selected}
           location={location}
-          onCall={async () => {
-            const language = navigator.language;
-            const isOnline = navigator.onLine;
-            let batteryLevel: number | null = null;
-            if ("getBattery" in navigator) {
-              try {
-                const bat = await (navigator as unknown as { getBattery(): Promise<{ level: number }> }).getBattery();
-                batteryLevel = Math.round(bat.level * 100);
-              } catch { /* unsupported */ }
-            }
-            logSosIncident({
-              type: selected.id,
-              title: selected.title,
-              service: selected.service,
-              service_number: selected.serviceNumber,
-              lat: location.rawLat,
-              lng: location.rawLng,
-              place_name: location.place,
-              coords: location.coords,
-              language,
-              battery_level: batteryLevel,
-              is_online: isOnline,
-            }).then((id) => {
-              if (id) {
-                setIncidentId(id);
-                localStorage.setItem("sos_incident_id", id);
-              }
-            }).catch(() => {});
-            setStep("calling");
-          }}
+          isOnline={online}
+          onTwilioCall={handleTwilioCall}
         />
       ) : null}
       {step === "calling" && selected ? (
@@ -235,7 +266,6 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
   );
 }
 
-// Wording + colour for the small location status line under "Emergency".
 const LOCATION_STATUS = {
   loading: { text: "Locating you…", color: "text-ink-muted", dot: "bg-ink-muted" },
   ready: { text: "Location ready", color: "text-safety-safe", dot: "bg-safety-safe" },
@@ -400,9 +430,6 @@ function CountdownView({
   );
 }
 
-// The draining red ring with the seconds count in the middle. The ring runs one
-// smooth animation across the whole countdown so it empties exactly when the
-// timer hits zero (rather than stepping once per second).
 function CountdownRing({ secondsLeft }: { secondsLeft: number }) {
   const radius = 52;
 
@@ -438,12 +465,24 @@ function CountdownRing({ secondsLeft }: { secondsLeft: number }) {
 function ReadyView({
   option,
   location,
-  onCall,
+  isOnline,
+  onTwilioCall,
 }: {
   option: SosOption;
   location: EmergencyLocation;
-  onCall: () => void;
+  isOnline: boolean;
+  onTwilioCall: () => void;
 }) {
+  // Auto-queue the incident to localStorage the moment the user arrives at
+  // the ready screen while offline. The OnlineStatusProvider flushes this to
+  // Supabase as soon as connectivity is restored.
+  const queued = useRef(false);
+  useEffect(() => {
+    if (isOnline || queued.current) return;
+    queued.current = true;
+    enqueueOfflineIncident(option, location, navigator.language);
+  }, [isOnline, option, location]);
+
   return (
     <div>
       <div className="mt-4 rounded-3xl border border-ink/5 bg-sand-50 p-5">
@@ -461,25 +500,54 @@ function ReadyView({
         </div>
       </div>
 
-      <button
-        onClick={onCall}
-        className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-[#d96a5f] py-4 text-base font-bold text-white shadow-lg shadow-[#d96a5f]/30"
+      {/* Offline queued state — shown alongside direct-dial, never instead of it */}
+      {!isOnline && (
+        <div className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-200 text-[10px] font-bold text-amber-800">
+            ⏳
+          </span>
+          <div>
+            <p className="text-sm font-bold text-amber-900">Report queued</p>
+            <p className="mt-0.5 text-xs leading-snug text-amber-800">
+              Your location and emergency details are saved on this device and will
+              auto-send to our team the moment you reconnect.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Direct-dial — ALWAYS shown regardless of connectivity. Works with no data
+          via the native phone dialer. Primary action when offline. */}
+      <a
+        href={`tel:${option.serviceNumber}`}
+        className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-[#d96a5f] py-4 text-base font-bold text-white shadow-lg shadow-[#d96a5f]/30"
       >
         <PhoneIcon size={20} />
         Call {option.serviceNumber} · {option.service}
-      </button>
-      <p className="mt-3 text-center text-sm text-ink-muted">
-        Your location is attached automatically
+      </a>
+      <p className="mt-2 text-center text-xs font-semibold text-ink-muted">
+        {isOnline
+          ? "Your location is attached automatically"
+          : "Calls directly from your phone — no internet needed"}
       </p>
+
+      {/* AI-assisted Twilio call — secondary action, online only */}
+      {isOnline && (
+        <button
+          onClick={onTwilioCall}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-ink/10 bg-white py-3.5 text-sm font-bold text-ink hover:bg-sand-50"
+        >
+          <SpeakerIcon size={18} />
+          AI-assisted call in Mongolian
+        </button>
+      )}
     </div>
   );
 }
 
-// The in-app call screen (matches the Emergency mockup). It places a REAL call
-// through Twilio Voice (see useTwilioCall), shows the live connection state and a
-// timer that starts on connect, plus the operator-ready message in English and
-// Mongolian. If Twilio isn't configured it degrades to a tel: dial fallback so
-// the SOS still reaches help.
+// The in-app Twilio call screen — only reachable when online (user clicked the
+// AI-assisted call button). No offline fallback needed here; the ReadyView
+// handles everything before this step.
 function CallView({
   option,
   location,
@@ -543,29 +611,22 @@ function CallView({
     setSending(false);
   }
 
-  // Place the call from the web via Twilio; on answer it speaks the SOS message to
-  // the operator IN MONGOLIAN (Chimege), bridging the language barrier so the
-  // traveller never has to speak Mongolian themselves.
   useEffect(() => {
     const place = location.place ?? "the traveller's current location";
     const enCo = location.coords ? ` Coordinates ${location.coords}.` : "";
     const en = `Emergency call for ${option.service}. ${option.message} My location is ${place}.${enCo}`;
-    // Mongolian spoken text: message + place name only. Coordinates/Latin are
-    // dropped (Chimege can't speak them); the server sanitizes anything left over.
     const mnPlace = location.place ? ` Миний байршил ${location.place}.` : "";
     const mn = `${option.messageMn}${mnPlace}`;
     call(en, mn, incidentId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Count up once the call connects.
   useEffect(() => {
     if (status !== "connected") return;
     const id = setInterval(() => setSeconds((s) => s + 1), 1000);
     return () => clearInterval(id);
   }, [status]);
 
-  // Stop any speech/audio if the screen unmounts (e.g. the call ends mid-readout).
   useEffect(() => {
     return () => {
       window.speechSynthesis?.cancel();
@@ -577,8 +638,6 @@ function CallView({
   const coords = location.coords;
   const mongolianLocation = `Миний байршил: ${place}.${coords ? ` Координат: ${coords}.` : ""}`;
 
-  // Read the Mongolian message aloud with Chimege's Mongolian voice; fall back to
-  // the browser's speech synthesis if Chimege isn't configured/available.
   async function readAloud() {
     const text = `${option.messageMn} ${mongolianLocation}`;
     window.speechSynthesis?.cancel();
@@ -615,7 +674,6 @@ function CallView({
 
   return (
     <div className="mt-4">
-      {/* Live call banner — reflects the real Twilio connection state */}
       <div className="flex items-center justify-between rounded-2xl bg-ink px-5 py-4 text-white">
         <div className="flex items-start gap-3">
           <span className={`mt-1 h-2.5 w-2.5 rounded-full ${banner.dot}`} />
@@ -631,8 +689,12 @@ function CallView({
         ) : null}
       </div>
 
+<<<<<<< HEAD
       {/* Operator's replies — their Mongolian speech transcribed + translated to English */}
       <div className="mt-4 rounded-3xl border border-ink/5 bg-sand-50 p-4">
+=======
+      <div className="mt-4 rounded-3xl border border-ink/5 bg-sand-50 p-5">
+>>>>>>> e4b9516 (a)
         <div className="flex items-center justify-between">
           <p className="text-sm font-bold text-ink">Operator · {option.serviceNumber}</p>
           <span className="flex items-center gap-1.5 rounded-full bg-primary-50 px-3 py-1 text-xs font-bold text-primary-600">
@@ -716,23 +778,19 @@ function CallView({
   );
 }
 
-// Banner wording + dot colour for each live call state.
 const CALL_STATUS = {
   connecting: { title: "Calling", subtitle: "Dialing the operator…", dot: "bg-safety-armed animate-pulse" },
   connected: { title: "On call", subtitle: "Reading your message to the operator in Mongolian", dot: "bg-safety-safe" },
   ended: { title: "Call ended", subtitle: "You can call again if you need to", dot: "bg-ink-muted" },
-  unavailable: { title: "Couldn’t place call", subtitle: "Tap End and try again", dot: "bg-safety-critical" },
+  unavailable: { title: "Couldn't place call", subtitle: "Tap End and try again", dot: "bg-safety-critical" },
 } as const;
 
-// Seconds → mm:ss for the call timer.
 function formatDuration(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const secs = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
-// Shows the real device location: place name + coordinates once available, or a
-// loading / permission message while it isn't.
 function LocationLine({ location }: { location: EmergencyLocation }) {
   if (location.status === "denied") {
     return (

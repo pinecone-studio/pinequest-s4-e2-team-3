@@ -450,9 +450,10 @@ function FitBounds({ path }: { path: google.maps.LatLngLiteral[] }) {
 type StopState = "current" | "past" | "upcoming";
 
 function stopPinSvg(label: number, state: StopState): string {
-  const fill = state === "current" ? "#2f6bff" : state === "past" ? "#1F9D6B" : "#ffffff";
-  const text = state === "upcoming" ? "#14213d" : "#ffffff";
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28"><circle cx="14" cy="14" r="11" fill="${fill}" stroke="#0d1422" stroke-width="2"/><text x="14" y="18" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="700" fill="${text}">${label}</text></svg>`;
+  // All stops: blue circle, white number, white stroke.
+  // Past = 50% opacity so visited stops visually recede behind upcoming ones.
+  const pastAttr = state === "past" ? ' fill-opacity="0.5"' : "";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28"><circle cx="14" cy="14" r="11" fill="#2f6bff"${pastAttr} stroke="#ffffff" stroke-width="2"/><text x="14" y="18" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="700" fill="#ffffff">${label}</text></svg>`;
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 

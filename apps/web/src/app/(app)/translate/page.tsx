@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect } from "react";
 import { SwapIcon } from "@/components/icons";
-import { useOnline } from "@/hooks/useOnline";
+import { useOnlineStatus } from "@/context/OnlineStatus";
 
 type Turn = {
   id: string;
@@ -79,9 +79,9 @@ function SpeakerIcon() {
   );
 }
 
-function WifiOffIcon() {
+function WifiOffIcon({ size = 16 }: { size?: number }) {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="1" y1="1" x2="23" y2="23" />
       <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55" />
       <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39" />
@@ -110,16 +110,20 @@ function OfflineView() {
     <div className="flex h-[calc(100dvh-7rem)] flex-col lg:h-[calc(100dvh-5rem)]">
       {/* Header */}
       <header className="pb-4">
-        <div className="mb-3 flex items-center gap-2 rounded-2xl bg-amber-50 border border-amber-200 px-3 py-2.5">
-          <WifiOffIcon />
+        <div className="mb-4 flex items-center gap-3 rounded-2xl border border-amber-200/70 bg-amber-50 px-4 py-3.5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+            <WifiOffIcon size={16} />
+          </span>
           <div>
-            <p className="text-sm font-bold text-amber-800">You're offline</p>
-            <p className="text-xs text-amber-700">Tap a phrase to play it aloud in Mongolian</p>
+            <p className="text-sm font-bold text-amber-900">Offline mode</p>
+            <p className="text-xs text-amber-700/80">
+              {QUICK_PHRASES.length} phrases ready — tap any to play in Mongolian
+            </p>
           </div>
         </div>
         <h1 className="font-serif text-3xl leading-none tracking-tight text-ink">Quick Phrases</h1>
         <p className="mt-1 text-sm text-ink-muted">
-          Pre-translated phrases — no internet needed.
+          Pre-translated · no internet needed
         </p>
       </header>
 
@@ -432,82 +436,6 @@ function OnlineView() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function TranslatePage() {
-  const networkOnline = useOnline();
-  const [devOverride, setDevOverride] = useState<"online" | "offline" | null>(null);
-
-  // null override → real network drives the view
-  const isOnline = devOverride !== null ? devOverride === "online" : networkOnline;
-  const usingOverride = devOverride !== null;
-
-  const toggleOverride = (mode: "online" | "offline") => {
-    // clicking the active override resets to auto
-    setDevOverride((prev) => (prev === mode ? null : mode));
-  };
-
-  return (
-    <div className="relative">
-      {/* ── Dev toggle ── remove before shipping ─────────────────────────────── */}
-      <div className="absolute -top-1 right-0 z-50 flex flex-col items-end gap-1">
-        {/* Real network badge */}
-        <div className="flex items-center gap-1 rounded-full bg-black/70 px-2 py-0.5 text-[9px] font-bold text-white backdrop-blur">
-          <span
-            className={[
-              "h-1.5 w-1.5 rounded-full",
-              networkOnline ? "bg-green-400" : "bg-red-400",
-            ].join(" ")}
-          />
-          <span className="opacity-60">real net:</span>
-          <span>{networkOnline ? "online" : "offline"}</span>
-        </div>
-
-        {/* Override buttons */}
-        <div className="flex items-center gap-1 rounded-full bg-black/80 px-2 py-1 text-[10px] font-bold text-white backdrop-blur">
-          <span className="mr-0.5 opacity-60">DEV</span>
-
-          <button
-            onClick={() => toggleOverride("online")}
-            className={[
-              "rounded-full px-2 py-0.5 transition-colors",
-              devOverride === "online"
-                ? "bg-green-500 text-white"
-                : isOnline && !usingOverride
-                  ? "bg-green-500/40 text-white"   // auto-detected online
-                  : "text-white/40 hover:text-white",
-            ].join(" ")}
-            title={devOverride === "online" ? "Click to reset to auto" : "Force online"}
-          >
-            Online{devOverride === "online" ? " ✕" : ""}
-          </button>
-
-          <button
-            onClick={() => toggleOverride("offline")}
-            className={[
-              "rounded-full px-2 py-0.5 transition-colors",
-              devOverride === "offline"
-                ? "bg-amber-500 text-white"
-                : !isOnline && !usingOverride
-                  ? "bg-amber-500/40 text-white"   // auto-detected offline
-                  : "text-white/40 hover:text-white",
-            ].join(" ")}
-            title={devOverride === "offline" ? "Click to reset to auto" : "Force offline"}
-          >
-            Offline{devOverride === "offline" ? " ✕" : ""}
-          </button>
-
-          {usingOverride && (
-            <button
-              onClick={() => setDevOverride(null)}
-              className="rounded-full px-2 py-0.5 text-white/60 hover:text-white transition-colors"
-              title="Back to auto detection"
-            >
-              Auto
-            </button>
-          )}
-        </div>
-      </div>
-      {/* ─────────────────────────────────────────────────────────────────────── */}
-
-      {isOnline ? <OnlineView /> : <OfflineView />}
-    </div>
-  );
+  const { online } = useOnlineStatus();
+  return online ? <OnlineView /> : <OfflineView />;
 }
