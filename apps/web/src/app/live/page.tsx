@@ -117,16 +117,23 @@ function ThemeToggle({
 // rest of the app is unaffected.
 export default function LiveGuidePage() {
   const activeRoute = useLiveStore((s) => s.activeRoute);
+  const mapType = useLiveStore((s) => s.mapType);
   // Begin watching real GPS as soon as the screen mounts.
   useLocation();
   const { theme, toggleTheme } = useLiveTheme();
+
+  // On satellite, the dark chrome (white text + dark scrim) reads best over the
+  // imagery — so force the dark theme there regardless of the toggle. Off
+  // satellite, the toggle works normally.
+  const satellite = !!activeRoute && mapType === "hybrid";
+  const isDark = theme === "dark" || satellite;
 
   // The `dark` class lives on the OUTER element; the themed colours live on the
   // inner element. Tailwind's class strategy compiles `dark:` to a descendant
   // selector (`.dark .dark\:bg-…`), so an element can't theme itself — the inner
   // div must be a *child* of the one carrying `.dark`.
   return (
-    <div className={theme === "dark" ? "dark" : ""}>
+    <div className={isDark ? "dark" : ""}>
       <div className="relative min-h-screen overflow-hidden bg-[#eef2fb] text-ink transition-colors dark:bg-[#0d1422] dark:text-white">
         {activeRoute ? <LiveBackground theme={theme} /> : <MapBackdrop />}
         {/* When a route is live, let pointer events fall THROUGH the empty parts
@@ -165,6 +172,14 @@ function LiveBackground({ theme }: { theme: Theme }) {
 
   const offline = forceOffline || !online;
 
+  // Satellite imagery is dark and busy, so the chrome zones (top bar, cards) need
+  // a stronger scrim to keep text readable — in BOTH themes (so the light/dark
+  // toggle still works on satellite). Standard map keeps the lighter scrim.
+  const satellite = mapType === "hybrid";
+  const scrim = satellite
+    ? "from-[#eef2fb]/85 via-[#eef2fb]/10 to-[#eef2fb]/95 dark:from-[#0d1422]/85 dark:via-[#0d1422]/10 dark:to-[#0d1422]/95"
+    : "from-[#eef2fb]/40 via-transparent to-[#eef2fb]/90 dark:from-[#0d1422]/40 dark:via-transparent dark:to-[#0d1422]/90";
+
   // Live interactive map when we have a key, a connection, and it loads.
   // If the map errors (e.g. an invalid key) we fall through to the stylised
   // backdrop so the screen never shows a blank void.
@@ -184,7 +199,7 @@ function LiveBackground({ theme }: { theme: Theme }) {
           busLegs={busLegs}
           mapType={mapType}
         />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#eef2fb]/40 via-transparent to-[#eef2fb]/90 dark:from-[#0d1422]/40 dark:via-transparent dark:to-[#0d1422]/90" />
+        <div className={`pointer-events-none absolute inset-0 bg-gradient-to-b ${scrim}`} />
       </div>
     );
   }
@@ -843,7 +858,10 @@ function TopBar({
         </button>
       )}
 
-      <ThemeToggle theme={theme} onToggle={onToggleTheme} className={showLayers ? "" : "ml-auto"} />
+      {/* Satellite forces light chrome, so the light/dark toggle is hidden there. */}
+      {!satellite && (
+        <ThemeToggle theme={theme} onToggle={onToggleTheme} className={showLayers ? "" : "ml-auto"} />
+      )}
 
       <Link
         href="/sos"
