@@ -12,6 +12,7 @@ import {
 } from "@/components/icons";
 import { FeatureGate } from "@/components/FeatureGate";
 import { demoRoutes, getRoutes } from "@/lib/routes";
+import { planDayToRoute } from "@/lib/planToRoute";
 import { useLiveStore } from "@/stores/liveStore";
 import { createClient } from "@/lib/supabase";
 import { DEMO_EMAIL } from "@/lib/demoAuth";
@@ -30,6 +31,9 @@ interface PlanPlace {
   imageUrl?: string;
   rating?: number;
   walkMinutes?: number;
+  // Captured at save time so the Live Guide can plot this stop without re-geocoding.
+  latitude?: number;
+  longitude?: number;
 }
 
 interface SavedPlan {
@@ -116,9 +120,28 @@ export default function JourneyPage() {
   // instead of flashing the "No plans yet" empty state.
   const [loading, setLoading] = useState(true);
 
+  // Launching a user's own plan: convert the day being viewed into a live route
+  // (geocode + narration on demand), then hand off to the Live Guide.
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+
   function startRoute(route: DemoRoute) {
     setRoute(route);
     router.push("/live");
+  }
+
+  async function startUserPlan(plan: SavedPlan, dayNum: number) {
+    setStartError(null);
+    setStarting(true);
+    try {
+      const route = await planDayToRoute(plan, dayNum);
+      if (route) startRoute(route);
+      else setStartError("Couldn't locate these stops on the map. Try adding more specific places.");
+    } catch {
+      setStartError("Couldn't start the live guide just now. Check your connection and try again.");
+    } finally {
+      setStarting(false);
+    }
   }
 
   useEffect(() => {
@@ -304,6 +327,15 @@ export default function JourneyPage() {
                     <SparklesIcon size={14} />
                     Start live guide →
                   </button>
+                ) : dayStops.length > 0 ? (
+                  <button
+                    onClick={() => startUserPlan(activePlan, activeDayNum)}
+                    disabled={starting}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-full bg-primary-600 py-3 text-sm font-bold text-white hover:bg-primary-700 disabled:opacity-60"
+                  >
+                    <SparklesIcon size={14} />
+                    {starting ? "Preparing…" : "Start live guide →"}
+                  </button>
                 ) : (
                   <Link
                     href="/ai"
@@ -320,6 +352,10 @@ export default function JourneyPage() {
                   <TrashIcon size={18} />
                 </button>
               </div>
+
+              {startError && (
+                <p className="px-1 text-xs font-semibold text-safety-critical">{startError}</p>
+              )}
             </>
           )}
 
