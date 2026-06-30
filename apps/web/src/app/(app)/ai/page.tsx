@@ -278,7 +278,15 @@ export default function AiPage() {
           if (loc) { qs.set("lat", String(loc.lat)); qs.set("lng", String(loc.lng)); }
           const res = await fetch(`/api/places?${qs.toString()}`);
           const data = res.ok ? await res.json() : [];
-          return { name: st.title, imageUrl: data[0]?.imageUrl as string | undefined };
+          const top = data[0] ?? {};
+          // Capture coordinates too — the Live Guide needs them to plot/narrate
+          // this plan later (stops without one are geocoded again at launch).
+          return {
+            name: st.title,
+            imageUrl: top.imageUrl as string | undefined,
+            latitude: top.latitude as number | undefined,
+            longitude: top.longitude as number | undefined,
+          };
         } catch {
           return { name: st.title };
         }
