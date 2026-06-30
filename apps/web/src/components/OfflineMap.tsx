@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
 import type * as Leaflet from "leaflet";
-import { getTile, tileUrl, type TileStyle } from "@/lib/offlineTiles";
+import { boundsForStops, getTile, tileUrl, zoomRange, type TileStyle } from "@/lib/offlineTiles";
 import { decodePolyline, type BusLeg } from "@/lib/transit";
 import type { Coords, RouteStop } from "@/types";
 
@@ -54,9 +54,21 @@ export default function OfflineMap({
       const L = (await import("leaflet")).default;
       if (cancelled || !containerRef.current || mapRef.current) return;
 
+      // Match the map's zoom limits to the range that was actually cached for
+      // this route, so the traveller can zoom out to the whole-route overview
+      // without hitting blank tiles (and can't zoom past the cached detail).
+      const { min: minZoom, max: maxZoom } = stops.length
+        ? zoomRange(boundsForStops(stops))
+        : { min: 10, max: 16 };
+
       // No on-map zoom buttons (they'd collide with the app's top bar) — pinch,
       // scroll and double-tap still zoom.
-      const map = L.map(containerRef.current, { zoomControl: false, attributionControl: false });
+      const map = L.map(containerRef.current, {
+        zoomControl: false,
+        attributionControl: false,
+        minZoom,
+        maxZoom,
+      });
       mapRef.current = map;
 
       // Tile layer backed by the IndexedDB cache (falls back to the network when
@@ -77,7 +89,7 @@ export default function OfflineMap({
         },
       }) as unknown as new (opts?: Leaflet.GridLayerOptions) => Leaflet.GridLayer;
 
-      const layer = new Offline({ minZoom: 10, maxZoom: 16, tileSize: 256 });
+      const layer = new Offline({ minZoom, maxZoom, tileSize: 256 });
       layerRef.current = layer;
       // Free the blob URL once Leaflet drops the tile.
       layer.on("tileunload", (e: Leaflet.TileEvent) => {

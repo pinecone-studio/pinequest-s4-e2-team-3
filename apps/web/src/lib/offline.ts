@@ -4,16 +4,18 @@
 // Static Images snapshot of the route plus the narration/phrases, so the journey
 // is still viewable with no network. (The route data itself is already bundled.)
 
-import { GOOGLE_MAPS_KEY, hasGoogleMapsKey } from "@/lib/googlemaps";
+import { GOOGLE_MAPS_KEY, hasGoogleMapsKey, loadGoogleMaps } from "@/lib/googlemaps";
 import { putAudio } from "@/lib/offlineAudio";
-import { cacheTiles, type TileBounds } from "@/lib/offlineTiles";
+import { boundsForStops, cacheTiles } from "@/lib/offlineTiles";
+import { buildRoutePath } from "@/lib/routePath";
+import { encodePolyline } from "@/lib/transit";
 import type { DemoRoute } from "@/types";
 
 const KEY_PREFIX = "nomad:offline:";
 // Bump when the pack shape changes so stale/incomplete packs from older builds
 // are ignored and rebuilt (v8: both light+dark tiles cached so night mode works
-// offline).
-const PACK_VERSION = 8;
+// offline; v9: client-SDK road-geometry fallback + route-fitted tile zoom range).
+const PACK_VERSION = 9;
 
 export interface OfflinePack {
   version: number;
@@ -40,6 +42,7 @@ export const audioKey = (routeId: string, stopId: string) => `${routeId}:${stopI
 // e.g. Mörön→Khatgal). Null only if there's genuinely no route / it fails.
 async function roadPolyline(route: DemoRoute): Promise<string | null> {
   if (route.stops.length < 2) return null;
+  // First the server endpoint (no SDK needed).
   try {
     const res = await fetch("/api/route-geometry", {
       method: "POST",
@@ -48,9 +51,22 @@ async function roadPolyline(route: DemoRoute): Promise<string | null> {
         stops: route.stops.map((s) => ({ lat: s.latitude, lng: s.longitude })),
       }),
     });
-    if (!res.ok) return null;
-    const { encoded } = (await res.json()) as { encoded: string | null };
-    return encoded ?? null;
+    if (res.ok) {
+      const { encoded } = (await res.json()) as { encoded: string | null };
+      if (encoded) return encoded;
+    }
+  } catch {
+    /* fall through to the client SDK */
+  }
+  // Fallback: build the SAME road path the live map draws, client-side, then
+  // encode it. The Maps key is authorised in-browser even when server-side
+  // Directions is referrer-restricted (that denial is what left a straight line).
+  if (!hasGoogleMapsKey) return null;
+  try {
+    const google = await loadGoogleMaps(GOOGLE_MAPS_KEY);
+    const path = await buildRoutePath(google, route.stops, 24);
+    if (path.length < 2) return null;
+    return encodePolyline(path.map((p) => ({ latitude: p.lat, longitude: p.lng })));
   } catch {
     return null;
   }
@@ -132,19 +148,6 @@ async function fetchStopTexts(route: DemoRoute): Promise<Record<string, string>>
   return byId;
 }
 
-// Padded lat/lng bounds around all of a route's stops.
-function routeBounds(route: DemoRoute): TileBounds {
-  const lats = route.stops.map((s) => s.latitude);
-  const lngs = route.stops.map((s) => s.longitude);
-  const north = Math.max(...lats);
-  const south = Math.min(...lats);
-  const east = Math.max(...lngs);
-  const west = Math.min(...lngs);
-  const padLat = Math.max((north - south) * 0.12, 0.01);
-  const padLng = Math.max((east - west) * 0.12, 0.01);
-  return { north: north + padLat, south: south - padLat, east: east + padLng, west: west - padLng };
-}
-
 // Download + cache the pack for a route: interactive map tiles, a static snapshot
 // fallback, AI narration text, and each stop's voice audio. Works even with no
 // map key / no AI/TTS (falls back gracefully). onProgress reports overall
@@ -162,7 +165,7 @@ export async function savePack(
 
   // Phase 1: interactive map tiles (the bulk of the work — both light+dark).
   let tilesTotal = 0;
-  const tilesCached = await cacheTiles(routeBounds(route), (done, total) => {
+  const tilesCached = await cacheTiles(boundsForStops(route.stops), (done, total) => {
     tilesTotal = total;
     onProgress?.(done, total + stopsN);
   });

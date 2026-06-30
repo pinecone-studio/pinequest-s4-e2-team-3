@@ -76,6 +76,32 @@ export function decodePolyline(encoded: string): Coords[] {
   return points;
 }
 
+// Encodes lat/lng points into a Google encoded polyline (inverse of
+// decodePolyline) so a client-built road path can be stored/sent like an API one.
+export function encodePolyline(points: Coords[]): string {
+  let lastLat = 0;
+  let lastLng = 0;
+  let out = "";
+  const enc = (value: number) => {
+    let v = value < 0 ? ~(value << 1) : value << 1;
+    let s = "";
+    while (v >= 0x20) {
+      s += String.fromCharCode((0x20 | (v & 0x1f)) + 63);
+      v >>= 5;
+    }
+    s += String.fromCharCode(v + 63);
+    return s;
+  };
+  for (const p of points) {
+    const lat = Math.round(p.latitude * 1e5);
+    const lng = Math.round(p.longitude * 1e5);
+    out += enc(lat - lastLat) + enc(lng - lastLng);
+    lastLat = lat;
+    lastLng = lng;
+  }
+  return out;
+}
+
 // Real transit plan from the Hamuga API, or null if no bus route / unavailable.
 // Server-side only — uses HAMUGA_API_KEY, never call from client components.
 export async function fetchHamugaRoute(origin: Coords, dest: Coords): Promise<BusRoute | null> {
