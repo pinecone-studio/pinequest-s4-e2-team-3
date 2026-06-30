@@ -1,7 +1,6 @@
 import { View } from "react-native";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { OfflineStatusPill } from "@/components/OfflineStatusPill";
 
 type IconName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -63,8 +62,6 @@ export default function TabsLayout() {
           }}
         />
       </Tabs>
-      {/* Floating connectivity pill — sits above the tab bar */}
-      <OfflineStatusPill />
     </View>
   );
 }

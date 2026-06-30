@@ -6,11 +6,6 @@ export default () => ({
     url: process.env.DATABASE_URL,
   },
 
-  clerk: {
-    secretKey: process.env.CLERK_SECRET_KEY,
-    publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
-  },
-
   supabase: {
     url: process.env.SUPABASE_URL,
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,

@@ -1,8 +1,8 @@
 import { Controller, Get, Patch, Body, Param, UseGuards } from "@nestjs/common";
 import { UsersService } from "./users.service";
-import { ClerkAuthGuard } from "../auth/clerk-auth.guard";
+import { SupabaseAuthGuard } from "../auth/supabase-auth.guard";
 
-@UseGuards(ClerkAuthGuard)
+@UseGuards(SupabaseAuthGuard)
 @Controller("users")
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
