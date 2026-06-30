@@ -1,19 +1,20 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-// Supabase SSR session refresh.
-//
-// The browser client stores the auth session in cookies. Access tokens are
-// short-lived, so on every request we let Supabase rotate them and write the
-// refreshed cookies back onto the response. Without this, a logged-in user's
-// session would silently expire and server routes (e.g. saving a trip) would
-// see them as signed out.
-//
-// NOTE: this deliberately does NOT gate any routes. The app is a public demo
-// (the `/preview` phone-frame loads the dashboard in an iframe and the screens
-// render mock data), so forcing a login would break that experience. The only
-// auth-gated action — saving a trip — protects itself inside its route handler.
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Admin route protection — requires admin_token cookie
+  if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/login")) {
+    const token = request.cookies.get("admin_token")?.value;
+    const secret = process.env.ADMIN_SECRET;
+    if (!secret || token !== secret) {
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = "/admin/login";
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
