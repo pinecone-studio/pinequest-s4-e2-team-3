@@ -477,6 +477,11 @@ function ReadyView({
     enqueueOfflineIncident(option, location, navigator.language);
   }, [isOnline, option, location]);
 
+  // tel: links open a FaceTime prompt on desktop Macs (no SIM), so only offer
+  // direct-dial on a real phone; desktop uses the AI-assisted Twilio call.
+  const isMobile =
+    typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
   return (
     <div>
       <div className="mt-4 rounded-3xl border border-ink/5 bg-sand-50 p-5">
@@ -510,28 +515,36 @@ function ReadyView({
         </div>
       )}
 
-      {/* Direct-dial — ALWAYS shown regardless of connectivity. Works with no data
-          via the native phone dialer. Primary action when offline. */}
-      <a
-        href={`tel:${option.serviceNumber}`}
-        className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-[#d96a5f] py-4 text-base font-bold text-white shadow-lg shadow-[#d96a5f]/30"
-      >
-        <PhoneIcon size={20} />
-        Call {option.serviceNumber} · {option.service}
-      </a>
-      <p className="mt-2 text-center text-xs font-semibold text-ink-muted">
-        {isOnline
-          ? "Your location is attached automatically"
-          : "Calls directly from your phone — no internet needed"}
-      </p>
+      {/* Direct-dial — only on a real phone (a tel: link opens FaceTime on desktop
+          Macs). Works with no data via the native dialer; primary action offline. */}
+      {isMobile && (
+        <>
+          <a
+            href={`tel:${option.serviceNumber}`}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-[#d96a5f] py-4 text-base font-bold text-white shadow-lg shadow-[#d96a5f]/30"
+          >
+            <PhoneIcon size={20} />
+            Call {option.serviceNumber} · {option.service}
+          </a>
+          <p className="mt-2 text-center text-xs font-semibold text-ink-muted">
+            {isOnline
+              ? "Your location is attached automatically"
+              : "Calls directly from your phone — no internet needed"}
+          </p>
+        </>
+      )}
 
-      {/* AI-assisted Twilio call — secondary action, online only */}
+      {/* AI-assisted Twilio call — primary on desktop, secondary on mobile */}
       {isOnline && (
         <button
           onClick={onTwilioCall}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-ink/10 bg-white py-3.5 text-sm font-bold text-ink hover:bg-sand-50"
+          className={
+            isMobile
+              ? "mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-ink/10 bg-white py-3.5 text-sm font-bold text-ink hover:bg-sand-50"
+              : "mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-[#d96a5f] py-4 text-base font-bold text-white shadow-lg shadow-[#d96a5f]/30"
+          }
         >
-          <SpeakerIcon size={18} />
+          <SpeakerIcon size={20} />
           AI-assisted call in Mongolian
         </button>
       )}
