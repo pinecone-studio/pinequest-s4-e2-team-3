@@ -222,6 +222,18 @@ function SideButtons() {
 
 // ─── PhoneFrame ───────────────────────────────────────────────────────────────
 
+// Known in-frame app routes we'll persist/restore. Excludes /preview (would nest
+// a frame in a frame) and anything unknown (would 404). Keeps refresh on-screen.
+const FRAME_ROUTES = [
+  "/ai", "/journey", "/explore", "/live", "/translate", "/sos",
+  "/register", "/login", "/forgot-password", "/offline", "/admin",
+];
+function isKnownRoute(path: string): boolean {
+  const base = path.split("?")[0];
+  if (base === "/") return true;
+  return FRAME_ROUTES.some((r) => base === r || base.startsWith(r + "/"));
+}
+
 export interface PhoneFrameProps {
   /**
    * Load a URL in an iframe — gives the content its own 393×793 px viewport so
@@ -275,15 +287,18 @@ export function PhoneFrame({
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
 
   // Resolve the start URL on the client: last in-frame route, else the prop.
+  // Only restore a KNOWN app route — otherwise a stale/garbage path would load a
+  // 404, which the poll would then re-save into a permanent loop.
   useEffect(() => {
     if (!src) return;
     let stored: string | null = null;
     try { stored = sessionStorage.getItem(FRAME_PATH_KEY); } catch { /* ignore */ }
-    setResolvedSrc(stored || src);
+    setResolvedSrc(stored && isKnownRoute(stored) ? stored : src);
   }, [src]);
 
   // The app navigates client-side (no iframe load event per route), so poll the
-  // same-origin frame location and remember it for the next refresh.
+  // same-origin frame location and remember it for the next refresh. Only save
+  // known routes, so a 404 can never be persisted.
   useEffect(() => {
     if (!src) return;
     let last = "";
@@ -292,7 +307,7 @@ export function PhoneFrame({
         const win = frameRef.current?.contentWindow;
         if (!win) return;
         const path = win.location.pathname + win.location.search;
-        if (path && path !== last) {
+        if (path && path !== last && isKnownRoute(path)) {
           last = path;
           sessionStorage.setItem(FRAME_PATH_KEY, path);
         }
