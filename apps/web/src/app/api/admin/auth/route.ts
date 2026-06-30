@@ -1,25 +1,59 @@
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-const SECRET = process.env.ADMIN_SECRET ?? "";
+type CookieItem = { name: string; value: string; options?: Record<string, unknown> };
 
 export async function POST(req: Request) {
-  const { password } = await req.json();
-  if (!SECRET || password !== SECRET) {
-    return NextResponse.json({ error: "Нууц үг буруу байна" }, { status: 401 });
+  const { email, password } = await req.json();
+  if (!email || !password) {
+    return NextResponse.json({ error: "И-мэйл болон нууц үг шаардлагатай" }, { status: 400 });
   }
-  const res = NextResponse.json({ ok: true });
-  res.cookies.set("admin_token", SECRET, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-  });
-  return res;
+
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return cookieStore.getAll(); },
+        setAll(list: CookieItem[]) {
+          list.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
+        },
+      },
+    },
+  );
+
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+  if (error || !data.user) {
+    return NextResponse.json({ error: "И-мэйл эсвэл нууц үг буруу байна" }, { status: 401 });
+  }
+
+  // Only the designated admin email may enter
+  const adminEmail = process.env.ADMIN_EMAIL;
+  if (adminEmail && data.user.email !== adminEmail) {
+    await supabase.auth.signOut();
+    return NextResponse.json({ error: "Энэ бүртгэлд admin эрх байхгүй" }, { status: 403 });
+  }
+
+  return NextResponse.json({ ok: true });
 }
 
 export async function DELETE() {
-  const res = NextResponse.json({ ok: true });
-  res.cookies.delete("admin_token");
-  return res;
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return cookieStore.getAll(); },
+        setAll(list: CookieItem[]) {
+          list.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
+        },
+      },
+    },
+  );
+  await supabase.auth.signOut();
+  return NextResponse.json({ ok: true });
 }
