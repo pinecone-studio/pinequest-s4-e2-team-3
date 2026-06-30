@@ -27,8 +27,11 @@ export const tileUrl = (style: TileStyle, z: number, x: number, y: number) =>
 // Keep saves quick + storage modest: cap total tiles and fetch a few at a time.
 const MAX_TILES = 250;
 const CONCURRENCY = 6;
-const MIN_ZOOM = 10;
-const MAX_ZOOM = 16;
+// Hard zoom limits; the actual cached range is fitted to the route (zoomRange).
+const ABS_MIN_ZOOM = 6;
+const ABS_MAX_ZOOM = 16;
+// Zoom-in levels cached above the route's overview (whole-route) level.
+const DETAIL_LEVELS = 5;
 
 const tileKey = (style: TileStyle, z: number, x: number, y: number) => `${style}/${z}/${x}/${y}`;
 const ALL_STYLES: TileStyle[] = ["voyager", "dark"];
@@ -87,18 +90,54 @@ const latToY = (lat: number, z: number) => {
   return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * 2 ** z);
 };
 
-// All tile coords for the bounds, from MIN_ZOOM upward, stopping before the
-// MAX_TILES cap — so small routes get high detail and big ones get fewer zooms.
+// Padded lat/lng bounds around a set of stops — shared by the pack saver and the
+// offline map so both agree on the area (and zoom range) that was cached.
+export function boundsForStops(
+  stops: { latitude: number; longitude: number }[],
+): TileBounds {
+  const lats = stops.map((s) => s.latitude);
+  const lngs = stops.map((s) => s.longitude);
+  const north = Math.max(...lats);
+  const south = Math.min(...lats);
+  const east = Math.max(...lngs);
+  const west = Math.min(...lngs);
+  const padLat = Math.max((north - south) * 0.12, 0.01);
+  const padLng = Math.max((east - west) * 0.12, 0.01);
+  return { north: north + padLat, south: south - padLat, east: east + padLng, west: west - padLng };
+}
+
+// The zoom range fitted to a route: `min` is the level where the whole route fits
+// on screen (so you can zoom out to see it all), `max` adds DETAIL_LEVELS for
+// zooming in. A city route gets a high min (tight), a cross-country route a low
+// one (zoomed way out) — fixing both "can't zoom out" and tiny cached coverage.
+export function zoomRange(b: TileBounds): { min: number; max: number } {
+  let overview = ABS_MIN_ZOOM;
+  for (let z = ABS_MAX_ZOOM; z >= ABS_MIN_ZOOM; z--) {
+    const xs = lngToX(b.east, z) - lngToX(b.west, z) + 1;
+    const ys = latToY(b.south, z) - latToY(b.north, z) + 1;
+    if (xs <= 2 && ys <= 2) {
+      overview = z;
+      break;
+    }
+  }
+  const min = Math.max(ABS_MIN_ZOOM, overview - 1); // one extra zoom-out level
+  return { min, max: Math.min(ABS_MAX_ZOOM, min + DETAIL_LEVELS) };
+}
+
+// All tile coords for the bounds across the route-fitted zoom range, stopping
+// before the MAX_TILES cap — the overview level always caches (so the whole route
+// is visible offline), with as much zoom-in detail as the cap allows on top.
 function tilesForBounds(b: TileBounds): { z: number; x: number; y: number }[] {
+  const { min, max } = zoomRange(b);
   const jobs: { z: number; x: number; y: number }[] = [];
-  for (let z = MIN_ZOOM; z <= MAX_ZOOM; z++) {
+  for (let z = min; z <= max; z++) {
     const x0 = lngToX(b.west, z);
     const x1 = lngToX(b.east, z);
     const y0 = latToY(b.north, z); // north has the smaller y
     const y1 = latToY(b.south, z);
     const level: { z: number; x: number; y: number }[] = [];
     for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) level.push({ z, x, y });
-    if (jobs.length + level.length > MAX_TILES) break;
+    if (jobs.length && jobs.length + level.length > MAX_TILES) break;
     jobs.push(...level);
   }
   return jobs;
