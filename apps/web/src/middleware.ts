@@ -53,9 +53,18 @@ export async function middleware(request: NextRequest) {
     },
   );
 
-  // Refresh the session. Do not insert logic between client creation and this
-  // call — Supabase relies on it to detect and rotate the auth token.
-  await supabase.auth.getUser();
+  // Refresh session token on every request
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Admin route protection — requires a valid Supabase session with admin email
+  if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/login")) {
+    const adminEmail = process.env.ADMIN_EMAIL;
+    if (!user || (adminEmail && user.email !== adminEmail)) {
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = "/admin/login";
+      return NextResponse.redirect(loginUrl);
+    }
+  }
 
   return response;
 }
