@@ -247,99 +247,128 @@ function inMongolia(loc?: { lat: number; lng: number }): boolean {
   return loc.lat >= 41.5 && loc.lat <= 52.2 && loc.lng >= 87.7 && loc.lng <= 120;
 }
 
+// Separates the streamed reply text from the trailing JSON metadata (place cards
+// + any pending plan). A null char never appears in normal model output.
+const META_DELIM = " __POLARIS_META__ ";
+
 export async function POST(req: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    return Response.json(
-      { error: "OPENAI_API_KEY is not configured" },
-      { status: 500 },
-    );
+    return Response.json({ error: "OPENAI_API_KEY is not configured" }, { status: 500 });
   }
 
-  try {
-    const { messages, location: rawLocation } = (await req.json()) as ChatRequest;
-    const openai = new OpenAI({ apiKey });
+  const { messages, location: rawLocation } = (await req.json()) as ChatRequest;
+  const openai = new OpenAI({ apiKey });
 
-    // Only use the GPS fix if it's actually in Mongolia; otherwise plan as pre-arrival.
-    const location = inMongolia(rawLocation) ? rawLocation : undefined;
+  // Only use the GPS fix if it's actually in Mongolia; otherwise plan as pre-arrival.
+  const location = inMongolia(rawLocation) ? rawLocation : undefined;
 
-    const locationNote = location
-      ? "The traveller's live GPS location is available — use find_nearby_places for anything location-based."
-      : "The traveller's location is unavailable. They may be planning before arriving in Mongolia, so " +
-        "follow the PRE-ARRIVAL PLANNING rule by default. Only ask them to enable location if they clearly " +
-        "are already in Mongolia and want something right around them.";
+  const locationNote = location
+    ? "The traveller's live GPS location is available — use find_nearby_places for anything location-based."
+    : "The traveller's location is unavailable. They may be planning before arriving in Mongolia, so " +
+      "follow the PRE-ARRIVAL PLANNING rule by default. Only ask them to enable location if they clearly " +
+      "are already in Mongolia and want something right around them.";
 
-    const conversation: ChatCompletionMessageParam[] = [
-      { role: "system", content: `${SYSTEM_PROMPT} ${locationNote}` },
-      ...messages.map((m) => ({ role: m.role, content: m.content })),
-    ];
+  const conversation: ChatCompletionMessageParam[] = [
+    { role: "system", content: `${SYSTEM_PROMPT} ${locationNote}` },
+    ...messages.map((m) => ({ role: m.role, content: m.content })),
+  ];
 
-    const { reply, places, pendingPlan } = await runConversation(openai, conversation, location);
-    return Response.json({ reply, places, pendingPlan });
-  } catch (error) {
-    console.error("chat route error", error);
-    return Response.json({ error: "Failed to get a reply" }, { status: 500 });
-  }
+  // Stream the reply text as it's generated, then a metadata tail with the cards.
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (s: string) => controller.enqueue(encoder.encode(s));
+      try {
+        const { places, pendingPlan } = await streamConversation(openai, conversation, location, send);
+        send(META_DELIM + JSON.stringify({ places, pendingPlan }));
+      } catch (error) {
+        console.error("chat route error", error);
+        send(META_DELIM + JSON.stringify({ error: true }));
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+  });
 }
 
 // Runs the model and resolves any tool calls it makes, looping a few rounds so it
 // can look up places and/or finalise a plan before writing its reply. Returns the
 // final text PLUS the structured place cards it found and any plan awaiting the
 // traveller's Save / Add more decision.
-async function runConversation(
+async function streamConversation(
   openai: OpenAI,
   conversation: ChatCompletionMessageParam[],
-  location?: { lat: number; lng: number },
-): Promise<{ reply: string; places: PlaceCard[]; pendingPlan?: PendingPlan }> {
+  location: { lat: number; lng: number } | undefined,
+  send: (s: string) => void,
+): Promise<{ places: PlaceCard[]; pendingPlan?: PendingPlan }> {
   const collected: NearbyPlace[] = [];
   let pendingPlan: PendingPlan | undefined;
 
-  // A handful of rounds is plenty: the model looks things up, we feed the
-  // results back, and it writes the reply.
   const MAX_ROUNDS = 4;
   for (let round = 0; round < MAX_ROUNDS; round++) {
+    // On the last round drop the tools, forcing a text reply instead of more lookups.
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: conversation,
-      tools: TOOLS,
+      tools: round < MAX_ROUNDS - 1 ? TOOLS : undefined,
+      stream: true,
     });
-    const message = completion.choices[0]?.message;
-    if (!message) break;
 
-    // No more lookups needed — this is the answer.
-    if (!message.tool_calls?.length) {
-      return { reply: message.content ?? "", places: toCards(collected), pendingPlan };
+    let content = "";
+    const toolAcc: Record<number, { id: string; name: string; args: string }> = {};
+    for await (const chunk of completion) {
+      const delta = chunk.choices[0]?.delta;
+      if (delta?.content) {
+        content += delta.content;
+        send(delta.content); // pipe each token to the browser as it arrives
+      }
+      for (const tc of delta?.tool_calls ?? []) {
+        const acc = (toolAcc[tc.index] ??= { id: "", name: "", args: "" });
+        if (tc.id) acc.id = tc.id;
+        if (tc.function?.name) acc.name += tc.function.name;
+        if (tc.function?.arguments) acc.args += tc.function.arguments;
+      }
     }
 
-    conversation.push(message);
-    for (const call of message.tool_calls) {
-      if (call.type !== "function") continue;
-      const args = safeParse(call.function.arguments);
+    const toolCalls = Object.values(toolAcc);
+    // No lookups requested — the streamed text is the final answer.
+    if (!toolCalls.length) {
+      return { places: toCards(collected), pendingPlan };
+    }
+
+    conversation.push({
+      role: "assistant",
+      content: content || null,
+      tool_calls: toolCalls.map((t) => ({
+        id: t.id,
+        type: "function" as const,
+        function: { name: t.name, arguments: t.args },
+      })),
+    });
+
+    for (const t of toolCalls) {
+      const args = safeParse(t.args);
 
       let result: unknown;
-      if (call.function.name === "finalize_trip_plan") {
-        // Don't save here — hand the plan to the UI so the traveller can confirm.
+      if (t.name === "finalize_trip_plan") {
         if (args.title && args.summary) {
           pendingPlan = { title: args.title, summary: args.summary, stops: args.stops ?? [] };
         }
         result = { presented: Boolean(pendingPlan) };
-      } else if (call.function.name === "lookup_place") {
-        // Planning lookup by name — no live location needed.
+      } else if (t.name === "lookup_place") {
         const place = args.name ? await lookupPlace(args.name) : null;
         if (place) collected.push(place);
-        result = place
-          ? { found: true, name: place.name, rating: place.rating }
-          : { found: false };
+        result = place ? { found: true, name: place.name, rating: place.rating } : { found: false };
       } else {
         const places = location
           ? await findNearbyPlaces(location.lat, location.lng, args.keyword ?? "place", args.type)
           : [];
         collected.push(...places);
-        console.log(
-          `[chat] location=${location ? "yes" : "NONE"} keyword="${args.keyword}" → ` +
-            `${places.length} places, ${places.filter((p) => p.imageUrl).length} with photos`,
-        );
-        // The model only needs names/ratings/walk time to choose and write text.
         result = {
           locationKnown: Boolean(location),
           places: places.map((p) => ({
@@ -351,24 +380,11 @@ async function runConversation(
         };
       }
 
-      conversation.push({
-        role: "tool",
-        tool_call_id: call.id,
-        content: JSON.stringify(result),
-      });
+      conversation.push({ role: "tool", tool_call_id: t.id, content: JSON.stringify(result) });
     }
   }
 
-  // Hit the round cap — make one final pass without tools to force a text reply.
-  const final = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: conversation,
-  });
-  return {
-    reply: final.choices[0]?.message.content ?? "",
-    places: toCards(collected),
-    pendingPlan,
-  };
+  return { places: toCards(collected), pendingPlan };
 }
 
 // One scheduled stop in a finished plan, saved to the day-by-day Journey timeline.

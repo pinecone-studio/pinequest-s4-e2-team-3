@@ -1,12 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-
-function db() {
-  return createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
-}
 
 function adminDb() {
   return createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
@@ -46,14 +41,32 @@ export interface LogIncidentPayload {
   is_online?: boolean | null;
 }
 
+// Client-side: log the incident through the server so it's written with the
+// service-role key (bypasses RLS — no anon insert policy needed) and can be
+// validated/rate-limited server-side. Best-effort; never throws.
 export async function logSosIncident(payload: LogIncidentPayload): Promise<string | null> {
-  const { data, error } = await db()
+  try {
+    const res = await fetch("/api/sos/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Server-side: insert the incident with the service-role client (bypasses RLS).
+export async function createIncident(payload: LogIncidentPayload): Promise<string | null> {
+  const { data, error } = await adminDb()
     .from("sos_incidents")
     .insert({ ...payload, status: "active" })
     .select("id")
     .single();
-  // Incident logging is best-effort — never surface a red error overlay for it.
-  if (error) { console.warn("[sos] log skipped:", error.message); return null; }
+  if (error) { console.warn("[sos] insert failed:", error.message); return null; }
   return data?.id ?? null;
 }
 

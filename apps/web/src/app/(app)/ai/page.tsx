@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { ChatIcon, MicIcon, SendIcon, StarIcon, WalkIcon } from "@/components/icons";
 import { GuideAvatar, type GuideAvatarState } from "@/components/GuideAvatar";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
@@ -53,6 +55,9 @@ const WELCOME: Message = {
 
 // Conversation is kept on the device so it survives a refresh.
 const STORAGE_KEY = "lumo:chat";
+
+// Separates the streamed reply text from the metadata tail — must match the API route.
+const META_DELIM = " __POLARIS_META__ ";
 
 // Resolve the device location, returning null if it's blocked or unavailable.
 function requestLocation(): Promise<{ lat: number; lng: number } | null> {
@@ -162,6 +167,7 @@ export default function AiPage() {
     const location = coords ?? (await requestLocation());
     if (location && !coords) setCoords(location);
 
+    const assistantId = crypto.randomUUID();
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -171,14 +177,52 @@ export default function AiPage() {
           location,
         }),
       });
-      const data = await response.json();
-      addAssistantReply(
-        data.reply || "Sorry, I couldn't reach the guide right now.",
-        data.places,
-        data.pendingPlan,
-      );
+      if (!response.body) throw new Error("no stream");
+
+      // Add an empty assistant bubble, then fill it as tokens stream in.
+      setMessages((c) => [...c, { id: assistantId, role: "assistant", content: "" }]);
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const i = buffer.indexOf(META_DELIM);
+        const text = i >= 0 ? buffer.slice(0, i) : buffer;
+        setMessages((c) => c.map((m) => (m.id === assistantId ? { ...m, content: text } : m)));
+      }
+
+      // Split the streamed text from the metadata tail (place cards + pending plan).
+      const i = buffer.indexOf(META_DELIM);
+      const text = i >= 0 ? buffer.slice(0, i) : buffer;
+      let meta: { places?: PlaceCard[]; pendingPlan?: PendingPlan; error?: boolean } = {};
+      if (i >= 0) {
+        try { meta = JSON.parse(buffer.slice(i + META_DELIM.length)); } catch { /* ignore */ }
+      }
+
+      const reply: Message = {
+        id: assistantId,
+        role: "assistant",
+        content: text || (meta.error ? "Sorry, I couldn't reach the guide right now." : ""),
+        places: meta.places,
+        pendingPlan: meta.pendingPlan,
+        planStatus: meta.pendingPlan ? "pending" : undefined,
+      };
+      setMessages((c) => c.map((m) => (m.id === assistantId ? reply : m)));
+      persistMessage(reply);
     } catch {
-      addAssistantReply("Something went wrong. Please try again.");
+      const fallback: Message = {
+        id: assistantId,
+        role: "assistant",
+        content: "Something went wrong. Please try again.",
+      };
+      setMessages((c) =>
+        c.some((m) => m.id === assistantId)
+          ? c.map((m) => (m.id === assistantId ? fallback : m))
+          : [...c, fallback],
+      );
     } finally {
       setIsLoading(false);
     }
@@ -305,7 +349,7 @@ export default function AiPage() {
             disabled={isLoading}
           />
         ))}
-        {isLoading ? <TypingBubble /> : null}
+        {isLoading && messages[messages.length - 1]?.role === "user" ? <TypingBubble /> : null}
         <div ref={scrollAnchor} />
       </div>
 
@@ -367,14 +411,15 @@ function MessageBubble({
   const isUser = message.role === "user";
   return (
     <div className={isUser ? "flex flex-col items-end" : "flex flex-col items-start"}>
-      <p
-        className={[
-          "max-w-[80%] whitespace-pre-wrap rounded-3xl px-4 py-3 text-sm",
-          isUser ? "bg-primary-600 text-white" : "bg-white text-ink shadow-ink-sm",
-        ].join(" ")}
-      >
-        {message.content}
-      </p>
+      {isUser ? (
+        <p className="max-w-[80%] whitespace-pre-wrap rounded-3xl bg-primary-600 px-4 py-3 text-sm text-white">
+          {message.content}
+        </p>
+      ) : (
+        <div className="max-w-[80%] space-y-2 rounded-3xl bg-white px-4 py-3 text-sm text-ink shadow-ink-sm [&_a]:text-primary-600 [&_a]:underline [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-0 [&_strong]:font-bold [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+        </div>
+      )}
 
       {message.places?.length ? (
         <div className="mt-2 flex w-full max-w-[90%] gap-3 overflow-x-auto pb-1">
