@@ -86,13 +86,9 @@ export function useLiveGuide(demo = false) {
   const [lastAnswer, setLastAnswer] = useState<string | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
 
-  // Simulated position wins; otherwise real GPS if near the route, else the
-  // route's first stop (so demos far from Mongolia still appear on the journey).
-  const effectiveCoords: Coords | null = resolvePosition(
-    simulatedCoords,
-    realCoords,
-    activeRoute,
-  );
+  // Simulated position wins; otherwise the real GPS fix; otherwise null (no fake
+  // dot parked on the first stop).
+  const effectiveCoords: Coords | null = resolvePosition(simulatedCoords, realCoords);
 
   // A GENUINE fix (simulated demo position or real GPS) — no first-stop fallback.
   // Arrival detection uses this: otherwise, before a normal user's GPS resolves,
@@ -228,41 +224,52 @@ export function useLiveGuide(demo = false) {
     announce(text);
   }, [activeRoute, simulatedCoords, realCoords, announce]);
 
-  // Proactive trigger: as the traveller moves, find the furthest stop they've
-  // reached (from the current one onward), advance the guide to it, and narrate
-  // it once. Scanning forward — not just checking the current stop — is what
-  // lets the guide progress automatically on real GPS as you walk the route,
-  // instead of only via the demo's "Walk to next" button. It also tolerates
-  // skipping or arriving at a later stop directly.
+  // Proactive arrival trigger as the traveller moves. Two modes:
+  //  • Demo: scan forward and narrate the FURTHEST reached stop, tolerating skips
+  //    (auto-walk / manual "next" jump ahead) — unchanged on-stage behaviour.
+  //  • Normal user: STRICT in-order. Only the next stop they haven't reached yet
+  //    (the current target) can be arrived at. A double gate — proximity AND
+  //    sequence — so being physically near a LATER stop that just happens to be
+  //    close by (e.g. standing near stop #3 while heading to stop #1) never reads
+  //    that stop's script or skips the ones before it.
   useEffect(() => {
     if (!genuinePosition || stops.length === 0) return;
 
-    for (let i = stops.length - 1; i >= currentStopIndex; i--) {
-      if (!hasArrived(genuinePosition, stops[i])) continue;
+    if (demo) {
+      for (let i = stops.length - 1; i >= currentStopIndex; i--) {
+        if (!hasArrived(genuinePosition, stops[i])) continue;
 
-      if (i > currentStopIndex) goToStop(i); // walked ahead → catch up
-      const stop = stops[i];
-      if (!arrivedStopIds.includes(stop.id)) {
-        markArrived(stop.id);
-        // Narrate the arrival — except a stop already reached at mount, which stays
-        // silent until the traveller taps play (the journey "starts here"). For the
-        // demo that mount-time stop is stop #1 (it's parked there); startedRef flips
-        // on that first arrival, exactly as before. For a normal user, startedRef is
-        // flipped after the first run below, so any stop they actually travel to and
-        // reach narrates on arrival.
-        if (startedRef.current) sayNarration(stop);
-        else if (demo) startedRef.current = true;
-        // Newly back on a main stop → drop the "return"/detour guide line. Only
-        // on a genuine new arrival, NOT on a reload where the stop is already in
-        // arrivedStopIds — otherwise refresh would wipe a persisted detour route.
-        setReturnTarget(null);
+        if (i > currentStopIndex) goToStop(i); // walked ahead → catch up
+        const stop = stops[i];
+        if (!arrivedStopIds.includes(stop.id)) {
+          markArrived(stop.id);
+          // First arrival at mount (parked at stop #1) stays silent until play;
+          // every arrival after that narrates.
+          if (startedRef.current) sayNarration(stop);
+          else startedRef.current = true;
+          setReturnTarget(null);
+        }
+        break; // furthest reached stop handled; stop scanning
       }
-      break; // furthest reached stop handled; stop scanning
+      return;
     }
 
-    // Normal users: after this first pass with a real position, every later arrival
-    // narrates (only a stop already reached at mount was silenced above).
-    if (!demo) startedRef.current = true;
+    // Normal user: only the next un-reached stop counts, and only when actually near it.
+    const targetIndex = stops.findIndex((s) => !arrivedStopIds.includes(s.id));
+    if (targetIndex >= 0 && hasArrived(genuinePosition, stops[targetIndex])) {
+      const stop = stops[targetIndex];
+      if (targetIndex > currentStopIndex) goToStop(targetIndex);
+      markArrived(stop.id);
+      // A stop already reached at mount ("start here") stays silent until play;
+      // any stop the traveller actually walks to and reaches narrates on arrival.
+      if (startedRef.current) sayNarration(stop);
+      // Newly back on a main stop → drop any "return"/detour guide line.
+      setReturnTarget(null);
+    }
+
+    // After the first pass with a real position, later arrivals narrate (only a
+    // stop already within range at mount was silenced above).
+    startedRef.current = true;
   }, [
     demo,
     genuinePosition,
@@ -276,8 +283,14 @@ export function useLiveGuide(demo = false) {
   ]);
 
   const replay = useCallback(() => {
-    if (currentStop) sayNarration(currentStop);
-  }, [currentStop, sayNarration]);
+    // Speak what the card is actually showing. Before the traveller reaches the
+    // stop, that's the welcome / "head to your first stop" guidance held in
+    // lastAnswer — NOT the stop's arrival script. Replaying sayNarration here read
+    // "Welcome to Gandan Monastery" while they were still 3 km away. Once they
+    // arrive, sayNarration clears lastAnswer, so this replays the stop's narration.
+    if (lastAnswer) announce(lastAnswer);
+    else if (currentStop) sayNarration(currentStop);
+  }, [lastAnswer, currentStop, sayNarration, announce]);
 
   const pause = useCallback(() => {
     stopSpeaking();
