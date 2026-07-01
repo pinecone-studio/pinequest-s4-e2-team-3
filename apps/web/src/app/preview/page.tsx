@@ -18,6 +18,7 @@ export default function PreviewPage() {
         statusBarTheme="light"
         screenBg="#F3EEE6"
         demoToggle
+        demoDeadSwitch
       />
     </main>
   );

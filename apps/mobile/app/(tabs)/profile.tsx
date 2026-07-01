@@ -19,7 +19,7 @@ const RED = "#e53935";
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, signOut, updateEmergencyContact } = useAuthStore();
-  const { isArmed, arm, disarm, triggerOverlay } = useDeadSwitchStore();
+  const { isArmed, lastSentAt, arm, disarm } = useDeadSwitchStore();
 
   const fullName =
     (user?.user_metadata?.fullName as string | undefined) ?? "User";
@@ -58,7 +58,7 @@ export default function ProfileScreen() {
     if (isArmed) {
       Alert.alert(
         "Disarm Switch",
-        "Are you sure? Your emergency contact will no longer be alerted if you miss a check-in.",
+        "Are you sure? Your emergency contact will stop receiving your live location.",
         [
           { text: "Cancel", style: "cancel" },
           {
@@ -112,8 +112,8 @@ export default function ProfileScreen() {
               </View>
             </View>
             <Text className="text-xs text-gray-500 mb-3">
-              If you miss a check-in, your emergency contact is automatically
-              alerted. Works offline.
+              While armed, your live location is sent to your emergency contact
+              by SMS every 15 minutes.
             </Text>
             <TouchableOpacity
               className="rounded-xl py-3 items-center"
@@ -125,25 +125,13 @@ export default function ProfileScreen() {
               </Text>
             </TouchableOpacity>
 
-            {/* Dev demo buttons */}
-            <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#e5e7eb" }}>
-              <TouchableOpacity
-                style={{ backgroundColor: "#1b264615", borderRadius: 8, paddingVertical: 8, alignItems: "center", marginBottom: 8 }}
-                onPress={() => triggerOverlay()}
-              >
-                <Text style={{ fontSize: 12, fontWeight: "600", color: "#1b2640" }}>
-                  Offline Demo
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={{ backgroundColor: "#D9831F18", borderRadius: 8, paddingVertical: 8, alignItems: "center" }}
-                onPress={() => triggerOverlay()}
-              >
-                <Text style={{ fontSize: 12, fontWeight: "600", color: AMBER }}>
-                  Service Demo
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {isArmed && (
+              <Text className="text-xs text-gray-400 mt-3 text-center">
+                {lastSentAt
+                  ? `Last location sent ${new Date(lastSentAt).toLocaleTimeString()}`
+                  : "Sending first location update…"}
+              </Text>
+            )}
           </View>
         </View>
 

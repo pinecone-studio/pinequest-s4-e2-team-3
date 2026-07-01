@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MapPinLoader } from "./MapPinLoader";
+import { DeadSwitchTrigger, DeadSwitchOverlay, useDeadSwitchDemo } from "./DeadSwitchDemo";
 
 // ─── Device constants (iPhone 15 Pro logical resolution) ─────────────────────
 const S_W = 393;            // screen width  (px)
@@ -150,7 +151,9 @@ function HomeIndicator({ dark }: { dark: boolean }) {
         height: 5,
         borderRadius: 9999,
         background: dark ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.22)",
-        zIndex: 60,
+        // Above the dead-switch overlay (z 65) — like the real gesture bar,
+        // it stays visible over any in-app modal.
+        zIndex: 80,
         pointerEvents: "none",
       }}
     />
@@ -244,6 +247,8 @@ export interface PhoneFrameProps {
   className?: string;
   /** Renders a floating offline/online demo toggle button on the right side of the frame. Only works in iframe (src) mode. */
   demoToggle?: boolean;
+  /** Renders the dead-switch demo trigger docked below the demo toggle, on the right side of the frame. */
+  demoDeadSwitch?: boolean;
 }
 
 export function PhoneFrame({
@@ -254,12 +259,14 @@ export function PhoneFrame({
   screenBg = "#0a0a0a",
   className = "",
   demoToggle = false,
+  demoDeadSwitch = false,
 }: PhoneFrameProps) {
   const deviceRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const dark = statusBarTheme === "dark";
   const [demoOffline, setDemoOffline] = useState(false);
   const [iframeReady, setIframeReady] = useState(false);
+  const deadSwitchDemo = useDeadSwitchDemo();
 
   function handleDemoToggle() {
     const next = !demoOffline;
@@ -430,6 +437,12 @@ export function PhoneFrame({
           </span>
         </button>
       )}
+      {demoDeadSwitch && (
+        <DeadSwitchTrigger
+          demo={deadSwitchDemo}
+          style={{ position: "absolute", right: -72, top: 296, bottom: "auto", zIndex: 100 }}
+        />
+      )}
       <div style={{ ...innerStyle, perspective: "1200px" }}>
         {/* ── Device chrome ── */}
         <div
@@ -569,6 +582,10 @@ export function PhoneFrame({
 
             {/* Home indicator */}
             <HomeIndicator dark={dark} />
+
+            {/* Dead-switch demo overlay — clipped to the screen's rounded
+                corners since it renders inside this container. */}
+            {demoDeadSwitch && <DeadSwitchOverlay demo={deadSwitchDemo} />}
           </div>
         </div>
       </div>
