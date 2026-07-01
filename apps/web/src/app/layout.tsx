@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Instrument_Serif, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { CheckInBanner } from "@/components/CheckInBanner";
-import { DeadSwitchDemo } from "@/components/DeadSwitchDemo";
 import { OnlineStatusProvider } from "@/context/OnlineStatus";
 
 // The Polaris design pairs two typefaces:
@@ -41,7 +40,6 @@ export default function RootLayout({
         <OnlineStatusProvider>
           {children}
           <CheckInBanner />
-          <DeadSwitchDemo />
         </OnlineStatusProvider>
       </body>
     </html>

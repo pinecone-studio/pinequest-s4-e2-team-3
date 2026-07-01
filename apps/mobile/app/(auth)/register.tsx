@@ -20,6 +20,12 @@ export default function RegisterScreen() {
   async function handleSignUp() {
     if (submitting) return;
     setError(null);
+
+    if (!emergencyName.trim() || !emergencyPhone.trim()) {
+      setError("Emergency contact name and phone are required.");
+      return;
+    }
+
     setSubmitting(true);
     try {
       const { error: err } = await supabase.auth.signUp({
@@ -28,9 +34,7 @@ export default function RegisterScreen() {
         options: {
           data: {
             fullName,
-            emergencyContact: emergencyName
-              ? { name: emergencyName, phone: emergencyPhone }
-              : null,
+            emergencyContact: { name: emergencyName.trim(), phone: emergencyPhone.trim() },
           },
         },
       });
@@ -161,11 +165,11 @@ export default function RegisterScreen() {
       {/* Emergency contact section */}
       <View className="border border-amber-200 bg-amber-50 rounded-xl p-4 mb-6">
         <Text className="text-sm font-semibold text-amber-800 mb-1">
-          Emergency Contact
+          Emergency Contact (Required)
         </Text>
         <Text className="text-xs text-amber-700 mb-3">
-          Required for the Dead Man&apos;s Switch safety feature. This person will be
-          alerted if you don&apos;t respond to a check-in.
+          Used by the Dead Man&apos;s Switch safety feature. When you turn the switch
+          on, this person receives your live location by SMS until you turn it off.
         </Text>
         <TextInput
           className="border border-amber-200 bg-white rounded-xl px-4 py-3 mb-3"

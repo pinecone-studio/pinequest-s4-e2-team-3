@@ -2,27 +2,25 @@ import "../global.css";
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/stores/authStore";
 import { useDeadSwitchStore } from "@/stores/deadSwitchStore";
-import { DeadSwitchOverlay } from "@/components/DeadSwitchOverlay";
+import { useDeadSwitchPing } from "@/hooks/useDeadSwitchPing";
 import { WaypointLoader } from "@/components/WaypointLoader";
 import { SplashScreen, Stack, useRouter, useSegments } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import { AppState, StyleSheet, View } from "react-native";
+import { useEffect, useState } from "react";
+import { StyleSheet, View } from "react-native";
 
 SplashScreen.preventAutoHideAsync();
 
 const MIN_LOADER_MS = 1500;
-// Poll every 30 s to see if a check-in is overdue (works offline)
-const CHECK_INTERVAL_MS = 30_000;
 
 function InitialLayout() {
   const { session, loading, setSession, setLoading } = useAuthStore();
-  const { load: loadSwitch, isCheckInOverdue, triggerOverlay, showOverlay } =
-    useDeadSwitchStore();
+  const loadSwitch = useDeadSwitchStore((s) => s.load);
 
   const [minTimeElapsed, setMinTimeElapsed] = useState(false);
   const segments = useSegments();
   const router = useRouter();
-  const appState = useRef(AppState.currentState);
+
+  useDeadSwitchPing();
 
   // ── Splash / loader ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -53,30 +51,6 @@ function InitialLayout() {
     loadSwitch();
   }, []);
 
-  // ── Dead switch timer (polls every 30 s; also fires on foreground) ─────────
-  useEffect(() => {
-    function check() {
-      if (isCheckInOverdue()) triggerOverlay();
-    }
-
-    const timer = setInterval(check, CHECK_INTERVAL_MS);
-
-    const sub = AppState.addEventListener("change", (nextState) => {
-      if (
-        appState.current.match(/inactive|background/) &&
-        nextState === "active"
-      ) {
-        check();
-      }
-      appState.current = nextState;
-    });
-
-    return () => {
-      clearInterval(timer);
-      sub.remove();
-    };
-  }, [isCheckInOverdue, triggerOverlay]);
-
   // ── Route guard ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (loading || !minTimeElapsed) return;
@@ -106,10 +80,6 @@ function InitialLayout() {
           <WaypointLoader variant="fullscreen" />
         </View>
       )}
-
-      {/* Dead man's switch full-screen overlay — rendered at root so it
-          appears above all tabs and screens */}
-      <DeadSwitchOverlay />
     </View>
   );
 }

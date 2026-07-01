@@ -3,41 +3,24 @@ import * as SecureStore from 'expo-secure-store'
 
 const PERSIST_KEY = 'dead_switch_v1'
 
-// How long the overlay stays visible before auto-triggering the alert
-export const OVERLAY_COUNTDOWN_SECS = 60
-
-// Default check-in interval: 4 hours
-const DEFAULT_INTERVAL_MS = 4 * 60 * 60 * 1000
-
-export interface PendingAlert {
-  id: string
-  triggeredAt: number
-  contactName: string
-  contactPhone: string
-}
+// How often we text the emergency contact a fresh location while armed
+export const DEFAULT_PING_INTERVAL_MS = 15 * 60 * 1000
 
 interface PersistedState {
   isArmed: boolean
   intervalMs: number
-  lastCheckIn: number | null
-  pendingAlerts: PendingAlert[]
+  lastSentAt: number | null
 }
 
 interface DeadSwitchState extends PersistedState {
   loaded: boolean
-  showOverlay: boolean
-  countdownSecs: number
 }
 
 interface DeadSwitchActions {
   load: () => Promise<void>
   arm: (intervalMs?: number) => Promise<void>
   disarm: () => Promise<void>
-  triggerOverlay: () => void
-  setCountdown: (secs: number) => void
-  approve: () => Promise<void>
-  decline: (contactName: string, contactPhone: string) => Promise<void>
-  isCheckInOverdue: () => boolean
+  markSent: (timestamp: number) => Promise<void>
 }
 
 async function save(state: PersistedState) {
@@ -47,12 +30,9 @@ async function save(state: PersistedState) {
 export const useDeadSwitchStore = create<DeadSwitchState & DeadSwitchActions>(
   (set, get) => ({
     isArmed: false,
-    intervalMs: DEFAULT_INTERVAL_MS,
-    lastCheckIn: null,
-    pendingAlerts: [],
+    intervalMs: DEFAULT_PING_INTERVAL_MS,
+    lastSentAt: null,
     loaded: false,
-    showOverlay: false,
-    countdownSecs: OVERLAY_COUNTDOWN_SECS,
 
     load: async () => {
       try {
@@ -69,12 +49,10 @@ export const useDeadSwitchStore = create<DeadSwitchState & DeadSwitchActions>(
     },
 
     arm: async (intervalMs) => {
-      const now = Date.now()
       const next: PersistedState = {
         isArmed: true,
         intervalMs: intervalMs ?? get().intervalMs,
-        lastCheckIn: now,
-        pendingAlerts: get().pendingAlerts,
+        lastSentAt: null,
       }
       await save(next)
       set(next)
@@ -84,54 +62,20 @@ export const useDeadSwitchStore = create<DeadSwitchState & DeadSwitchActions>(
       const next: PersistedState = {
         isArmed: false,
         intervalMs: get().intervalMs,
-        lastCheckIn: null,
-        pendingAlerts: get().pendingAlerts,
+        lastSentAt: get().lastSentAt,
       }
       await save(next)
-      set({ ...next, showOverlay: false })
+      set(next)
     },
 
-    triggerOverlay: () =>
-      set({ showOverlay: true, countdownSecs: OVERLAY_COUNTDOWN_SECS }),
-
-    setCountdown: (secs) => set({ countdownSecs: secs }),
-
-    approve: async () => {
-      const now = Date.now()
+    markSent: async (timestamp) => {
       const next: PersistedState = {
         isArmed: get().isArmed,
         intervalMs: get().intervalMs,
-        lastCheckIn: now,
-        pendingAlerts: get().pendingAlerts,
+        lastSentAt: timestamp,
       }
       await save(next)
-      set({ showOverlay: false, lastCheckIn: now })
-    },
-
-    decline: async (contactName, contactPhone) => {
-      const alert: PendingAlert = {
-        id: String(Date.now()),
-        triggeredAt: Date.now(),
-        contactName,
-        contactPhone,
-      }
-      const pendingAlerts = [...get().pendingAlerts, alert]
-      const next: PersistedState = {
-        isArmed: get().isArmed,
-        intervalMs: get().intervalMs,
-        lastCheckIn: get().lastCheckIn,
-        pendingAlerts,
-      }
-      await save(next)
-      set({ showOverlay: false, pendingAlerts })
-      // TODO: flush to backend/edge function when online
-    },
-
-    isCheckInOverdue: () => {
-      const { isArmed, lastCheckIn, intervalMs, showOverlay } = get()
-      if (!isArmed || showOverlay) return false
-      if (lastCheckIn === null) return true
-      return Date.now() - lastCheckIn > intervalMs
+      set({ lastSentAt: timestamp })
     },
   }),
 )
