@@ -1,6 +1,22 @@
 import { createClient } from "@supabase/supabase-js";
 import type { BrowsePlace } from "@/lib/places";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { cached } from "@/lib/cache";
+
+// The browse/search screens fire 5–10 /api/places calls per page load, each of
+// which used to re-read the whole `places` table. Load it once and share it for
+// a short window so those bursts collapse to a single scan. Kept short (60s) so
+// admin edits still show up almost immediately — same data, just not re-fetched
+// ten times a second.
+const PLACES_TTL_MS = 60_000;
+
+function loadAllPlaces(): Promise<DbPlace[]> {
+  return cached("custom-places:all", PLACES_TTL_MS, async () => {
+    const { data, error } = await db().from("places").select("*");
+    if (error || !data) throw new Error(error?.message ?? "no places");
+    return data as DbPlace[];
+  });
+}
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -69,15 +85,18 @@ export async function fetchNearbyCustomPlaces(
 ): Promise<BrowsePlace[]> {
   if (!SUPABASE_URL || !SUPABASE_KEY) return [];
 
-  let q = db().from("places").select("*");
-  if (category.toLowerCase() !== "all") {
-    q = q.eq("category", category);
+  let rows: DbPlace[];
+  try {
+    rows = await loadAllPlaces();
+  } catch {
+    return [];
   }
 
-  const { data, error } = await q;
-  if (error || !data) return [];
+  if (category.toLowerCase() !== "all") {
+    rows = rows.filter((p) => p.category === category);
+  }
 
-  return (data as DbPlace[])
+  return rows
     .map((p) => ({ ...toSpot(p, lat, lng), _dist: haversineKm(lat, lng, p.latitude, p.longitude) }))
     .filter((p) => p._dist <= 5)
     .sort((a, b) => a._dist - b._dist)
@@ -92,13 +111,20 @@ export async function searchCustomPlaces(
 ): Promise<BrowsePlace[]> {
   if (!SUPABASE_URL || !SUPABASE_KEY || !query.trim()) return [];
 
-  const { data, error } = await db()
-    .from("places")
-    .select("*")
-    .or(`name.ilike.%${query}%,nameEn.ilike.%${query}%,nameMn.ilike.%${query}%,description.ilike.%${query}%`);
+  let rows: DbPlace[];
+  try {
+    rows = await loadAllPlaces();
+  } catch {
+    return [];
+  }
 
-  if (error || !data) return [];
-  return (data as DbPlace[]).map((p) => toSpot(p, lat, lng));
+  // Same match as the previous SQL: case-insensitive substring on any name field
+  // or the description.
+  const q = query.trim().toLowerCase();
+  const has = (v: string | null) => !!v && v.toLowerCase().includes(q);
+  return rows
+    .filter((p) => has(p.name) || has(p.nameEn) || has(p.nameMn) || has(p.description))
+    .map((p) => toSpot(p, lat, lng));
 }
 
 // Admin: list all custom places
