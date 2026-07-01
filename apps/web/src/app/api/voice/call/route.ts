@@ -29,18 +29,14 @@ export async function POST(req: Request) {
   const proto = req.headers.get("x-forwarded-proto") ?? "https";
   const origin = process.env.PUBLIC_BASE_URL || (host ? `${proto}://${host}` : "");
 
+  void message;
   const twiml = new twilio.twiml.VoiceResponse();
 
+  // If the traveller pre-wrote a message (the "describe it in your own words"
+  // box), read it to the operator once on answer. Otherwise stay silent and let
+  // them drive with "Say more". Either way we then listen for the operator.
   if (messageMn?.trim() && origin) {
-    // Speak ONLY the traveller's Mongolian SOS message (Chimege), read twice.
-    const audioUrl = `${origin}/api/voice/sos-audio?text=${encodeURIComponent(messageMn.trim())}`;
-    twiml.play(audioUrl);
-    twiml.pause({ length: 1 });
-    twiml.play(audioUrl);
-  } else {
-    // Fallback only when no Mongolian text / public URL is available.
-    const spoken = message?.trim() || "A traveller needs emergency help.";
-    twiml.say({ voice: "Polly.Joanna" }, spoken);
+    twiml.play(`${origin}/api/voice/sos-audio?text=${encodeURIComponent(messageMn.trim())}`);
   }
 
   // Listen to the operator's reply (transcribe → translate → show via
