@@ -44,6 +44,7 @@ interface SavedPlan {
   doneStops?: string[];
   savedAt: string;
   places?: PlanPlace[];
+  startDate?: string; // ISO date "YYYY-MM-DD" — first day of the trip
 }
 
 // ---------------------------------------------------------------------------
@@ -78,6 +79,29 @@ function matchPlace(title: string, places: PlanPlace[]): PlanPlace | undefined {
 
 function regionLabel(region: string): string {
   return region.charAt(0).toUpperCase() + region.slice(1);
+}
+
+// Returns the calendar date for a given day number given a trip start date.
+function planDayDate(startDate: string | undefined, dayNum: number): Date | null {
+  if (!startDate) return null;
+  const d = new Date(startDate);
+  d.setDate(d.getDate() + dayNum - 1);
+  return d;
+}
+
+// True when the day's date is strictly before today (midnight).
+function isDayPast(date: Date | null): boolean {
+  if (!date) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dayMidnight = new Date(date);
+  dayMidnight.setHours(0, 0, 0, 0);
+  return dayMidnight < today;
+}
+
+function formatDayDate(date: Date | null): string | null {
+  if (!date) return null;
+  return date.toLocaleDateString("en", { month: "short", day: "numeric" });
 }
 
 // The guided demo routes as ONE saved-plan: each route is a day (day 1 =
@@ -162,10 +186,17 @@ export default function JourneyPage() {
       let userPlans: SavedPlan[];
       try {
         const res = await fetch("/api/trips");
-        userPlans =
-          signedIn && res.ok
-            ? ((await res.json()) as SavedPlan[])
-            : plans.filter((p) => !p.id.startsWith("route:"));
+        if (signedIn && res.ok) {
+          const serverPlans = (await res.json()) as SavedPlan[];
+          // startDate lives only in localStorage (no DB column yet) — merge it in.
+          const localById = new Map(plans.map((p) => [p.id, p]));
+          userPlans = serverPlans.map((p) => ({
+            ...p,
+            startDate: localById.get(p.id)?.startDate,
+          }));
+        } else {
+          userPlans = plans.filter((p) => !p.id.startsWith("route:"));
+        }
       } catch {
         userPlans = plans.filter((p) => !p.id.startsWith("route:"));
       }
@@ -295,6 +326,7 @@ export default function JourneyPage() {
                   stops={structuredStops}
                   onSelect={setActiveDayNum}
                   labels={isTripPlan ? routeDayLabels(routes) : undefined}
+                  startDate={activePlan.startDate}
                 />
               )}
 
@@ -318,39 +350,51 @@ export default function JourneyPage() {
                 </div>
               )}
 
-              <div className="flex gap-3 pt-1">
-                {activeRoute ? (
+              <div className="flex flex-col gap-2 pt-1">
+                <div className="flex gap-3">
+                  {activeRoute ? (
+                    <button
+                      onClick={() => startRoute(activeRoute)}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-full bg-primary-600 py-3 text-sm font-bold text-white hover:bg-primary-700"
+                    >
+                      <SparklesIcon size={14} />
+                      Start live guide →
+                    </button>
+                  ) : dayStops.length > 0 ? (
+                    <button
+                      onClick={() => startUserPlan(activePlan, activeDayNum)}
+                      disabled={starting}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-full bg-primary-600 py-3 text-sm font-bold text-white hover:bg-primary-700 disabled:opacity-60"
+                    >
+                      <SparklesIcon size={14} />
+                      {starting ? "Preparing…" : "Start live guide →"}
+                    </button>
+                  ) : (
+                    <Link
+                      href="/ai"
+                      className="flex flex-1 items-center justify-center gap-2 rounded-full bg-primary-600 py-3 text-sm font-bold text-white hover:bg-primary-700"
+                    >
+                      <SparklesIcon size={14} />
+                      Plan more with Michelle
+                    </Link>
+                  )}
                   <button
-                    onClick={() => startRoute(activeRoute)}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-full bg-primary-600 py-3 text-sm font-bold text-white hover:bg-primary-700"
+                    onClick={() => deletePlan(activePlan.id)}
+                    className="flex h-12 w-12 items-center justify-center rounded-full bg-sand-100 text-ink-muted hover:bg-red-50 hover:text-safety-critical"
                   >
-                    <SparklesIcon size={14} />
-                    Start live guide →
+                    <TrashIcon size={18} />
                   </button>
-                ) : dayStops.length > 0 ? (
-                  <button
-                    onClick={() => startUserPlan(activePlan, activeDayNum)}
-                    disabled={starting}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-full bg-primary-600 py-3 text-sm font-bold text-white hover:bg-primary-700 disabled:opacity-60"
-                  >
-                    <SparklesIcon size={14} />
-                    {starting ? "Preparing…" : "Start live guide →"}
-                  </button>
-                ) : (
+                </div>
+
+                {!isTripPlan && (
                   <Link
-                    href="/ai"
-                    className="flex flex-1 items-center justify-center gap-2 rounded-full bg-primary-600 py-3 text-sm font-bold text-white hover:bg-primary-700"
+                    href={`/ai?planId=${activePlan.id}`}
+                    className="flex items-center justify-center gap-2 rounded-full border border-primary-200 bg-primary-50 py-3 text-sm font-bold text-primary-600 hover:bg-primary-100"
                   >
                     <SparklesIcon size={14} />
-                    Plan more with Michelle
+                    Continue chatting with Michelle
                   </Link>
                 )}
-                <button
-                  onClick={() => deletePlan(activePlan.id)}
-                  className="flex h-12 w-12 items-center justify-center rounded-full bg-sand-100 text-ink-muted hover:bg-red-50 hover:text-safety-critical"
-                >
-                  <TrashIcon size={18} />
-                </button>
               </div>
 
               {startError && (
@@ -452,14 +496,15 @@ function DayTabs({
   stops,
   onSelect,
   labels,
+  startDate,
 }: {
   days: number[];
   activeDay: number;
   doneSet: Set<string>;
   stops: PlanStop[];
   onSelect: (day: number) => void;
-  // Optional per-day caption (e.g. the region for the guided trip plan).
   labels?: Record<number, string>;
+  startDate?: string;
 }) {
   return (
     <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
@@ -468,25 +513,35 @@ function DayTabs({
         const doneCount = dayStops.filter((s) => doneSet.has(stopKey(s))).length;
         const allDone = doneCount === dayStops.length && dayStops.length > 0;
         const isActive = day === activeDay;
+        const date = planDayDate(startDate, day);
+        const past = isDayPast(date);
+        const dateLabel = formatDayDate(date);
         return (
           <button
             key={day}
             onClick={() => onSelect(day)}
             className={[
               "shrink-0 flex flex-col items-center rounded-2xl px-5 py-2.5 transition-colors",
-              isActive ? "bg-primary-600 text-white" : "bg-white text-ink-muted hover:bg-sand-100 hover:text-ink",
+              isActive
+                ? "bg-primary-600 text-white"
+                : past
+                  ? "bg-sand-100 text-ink-muted/50 hover:bg-sand-200"
+                  : "bg-white text-ink-muted hover:bg-sand-100 hover:text-ink",
             ].join(" ")}
           >
             <span className="text-[10px] font-bold uppercase tracking-widest opacity-70">Day</span>
             <span className="text-xl font-bold leading-tight">{day}</span>
-            {labels?.[day] && (
+            {dateLabel && (
+              <span className="mt-0.5 text-[10px] font-semibold leading-tight opacity-80">{dateLabel}</span>
+            )}
+            {labels?.[day] && !dateLabel && (
               <span className="mt-0.5 text-[11px] font-bold leading-tight">{labels[day]}</span>
             )}
             <span className={[
               "text-[10px] font-semibold",
-              isActive ? "text-white/70" : allDone ? "text-green-500" : "text-ink-muted/50",
+              isActive ? "text-white/70" : allDone ? "text-green-500" : past ? "text-ink-muted/40" : "text-ink-muted/50",
             ].join(" ")}>
-              {allDone ? "✓ done" : `${doneCount}/${dayStops.length}`}
+              {past && !allDone ? "past" : allDone ? "✓ done" : `${doneCount}/${dayStops.length}`}
             </span>
           </button>
         );
