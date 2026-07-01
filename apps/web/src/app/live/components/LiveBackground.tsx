@@ -18,11 +18,23 @@ const OfflineMap = dynamic(() => import("@/components/OfflineMap"), { ssr: false
 
 // Decides what fills the screen behind the guide UI:
 //   real Mapbox route map → cached static snapshot (offline) → stylised backdrop.
-export function LiveBackground({ theme }: { theme: Theme }) {
-  const { activeRoute, currentStopIndex, simulatedCoords, forceOffline, suggestions, selectedPlace, returnTarget, returnMode, busLegs, mapType } =
+export function LiveBackground({ theme, demo = false }: { theme: Theme; demo?: boolean }) {
+  const { activeRoute, currentStopIndex, arrivedStopIds, simulatedCoords, forceOffline, suggestions, selectedPlace, returnTarget, returnMode, busLegs, mapType } =
     useLiveStore();
   const realCoords = useLocationStore((s) => s.coordinates);
   const position: Coords | null = resolvePosition(simulatedCoords, realCoords, activeRoute);
+
+  // The stop the traveller is currently heading to — the connector line is drawn
+  // from their position to this. For a normal user it's the first stop they
+  // haven't reached yet, so the connector advances stop-by-stop as they progress.
+  // For the demo it stays the pre-start "get to stop #1" leg only, so the demo's
+  // auto-walk visuals are unchanged.
+  const stops = activeRoute?.stops ?? [];
+  const targetStop = demo
+    ? currentStopIndex === 0
+      ? stops[0] ?? null
+      : null
+    : stops.find((s) => !arrivedStopIds.includes(s.id)) ?? null;
 
   const { online } = useOnlineStatus();
   const [mapFailed, setMapFailed] = useState(false);
@@ -49,6 +61,7 @@ export function LiveBackground({ theme }: { theme: Theme }) {
           route={activeRoute}
           currentIndex={currentStopIndex}
           position={position}
+          targetStop={targetStop}
           onError={() => setMapFailed(true)}
           theme={theme}
           suggestions={suggestions}

@@ -20,11 +20,15 @@ import { NarrationFooter } from "./NarrationFooter";
 export function LiveExperience({
   theme,
   onToggleTheme,
+  demo = false,
 }: {
   theme: Theme;
   onToggleTheme: () => void;
+  // Demo (sevo) account only: reveals the presenter/simulation controls. Normal
+  // users get the real GPS + proximity navigation flow with none of that chrome.
+  demo?: boolean;
 }) {
-  const guide = useLiveGuide();
+  const guide = useLiveGuide(demo);
   const {
     arrivedStopIds,
     offlineReadyIds,
@@ -35,6 +39,7 @@ export function LiveExperience({
     setRoute,
     setSimulated,
     advanceStop,
+    goToStop,
     reset,
     setSuggestions,
     setReturnTarget,
@@ -150,13 +155,21 @@ export function LiveExperience({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arrived, currentStop?.id]);
 
-  // Refresh (↻) button: start the whole journey over from the traveller's CURRENT
-  // real location. setRoute on the same route wipes progress (stop index → 0,
-  // arrived stops, detours, suggestions) and clears simulatedCoords, so the marker
-  // drops back onto live GPS and the approach line to stop #1 redraws. The local
-  // decision UI (cards, targets, bus sheet) is reset too, for a clean start.
+  // Refresh (↻) button.
+  //  • Demo: exactly the old presenter "reset to start" — jump the simulated marker
+  //    back to stop #1 (progress/targets untouched), so the demo is unchanged.
+  //  • Normal user: a full fresh restart from their CURRENT real location. setRoute
+  //    on the same route wipes progress (index → 0, arrived stops, detours,
+  //    suggestions) and clears simulatedCoords, so the marker drops back onto live
+  //    GPS and the connector to the first stop redraws; local UI is reset too.
   function restartJourney() {
     stopSimulation();
+    if (demo) {
+      goToStop(0);
+      const first = activeRoute?.stops[0];
+      if (first) setSimulated({ latitude: first.latitude, longitude: first.longitude });
+      return;
+    }
     if (activeRoute) setRoute(activeRoute);
     setCardOpen(false);
     setFullPlanOpen(false);
@@ -188,6 +201,7 @@ export function LiveExperience({
         currentStopIndex={currentStopIndex}
         nextStop={nextStop}
         simulating={simulating}
+        demo={demo}
         onWalkNext={walkToNext}
         onToggleSim={() => {
           simActiveRef.current ? stopSimulation() : void startSimulation();
@@ -248,7 +262,8 @@ export function LiveExperience({
         }}
         narrationFooter={narrationFooter}
         presenter={
-          showExtras
+          // Presenter/simulation strip is demo-only — normal users never see it.
+          demo && showExtras
             ? {
                 arrived,
                 currentName: currentStop?.name ?? "",

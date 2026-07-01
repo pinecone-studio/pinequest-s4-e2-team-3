@@ -55,7 +55,11 @@ function fallbackAnswer(current: RouteStop | null): string {
   );
 }
 
-export function useLiveGuide() {
+// `demo` (sevo account) preserves the on-stage behaviour where the journey starts
+// parked at the first stop and stays silent until the presenter taps play. Normal
+// users start away from stop #1 and travel to it, so their genuine arrivals must
+// narrate — the arrival effect below branches on this.
+export function useLiveGuide(demo = false) {
   const {
     activeRoute,
     currentStopIndex,
@@ -89,6 +93,11 @@ export function useLiveGuide() {
     realCoords,
     activeRoute,
   );
+
+  // A GENUINE fix (simulated demo position or real GPS) — no first-stop fallback.
+  // Arrival detection uses this: otherwise, before a normal user's GPS resolves,
+  // the fallback sits exactly on stop #1 and would falsely mark it "reached".
+  const genuinePosition = simulatedCoords ?? realCoords;
 
   const stops = activeRoute?.stops ?? [];
   const currentStop = stops[currentStopIndex] ?? null;
@@ -226,19 +235,23 @@ export function useLiveGuide() {
   // instead of only via the demo's "Walk to next" button. It also tolerates
   // skipping or arriving at a later stop directly.
   useEffect(() => {
-    if (!effectiveCoords || stops.length === 0) return;
+    if (!genuinePosition || stops.length === 0) return;
 
     for (let i = stops.length - 1; i >= currentStopIndex; i--) {
-      if (!hasArrived(effectiveCoords, stops[i])) continue;
+      if (!hasArrived(genuinePosition, stops[i])) continue;
 
       if (i > currentStopIndex) goToStop(i); // walked ahead → catch up
       const stop = stops[i];
       if (!arrivedStopIds.includes(stop.id)) {
         markArrived(stop.id);
-        // Skip the very first auto-arrival (route load) — stay silent until the
-        // traveller taps play; narrate every arrival after that.
+        // Narrate the arrival — except a stop already reached at mount, which stays
+        // silent until the traveller taps play (the journey "starts here"). For the
+        // demo that mount-time stop is stop #1 (it's parked there); startedRef flips
+        // on that first arrival, exactly as before. For a normal user, startedRef is
+        // flipped after the first run below, so any stop they actually travel to and
+        // reach narrates on arrival.
         if (startedRef.current) sayNarration(stop);
-        else startedRef.current = true;
+        else if (demo) startedRef.current = true;
         // Newly back on a main stop → drop the "return"/detour guide line. Only
         // on a genuine new arrival, NOT on a reload where the stop is already in
         // arrivedStopIds — otherwise refresh would wipe a persisted detour route.
@@ -246,8 +259,13 @@ export function useLiveGuide() {
       }
       break; // furthest reached stop handled; stop scanning
     }
+
+    // Normal users: after this first pass with a real position, every later arrival
+    // narrates (only a stop already reached at mount was silenced above).
+    if (!demo) startedRef.current = true;
   }, [
-    effectiveCoords,
+    demo,
+    genuinePosition,
     currentStopIndex,
     stops,
     arrivedStopIds,

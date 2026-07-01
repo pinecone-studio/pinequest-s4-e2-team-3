@@ -2,6 +2,7 @@
 
 import { useLiveStore } from "@/stores/liveStore";
 import { useLocation } from "@/hooks/useLocation";
+import { useIsDemo } from "@/hooks/useIsDemo";
 import { useLiveTheme } from "./hooks/useLiveTheme";
 import { LiveBackground } from "./components/LiveBackground";
 import { LiveExperience } from "./components/LiveExperience";
@@ -16,6 +17,9 @@ export default function LiveGuidePage() {
   const mapType = useLiveStore((s) => s.mapType);
   // Begin watching real GPS as soon as the screen mounts.
   useLocation();
+  // Demo (sevo) account keeps the auto-walk / presenter simulation; everyone else
+  // gets the real production navigation flow (real GPS + proximity only).
+  const demo = useIsDemo();
   const { theme, toggleTheme } = useLiveTheme();
 
   // On satellite, the dark chrome (white text + dark scrim) reads best over the
@@ -32,7 +36,7 @@ export default function LiveGuidePage() {
     <div className={isDark ? "dark" : ""}>
       <div className="relative min-h-screen overflow-hidden bg-[#eef2fb] text-ink transition-colors dark:bg-[#0d1422] dark:text-white">
         {/* Route picker uses the wrapper's plain solid background — no map backdrop. */}
-        {activeRoute ? <LiveBackground theme={theme} /> : null}
+        {activeRoute ? <LiveBackground theme={theme} demo={demo} /> : null}
         {/* When a route is live, let pointer events fall THROUGH the empty parts
             of this column to the map behind it, so the map drags/pans like Google
             Maps. The interactive pieces (bars, cards, buttons) re-enable
@@ -44,7 +48,7 @@ export default function LiveGuidePage() {
           ].join(" ")}
         >
           {activeRoute ? (
-            <LiveExperience theme={theme} onToggleTheme={toggleTheme} />
+            <LiveExperience theme={theme} onToggleTheme={toggleTheme} demo={demo} />
           ) : (
             <RoutePicker theme={theme} onToggleTheme={toggleTheme} />
           )}
