@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChatIcon, MicIcon, PencilIcon, SendIcon, StarIcon, WalkIcon } from "@/components/icons";
+import { ChatIcon, MapPinIcon, MicIcon, PencilIcon, SendIcon, StarIcon, WalkIcon } from "@/components/icons";
 import { GuideAvatar, type GuideAvatarState } from "@/components/GuideAvatar";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { guide } from "@/lib/mockData";
@@ -13,6 +14,8 @@ import { FeatureGate } from "@/components/FeatureGate";
 // A place Michelle recommends, shown as a card under her reply.
 interface PlaceCard {
   name: string;
+  latitude?: number;
+  longitude?: number;
   description?: string;
   imageUrl?: string;
   rating?: number;
@@ -46,10 +49,11 @@ interface Message {
   planStatus?: "pending" | "saved" | "dismissed";
   journeyLink?: boolean;
   suggestions?: string[];
+  datePromptPlanId?: string; // triggers a start-date picker for this saved plan
 }
 
 const INITIAL_SUGGESTIONS = [
-  "Plan my 5-day trip",
+  "Where should I visit first?",
   "I'm visiting in July",
   "Best time to visit Mongolia?",
   "What food should I try?",
@@ -75,7 +79,11 @@ function shuffled<T>(arr: T[]): T[] {
 }
 
 const STAGE_POOLS: Record<ConvStage, string[]> = {
-  "collecting-info": [],
+  "collecting-info": [
+    "Temples & history", "Nature & hiking", "Nomadic culture & horse riding", "Local markets & food",
+    "Traditional Mongolian food", "Vegetarian options", "Street food & local cafés", "Fine dining",
+    "Very active — hiking!", "Easy & relaxed pace", "Mix of everything", "Surprise me!",
+  ],
   "planning": [
     "Continue", "Next day", "Change this stop", "Add a stop",
     "Show lunch nearby", "Coffee break", "Skip this", "Another option",
@@ -167,7 +175,19 @@ function getContextualSuggestions(messages: Message[]): string[] {
   if (lastAssistant.suggestions?.length) return lastAssistant.suggestions;
 
   const t = lastAssistant.content.toLowerCase();
+  // Use only the last sentence/question — avoids matching old context ("after lunch…")
+  const lastQ = (t.match(/[^.!?\n]{10,}[?][^.!?\n]*$/) ?? [t.slice(-300)])[0].trim();
+
   const stage = detectStage(messages);
+
+  // Filter out suggestions the user already clicked in the last 8 messages.
+  const recentClicked = new Set(
+    messages.filter((m) => m.role === "user").slice(-8).map((m) => m.content.toLowerCase().trim()),
+  );
+  function fresh(list: string[]): string[] {
+    const filtered = list.filter((s) => !recentClicked.has(s.toLowerCase().trim()));
+    return (filtered.length >= 2 ? filtered : list).slice(0, 4);
+  }
 
   const requestedDays = getRequestedDays(messages);
   const plannedDays = getPlannedDays(messages);
@@ -176,129 +196,136 @@ function getContextualSuggestions(messages: Message[]): string[] {
 
   // ── FINISHED: plan is ready to save ──────────────────────────────────────
   if (stage === "finished")
-    return ["Yes, save this plan!", `Edit Day ${plannedDays}`, "Add one more stop", "Start a completely new plan"];
+    return fresh(["Yes, save this plan!", `Edit Day ${plannedDays}`, "Add one more stop", "Start a completely new plan"]);
 
-  // ── PLANNING: content-driven by time-of-day and place type ───────────────
+  // ── PLANNING: interactive step-by-step day building ─────────────────────
   if (stage === "planning") {
-    // Day-to-day transition ("Ready for Day 3?", "Shall I plan Day 2?")
-    if (/\b(ready for day|shall i plan day|let'?s? (move|continue) (on )?to day|day [2-9])\b/.test(t)) {
+    // "Ready to save your plan?" — always show save options
+    if (/\b(ready to save|save your.*plan|shall i save|happy with.*plan|save.*full)\b/.test(lastQ))
+      return fresh(["Yes, save this plan!", "Add one more stop", "Change something", "Start over"]);
+
+    // Day-to-day transition
+    if (/\b(ready for day|shall i plan day|let'?s? (move|continue) (on )?to day)\b/.test(lastQ) ||
+        /\b(ready for day|shall i plan day)\b/.test(t)) {
       if (allDaysDone)
-        return ["Yes, save this plan!", "Add one more stop", "Change something", "Start over"];
-      return [`Yes, let's plan Day ${nextDay}!`, "Take a rest day", "Change something", "Skip ahead"];
+        return fresh(["Yes, save this plan!", "Add one more stop", "Change something", "Start over"]);
+      return fresh([`Yes, let's plan Day ${nextDay}!`, "Take a rest day", "Change something", "Skip ahead"]);
     }
 
-    // Preference question during planning ("nature or cultural?", "active or relaxed?")
-    if (/\b(nature|countryside|outdoor).{0,60}\bor\b|\bor\b.{0,60}\b(nature|countryside|outdoor)\b/.test(t))
-      return ["Start with nature!", "Cultural sites first", "Mix of both", "Surprise me!"];
-    if (/\b(active|hik|trek|adventure).{0,60}\bor\b|\bor\b.{0,60}\b(active|hik|trek|relaxed|easy)\b/.test(t))
-      return ["Very active — hiking!", "Moderate walks", "Easy & relaxed", "Mix of both"];
-    if (/\b(history|culture|museum|temple|monument).{0,60}\bor\b|\bor\b.{0,60}\b(history|culture|museum|temple)\b/.test(t))
-      return ["History & culture first", "Nature & outdoors", "Mix of both", "Surprise me!"];
-    if (/\b(morning|afternoon|early|late).{0,60}\bor\b|\bor\b.{0,60}\b(morning|afternoon|early|late)\b/.test(t))
-      return ["Early morning start", "Late morning", "Afternoon arrival", "Flexible"];
+    // "What would you like to change?" type questions
+    if (/what.*change|different (activity|venue|option|place|stop)|looking for (a different|another)|let me know/.test(lastQ))
+      return fresh(["Change the morning activity", "Different lunch spot", "Change the evening plans", "Suggest something else"]);
 
-    // Evening / dinner
-    if (/\b(evening|dinner|night|19:|20:|21:)\b/.test(t)) {
+    // Interactive stage: picking dinner restaurant
+    if (/\b(dinner|evening meal|supper|which.*dinner|dinner.*prefer|where.*dinner)\b/.test(lastQ)) {
       if (allDaysDone)
-        return ["Show me dinner spots", "Any bars nearby?", "Save this plan!", "Add another stop"];
-      return ["Show me dinner spots", "Any bars or live music?", `Plan Day ${nextDay}`, "Change something"];
+        return fresh(["That one sounds perfect!", "Show me another option", "Vegetarian option?", "Save this plan!"]);
+      return fresh(["That one sounds perfect!", "Show me another option", "Vegetarian option?", `On to Day ${nextDay}`]);
     }
 
-    // Dinner mentioned during planning
-    if (/\b(dinner|evening meal|supper|restaurant for dinner)\b/.test(t))
-      return ["Sounds great!", "Vegetarian option?", "Budget-friendly alternative?", `Continue to Day ${nextDay}`];
+    // Interactive stage: picking afternoon activity
+    if (/\b(afternoon|activity.*afternoon|afternoon.*activity|what.*afternoon|afternoon.*prefer)\b/.test(lastQ))
+      return fresh(["That sounds great!", "Show me another option", "Something more relaxed?", "What's for dinner after?"]);
 
-    // Afternoon activity during planning
-    if (/\b(afternoon|coffee break|14:|15:|16:|17:)\b/.test(t))
-      return ["Sounds good!", "How long should we stay?", "What's for dinner?", "Add another stop"];
+    // Interactive stage: picking lunch
+    if (/\b(lunch|where.*eat|lunch.*prefer|which.*lunch|eat.*afternoon)\b/.test(lastQ))
+      return fresh(["That one!", "Show me another option", "Vegetarian option?", "Something quick & cheap"]);
 
-    // Lunch during planning
-    if (/\b(lunch|12:|13:)\b/.test(t))
-      return ["Traditional Mongolian?", "Vegetarian options?", "Budget-friendly?", "Continue to afternoon"];
-
-    // Morning / first stop of the day
-    if (/\b(morning|breakfast|08:|09:|10:|first stop|start with|explore)\b/.test(t)) {
-      if (/monastery|temple|gandan|gandantegchinlen|lama/.test(t))
-        return ["Sounds amazing!", "Entry fee?", "What's for lunch after?", "Add another morning stop"];
+    // Interactive stage: picking morning activity
+    if (/\b(morning|what.*morning|morning.*activity|activity.*morning|which.*morning)\b/.test(lastQ)) {
+      if (/monastery|temple|gandan|lama/.test(t))
+        return fresh(["Let's go there!", "Show me another option", "Entry fee?", "What's for lunch after?"]);
       if (/museum|gallery|palace|monument/.test(t))
-        return ["Sounds great!", "How long to visit?", "What's for lunch after?", "Add another morning stop"];
-      if (/park|nature|hike|trek|terelj|gobi|lake|mountain/.test(t))
-        return ["Let's do it!", "What activities are there?", "What's for lunch?", "Add another stop"];
+        return fresh(["Perfect!", "Another option?", "How long to visit?", "What's for lunch after?"]);
+      if (/park|nature|hike|terelj|mountain/.test(t))
+        return fresh(["Love it!", "Another option?", "What activities there?", "What's for lunch?"]);
       if (/horse|camel|ride/.test(t))
-        return ["Sounds fun!", "How long is the ride?", "Any safety tips?", "What's next after?"];
-      return ["Sounds great!", "Any tips?", "What's for lunch?", "Add another stop"];
+        return fresh(["Sounds fun!", "Another option?", "How long is the ride?", "What's next after?"]);
+      return fresh(["That sounds great!", "Show me another option", "What's for lunch after?", "Add another stop"]);
     }
 
-    return ["Sounds good!", "Add a stop", "Change this", "What's for lunch?"];
+    // Interactive stage: picking breakfast spot
+    if (/\b(breakfast|start.*day|kick.*off|where.*breakfast|breakfast.*prefer|morning.*café|café.*morning)\b/.test(lastQ))
+      return fresh(["That one!", "Show me another option", "Something local?", "Quick & easy"]);
+
+    // Preference question during planning
+    if (/\b(nature|countryside|outdoor).{0,60}\bor\b|\bor\b.{0,60}\b(nature|countryside|outdoor)\b/.test(lastQ))
+      return fresh(["Start with nature!", "Cultural sites first", "Mix of both", "Surprise me!"]);
+    if (/\b(active|hik|trek|adventure).{0,60}\bor\b|\bor\b.{0,60}\b(active|hik|trek|relaxed|easy)\b/.test(lastQ))
+      return fresh(["Very active — hiking!", "Moderate walks", "Easy & relaxed", "Mix of both"]);
+    if (/\b(history|culture|museum|temple|monument).{0,60}\bor\b|\bor\b.{0,60}\b(history|culture|museum|temple)\b/.test(lastQ))
+      return fresh(["History & culture first", "Nature & outdoors", "Mix of both", "Surprise me!"]);
+
+    return fresh(["Sounds good!", "Add a stop", "Change this", "What's for lunch?"]);
   }
 
   // ── RECOMMENDING PLACE: specific to place type ────────────────────────────
   if (stage === "recommending-place") {
     if (/monastery|temple|gandan|erdene|lama/.test(t))
-      return ["Best time to visit?", "Is there an entry fee?", "Lunch spots nearby", "Add to itinerary"];
+      return fresh(["Best time to visit?", "Is there an entry fee?", "Lunch spots nearby", "Add to itinerary"]);
     if (/museum|gallery|palace|history/.test(t))
-      return ["Opening hours?", "How long to visit?", "Lunch spots nearby", "Add to itinerary"];
+      return fresh(["Opening hours?", "How long to visit?", "Lunch spots nearby", "Add to itinerary"]);
     if (/park|terelj|gobi|nature|steppe|mountain/.test(t))
-      return ["Horse riding available?", "Best hiking trail?", "Camping nearby?", "Add to itinerary"];
+      return fresh(["Horse riding available?", "Best hiking trail?", "Camping nearby?", "Add to itinerary"]);
     if (/market|bazaar|shop|mall/.test(t))
-      return ["What's worth buying?", "Best prices?", "Opening hours?", "Add to itinerary"];
+      return fresh(["What's worth buying?", "Best prices?", "Opening hours?", "Add to itinerary"]);
     if (/restaurant|cafe|food|eat|lunch|dinner/.test(t))
-      return ["What's their specialty?", "Price range?", "Vegetarian-friendly?", "Add to itinerary"];
-    return ["Add to my itinerary", "How far is it?", "Is there an entry fee?", "Show alternatives"];
+      return fresh(["What's their specialty?", "Price range?", "Vegetarian-friendly?", "Add to itinerary"]);
+    return fresh(["Add to my itinerary", "How far is it?", "Is there an entry fee?", "Show alternatives"]);
   }
 
   // ── NEARBY: live location search results ──────────────────────────────────
   if (stage === "nearby")
-    return ["Give me walking directions", "Is it open right now?", "Show cheaper options", "Something else nearby"];
+    return fresh(["Give me walking directions", "Is it open right now?", "Show cheaper options", "Something else nearby"]);
 
   // ── FOOD: meal-specific ───────────────────────────────────────────────────
   if (stage === "food") {
-    if (/\b(lunch)\b/.test(t))
-      return ["Traditional Mongolian", "Something quick & cheap", "Vegetarian options?", "Skip lunch"];
-    if (/\b(dinner)\b/.test(t))
-      return ["Traditional restaurant", "Modern dining", "Cheap & local", "Plan tomorrow instead"];
-    if (/\b(breakfast|brunch)\b/.test(t))
-      return ["Hotel breakfast ok?", "Local café nearby?", "What time to eat?", "Skip, start early"];
+    if (/\b(lunch)\b/.test(lastQ))
+      return fresh(["Traditional Mongolian", "Something quick & cheap", "Vegetarian options?", "Skip lunch"]);
+    if (/\b(dinner)\b/.test(lastQ))
+      return fresh(["Traditional restaurant", "Modern dining", "Cheap & local", "Plan tomorrow instead"]);
+    if (/\b(breakfast|brunch)\b/.test(lastQ))
+      return fresh(["Hotel breakfast ok?", "Local café nearby?", "What time to eat?", "Skip, start early"]);
     if (/\b(buuz|khuushuur|tsuivan|khuurga)\b/.test(t))
-      return ["Where's the best one?", "Price range?", "Vegetarian version?", "Add to plan"];
-    return ["Traditional Mongolian", "Western / Modern", "Best coffee nearby", "Show directions"];
+      return fresh(["Where's the best one?", "Price range?", "Vegetarian version?", "Add to plan"]);
+    return fresh(["Traditional Mongolian", "Western / Modern", "Best coffee nearby", "Show directions"]);
   }
 
   // ── TRANSPORT ─────────────────────────────────────────────────────────────
   if (stage === "transport")
-    return ["How much is a taxi?", "Can I walk there?", "Which bus route?", "Share my location"];
+    return fresh(["How much is a taxi?", "Can I walk there?", "Which bus route?", "Share my location"]);
 
   // ── COLLECTING INFO: answer the specific question asked ───────────────────
-  if (/which month|what month|when.*visit|time of year/.test(t))
-    return ["July (Naadam season)", "June (pleasant weather)", "August", "Winter (Ice Festival)"];
-  if (/how many days|how long|length of.*trip/.test(t))
-    return ["3 Days (Quick UB & Terelj)", "5 Days (Classic trip)", "7 Days (Countryside tour)", "2 Weeks+"];
+  if (/which month|what month|when.*visit|time of year/.test(lastQ))
+    return fresh(["July (Naadam season)", "June (pleasant weather)", "August", "Winter (Ice Festival)"]);
+  if (/how many days|how long|length of.*trip/.test(lastQ))
+    return fresh(["3 Days (Quick UB & Terelj)", "5 Days (Classic trip)", "7 Days (Countryside tour)", "2 Weeks+"]);
   if (/(city|ulaanbaatar).{0,80}or.{0,80}(countryside|nature)|(countryside|nature).{0,80}or.{0,80}(city|ulaanbaatar)/.test(t))
-    return ["Mainly countryside & nature", "Explore Ulaanbaatar city", "A perfect mix of both"];
+    return fresh(["Mainly countryside & nature", "Explore Ulaanbaatar city", "A perfect mix of both"]);
   if (/gobi|khövsgöl|khovsgol|terelj/.test(t))
-    return ["Gobi Desert", "Northern Mongolia", "Terelj / Gorkhi", "Lake Khövsgöl"];
-  if (/interests|what.*enjoy|what.*like|history.*nature|nature.*adventure/.test(t))
-    return ["Nomadic culture & history", "Hiking & pure nature", "Adventure & horse riding", "Food & photography"];
-  if (/solo|traveling with|group|how many (people|of you)/.test(t))
-    return ["Solo", "With a partner", "Small group", "Family with kids"];
-  if (/budget|price|afford|luxury|cost/.test(t))
-    return ["Backpacker / budget", "Mid-range comfortable", "Luxury & ger camps"];
-  if (/morning or afternoon|early or later/.test(t))
-    return ["Early morning", "Late morning", "Afternoon", "Flexible"];
+    return fresh(["Gobi Desert", "Northern Mongolia", "Terelj / Gorkhi", "Lake Khövsgöl"]);
+  if (/enjoy|interest|like to|prefer|what.*do|type of|kind of/.test(lastQ))
+    return fresh(["Temples & history", "Nature & hiking", "Nomadic culture & horse riding", "Local markets & food"]);
+  if (/food|eat|cuisine|diet|meal|vegetar|vegan/.test(lastQ))
+    return fresh(["Traditional Mongolian dishes", "Street food & local cafés", "Vegetarian options", "Fine dining"]);
+  if (/active|pace|physical|hik|adventur|relax/.test(lastQ))
+    return fresh(["Very active — hiking!", "Moderate walks", "Easy & relaxed pace", "Mix of both"]);
+  if (/solo|traveling with|group|how many (people|of you)/.test(lastQ))
+    return fresh(["Solo", "With a partner", "Small group", "Family with kids"]);
+  if (/budget|price|afford|luxury|cost/.test(lastQ))
+    return fresh(["Backpacker / budget", "Mid-range comfortable", "Luxury & ger camps"]);
+  if (/morning or afternoon|early or later/.test(lastQ))
+    return fresh(["Early morning", "Late morning", "Afternoon", "Flexible"]);
   if (/safe|emergency|hospital/.test(t))
-    return ["Find nearest hospital", "Emergency contacts", "Is it safe?", "Call for help"];
+    return fresh(["Find nearest hospital", "Emergency contacts", "Is it safe?", "Call for help"]);
   if (/naadam|tsagaan sar|festival|national holiday/.test(t))
-    return ["Yes, I'd love it!", "Tell me more", "I prefer quieter times", "What else is on?"];
-  if (/car|driver|transport|getting around|taxi/.test(t))
-    return ["Need a rental car + driver", "Using public transport", "I will drive myself"];
+    return fresh(["Yes, I'd love it!", "Tell me more", "I prefer quieter times", "What else is on?"]);
+  if (/car|driver|transport|getting around|taxi/.test(lastQ))
+    return fresh(["Need a rental car + driver", "Using public transport", "I will drive myself"]);
 
   // ── FALLBACK: shuffle pool, filter recently clicked ───────────────────────
   const pool = STAGE_POOLS[stage] ?? STAGE_POOLS.fallback;
-  const recentClicked = new Set(
-    messages.filter((m) => m.role === "user").slice(-5).map((m) => m.content.toLowerCase().trim()),
-  );
-  const fresh = pool.filter((s) => !recentClicked.has(s.toLowerCase().trim()));
-  return shuffled(fresh.length >= 3 ? fresh : pool).slice(0, 4);
+  return fresh(shuffled(pool));
 }
 
 const WELCOME: Message = {
@@ -336,18 +363,38 @@ export default function AiPage() {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const scrollAnchor = useRef<HTMLDivElement>(null);
-
-  // Load the conversation: local cache first (instant / offline), then the
-  // backend (source of truth when signed in) so the chat follows you across
-  // devices. The backend wins only when it actually has history.
+  const searchParams = useSearchParams();
+  // planId is set when navigating from Journey → "Continue chatting".
+  // We keep a ref so savePlan (an async function) always reads the latest
+  // value even after the await for image lookups.
+  const editingPlanIdRef = useRef<string | null>(searchParams.get("planId"));
   useEffect(() => {
+    editingPlanIdRef.current = searchParams.get("planId");
+  }, [searchParams]);
+
+  // Load the conversation: if a planId URL param is present, restore the chat
+  // snapshot saved when that plan was created. Otherwise load the current chat
+  // from local cache, then sync from the backend.
+  useEffect(() => {
+    const planId = new URLSearchParams(window.location.search).get("planId");
+    if (planId) {
+      try {
+        const snap = localStorage.getItem(`lumo:chat:${planId}`);
+        const parsed = snap ? (JSON.parse(snap) as Message[]) : null;
+        if (Array.isArray(parsed) && parsed.length) {
+          setMessages(parsed);
+          setHydrated(true);
+          return;
+        }
+      } catch { /* ignore corrupt snapshot */ }
+    }
+
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       const parsed = saved ? (JSON.parse(saved) as Message[]) : null;
       if (Array.isArray(parsed) && parsed.length) setMessages(parsed);
-    } catch {
-      // ignore corrupt storage
-    }
+    } catch { /* ignore corrupt storage */ }
+
     void fetch("/api/chat-history")
       .then((r) => (r.ok ? r.json() : []))
       .then((server: Message[]) => {
@@ -494,6 +541,7 @@ export default function AiPage() {
     places?: PlaceCard[],
     pendingPlan?: PendingPlan,
     journeyLink?: boolean,
+    datePromptPlanId?: string,
   ) {
     const reply: Message = {
       id: crypto.randomUUID(),
@@ -503,9 +551,24 @@ export default function AiPage() {
       pendingPlan,
       planStatus: pendingPlan ? "pending" : undefined,
       journeyLink,
+      datePromptPlanId,
     };
     setMessages((current) => [...current, reply]);
     persistMessage(reply);
+  }
+
+  function updatePlanStartDate(planId: string, startDate: string) {
+    try {
+      const stored = JSON.parse(localStorage.getItem("polaris:saved-plans") ?? "[]") as Array<{ id: string; startDate?: string; savedAt?: string }>;
+      // Try exact match first; fall back to the most recently saved non-demo plan
+      // (needed when Supabase sync already replaced the local entry.id with its own UUID).
+      let idx = stored.findIndex((p) => p.id === planId);
+      if (idx < 0) idx = stored.findIndex((p) => !p.id.startsWith("route:"));
+      if (idx >= 0) {
+        stored[idx] = { ...stored[idx], startDate };
+        localStorage.setItem("polaris:saved-plans", JSON.stringify(stored));
+      }
+    } catch { /* ignore */ }
   }
 
   // "Yes, save" — write plan to localStorage immediately so Journey can display it,
@@ -553,22 +616,70 @@ export default function AiPage() {
       }),
     );
 
+    // Read from the ref — always current regardless of async gaps in this function.
+    const editingPlanId = editingPlanIdRef.current;
+
+    if (editingPlanId) {
+      // Opened via Journey → "Continue chatting": update the existing plan in
+      // place rather than creating a new one.
+      try {
+        const stored = JSON.parse(localStorage.getItem("polaris:saved-plans") ?? "[]") as Array<{ id: string }>;
+        const updated = stored.map((p) =>
+          p.id === editingPlanId
+            ? { ...p, title: plan.title, summary: plan.summary, stops: plan.stops ?? [], places }
+            : p,
+        );
+        localStorage.setItem("polaris:saved-plans", JSON.stringify(updated));
+        localStorage.setItem(`lumo:chat:${editingPlanId}`, JSON.stringify(messages));
+      } catch { /* ignore storage quota issues */ }
+
+      addAssistantReply("Journey updated! When do you plan to start? Pick a date so Journey can show your timeline.", undefined, undefined, true, editingPlanId);
+
+      // Await the PATCH so Supabase is up to date before the user navigates
+      // back to Journey (otherwise Journey's refetch returns stale data).
+      await fetch("/api/trips", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editingPlanId, title: plan.title, summary: plan.summary, stops: plan.stops ?? [], places }),
+      }).catch(() => { /* ignore network errors */ });
+
+      return;
+    }
+
     // Save to localStorage — Journey reads from here.
+    const entry = { id: crypto.randomUUID(), title: plan.title, summary: plan.summary, stops: plan.stops ?? [], savedAt: new Date().toISOString(), places };
     try {
-      const entry = { id: crypto.randomUUID(), title: plan.title, summary: plan.summary, stops: plan.stops ?? [], savedAt: new Date().toISOString(), places };
       const prev = JSON.parse(localStorage.getItem("polaris:saved-plans") ?? "[]");
       localStorage.setItem("polaris:saved-plans", JSON.stringify([entry, ...prev]));
+      // Snapshot the chat so Journey can navigate back to this exact conversation.
+      localStorage.setItem(`lumo:chat:${entry.id}`, JSON.stringify(messages));
     } catch { /* ignore storage quota issues */ }
 
-    addAssistantReply("Saved to your journey.", undefined, undefined, true);
+    addAssistantReply("Saved to your journey! When do you plan to start? Pick a date so Journey can show your timeline.", undefined, undefined, true, entry.id);
 
     // Background sync to Supabase — the FULL plan (stops + places), so it
-    // survives a new device. Failure is silent; the plan is already saved locally.
+    // survives a new device. When Supabase returns its own UUID, update the
+    // localStorage entry and chat snapshot to use that same ID so Journey can
+    // navigate back to this chat when the user is signed in.
     fetch("/api/trips", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: plan.title, summary: plan.summary, stops: plan.stops ?? [], places }),
-    }).catch(() => { /* ignore */ });
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { id?: string } | null) => {
+        if (!data?.id) return;
+        try {
+          // Re-key the localStorage plan entry to the Supabase ID.
+          const stored = JSON.parse(localStorage.getItem("polaris:saved-plans") ?? "[]") as Array<{ id: string }>;
+          const updated = stored.map((p) => (p.id === entry.id ? { ...p, id: data.id! } : p));
+          localStorage.setItem("polaris:saved-plans", JSON.stringify(updated));
+          // Re-key the chat snapshot so Journey can find it by the Supabase ID.
+          const snap = localStorage.getItem(`lumo:chat:${entry.id}`);
+          if (snap) localStorage.setItem(`lumo:chat:${data.id}`, snap);
+        } catch { /* ignore storage errors */ }
+      })
+      .catch(() => { /* ignore network errors */ });
   }
 
   // "No, add more" — dismiss the buttons and keep building the plan.
@@ -586,11 +697,7 @@ export default function AiPage() {
     sendMessage(input);
   }
 
-  // The most recent finished plan that hasn't been saved yet — powers the
-  // always-visible Save button in the header.
-  const savable = [...messages].reverse().find((m) => m.pendingPlan && m.planStatus !== "saved");
-
-  function newChat() {
+function newChat() {
     setMessages([WELCOME]);
     setInput("");
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
@@ -601,7 +708,7 @@ export default function AiPage() {
     <div className="flex h-[calc(100dvh-7rem)] flex-col lg:h-[calc(100dvh-5rem)]">
       <ChatHeader
         avatarState={avatarState}
-        onSave={savable ? () => savePlan(savable.id, savable.pendingPlan!) : undefined}
+
         onNewChat={newChat}
         disabled={isLoading}
       />
@@ -623,6 +730,7 @@ export default function AiPage() {
             message={message}
             onSavePlan={savePlan}
             onAddMore={addMoreToPlan}
+            onUpdateStartDate={updatePlanStartDate}
             disabled={isLoading}
           />
         ))}
@@ -651,12 +759,10 @@ export default function AiPage() {
 
 function ChatHeader({
   avatarState,
-  onSave,
   onNewChat,
   disabled,
 }: {
   avatarState: GuideAvatarState;
-  onSave?: () => void;
   onNewChat: () => void;
   disabled: boolean;
 }) {
@@ -667,15 +773,6 @@ function ChatHeader({
         <p className="font-bold text-ink">{guide.name}</p>
         <p className="text-sm text-ink-muted">{guide.status}</p>
       </div>
-      {onSave ? (
-        <button
-          onClick={onSave}
-          disabled={disabled}
-          className="rounded-full bg-primary-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50"
-        >
-          Save plan
-        </button>
-      ) : null}
       <button
         onClick={onNewChat}
         disabled={disabled}
@@ -688,18 +785,129 @@ function ChatHeader({
   );
 }
 
+// Generic non-place words that extractPlanPlaceNames may accidentally pick up.
+const NON_PLACE_NAMES = /^(free time|rest|break|relax|snack|walk|stroll|explore|lunch|dinner|breakfast|brunch|coffee|tea|check in|check out)$/i;
+
+// Replace place names in text with Google Maps links.
+// Works from BOTH the fetched place cards (with coordinates) AND names extracted
+// directly from the content, so links always appear even if API lookups fail.
+function addPlaceLinks(content: string, places: PlaceCard[]): string {
+  const norm = (s: string) => s.toLowerCase().trim();
+  const cardMap = new Map(places.map((p) => [norm(p.name), p]));
+
+  // Combine names from cards and names parsed from the content itself.
+  const extracted = extractPlanPlaceNames(content).filter((n) => !NON_PLACE_NAMES.test(n));
+  const allNames = [...new Set([...places.map((p) => p.name), ...extracted])];
+
+  let result = content;
+  for (const name of allNames) {
+    if (name.length < 3 || result.includes(`[${name}](`)) continue;
+    const card = cardMap.get(norm(name));
+    const url =
+      card?.latitude && card?.longitude
+        ? `https://www.google.com/maps/search/?api=1&query=${card.latitude},${card.longitude}`
+        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name + " Mongolia")}`;
+    result = result.split(name).join(`[${name}](${url})`);
+  }
+  return result;
+}
+
+// Extract specific place names from time-plan lines like "09:00: Breakfast at Sky Lounge — ..."
+// Also handles numbered suggestion lists like "1. Café Amsterdam — great coffee"
+// and bold-formatted names like "**Café Amsterdam**"
+// Returns names suitable for passing to /api/places?q=
+function extractPlanPlaceNames(content: string): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  const add = (name: string) => {
+    const n = name.replace(/\*\*/g, "").trim(); // strip any stray bold markers
+    if (n.length > 2 && !seen.has(n.toLowerCase())) {
+      seen.add(n.toLowerCase());
+      names.push(n);
+    }
+  };
+
+  // Strip action prefixes before place name
+  const stripAction = (s: string) =>
+    s.replace(/^(breakfast|brunch|lunch|dinner|coffee|tea|drinks?|visit|explore|stop at|head to|relax at|check out)\s+(at\s+)?/i, "").trim();
+
+  for (const raw of content.split("\n")) {
+    // Remove markdown bold markers so "• **09:00**: Cafe 21" becomes "• 09:00: Cafe 21"
+    const line = raw.trim().replace(/\*\*/g, "");
+
+    // Strip leading bullet/dash so "• 09:00: ..." and "09:00: ..." both hit the same path
+    const stripped = line.replace(/^[-•*]\s+/, "");
+
+    // Time-formatted itinerary lines: "09:00: Breakfast at Cafe 21 — ..."
+    if (/^\d{1,2}:\d{2}/.test(stripped)) {
+      const body = stripped.replace(/^\d{1,2}:\d{2}[^\w]*/, "");
+      const beforeDesc = body.split(/\s+[—–-]\s+/)[0].trim();
+      add(stripAction(beforeDesc));
+      continue;
+    }
+
+    // Numbered suggestion lines: "1. Café Amsterdam — great coffee"
+    const numberedMatch = stripped.match(/^\d+[.)]\s+(.+)/);
+    if (numberedMatch) {
+      add(numberedMatch[1].split(/\s+[—–-]\s+/)[0].trim());
+      continue;
+    }
+
+    // Bare "Place Name — description" lines (capital letter, em/en dash separator)
+    const bareMatch = stripped.match(/^([A-Z][^:.\n—–]{2,60}?)\s+[—–]\s+\S/);
+    if (bareMatch) {
+      add(bareMatch[1].trim());
+      continue;
+    }
+  }
+
+  // Bold names **Place Name** — skip time codes like **09:00**
+  for (const match of content.matchAll(/\*\*([^*]{3,50})\*\*/g)) {
+    if (!/^\d{1,2}:\d{2}/.test(match[1])) add(match[1]);
+  }
+
+  return names;
+}
+
 function MessageBubble({
   message,
   onSavePlan,
   onAddMore,
+  onUpdateStartDate,
   disabled,
 }: {
   message: Message;
   onSavePlan: (messageId: string, plan: PendingPlan) => void;
   onAddMore: (messageId: string) => void;
+  onUpdateStartDate: (planId: string, date: string) => void;
   disabled: boolean;
 }) {
   const isUser = message.role === "user";
+  // Auto-lookup places mentioned in time-plan lines (HH:MM: Place — desc) when
+  // the model didn't call lookup_place itself.
+  const [autoPlaces, setAutoPlaces] = useState<PlaceCard[]>([]);
+  useEffect(() => {
+    if (isUser || message.places?.length) return;
+    const names = extractPlanPlaceNames(message.content);
+    if (!names.length) return;
+    let cancelled = false;
+    Promise.all(
+      names.map((name) =>
+        fetch(`/api/chat/lookup?name=${encodeURIComponent(name)}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      setAutoPlaces(results.filter(Boolean) as PlaceCard[]);
+    });
+    return () => { cancelled = true; };
+  // Re-run when places is finalised after streaming (undefined → [] triggers this).
+  }, [message.id, message.places]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const displayPlaces = message.places?.length ? message.places : autoPlaces;
+  const contentWithLinks = isUser ? message.content : addPlaceLinks(message.content, displayPlaces);
+
   return (
     <div className={isUser ? "flex flex-col items-end" : "flex flex-col items-start"}>
       {isUser ? (
@@ -707,18 +915,24 @@ function MessageBubble({
           {message.content}
         </p>
       ) : (
-        <div className="max-w-[80%] space-y-2 rounded-3xl bg-white px-4 py-3 text-sm text-ink shadow-ink-sm [&_a]:text-primary-600 [&_a]:underline [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-0 [&_strong]:font-bold [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+        <div className="max-w-[85%] space-y-2 rounded-3xl bg-white px-4 py-3 text-sm text-ink shadow-ink-sm [&_a]:text-primary-600 [&_a]:underline [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-0 [&_strong]:font-bold [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              a: ({ href, children }) => (
+                <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+              ),
+            }}
+          >{contentWithLinks}</ReactMarkdown>
+          {displayPlaces.length ? (
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              {displayPlaces.map((place) => (
+                <PlacePill key={place.name} place={place} defaultOpen={displayPlaces.length <= 3} />
+              ))}
+            </div>
+          ) : null}
         </div>
       )}
-
-      {message.places?.length ? (
-        <div className="mt-2 flex w-full max-w-[90%] gap-3 overflow-x-auto pb-1">
-          {message.places.map((place) => (
-            <PlaceCardView key={place.name} place={place} />
-          ))}
-        </div>
-      ) : null}
 
       {message.pendingPlan && message.planStatus === "pending" ? (
         <div className="mt-2 flex gap-2">
@@ -748,96 +962,109 @@ function MessageBubble({
           View your journey
         </Link>
       ) : null}
+
+      {message.datePromptPlanId ? (
+        <DatePickerPrompt planId={message.datePromptPlanId} onSave={onUpdateStartDate} />
+      ) : null}
     </div>
   );
 }
 
-// A compact photo card for a place Michelle recommends. Tapping it expands the
-// card in place to reveal its address and more reviews.
-function PlaceCardView({ place }: { place: PlaceCard }) {
-  const [expanded, setExpanded] = useState(false);
-  const reviews = place.reviews ?? [];
-  const shownReviews = expanded ? reviews : reviews.slice(0, 1);
-  const canExpand = reviews.length > 1 || Boolean(place.address);
+// Date picker shown after a plan is saved so the user can set a start date.
+// Saves the date to localStorage (and attempts a backend sync) via onSave.
+function DatePickerPrompt({ planId, onSave }: { planId: string; onSave: (planId: string, date: string) => void }) {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const [date, setDate] = useState(tomorrow.toISOString().slice(0, 10));
+  const [saved, setSaved] = useState(false);
+
+  if (saved) {
+    return (
+      <p className="mt-2 text-sm font-semibold text-primary-600">
+        ✓ Start date set — check your Journey!
+      </p>
+    );
+  }
 
   return (
-    <button
-      type="button"
-      onClick={() => canExpand && setExpanded((v) => !v)}
-      className={`shrink-0 overflow-hidden rounded-2xl bg-white text-left shadow-sm transition ${
-        expanded ? "w-60" : "w-44"
-      } ${canExpand ? "hover:shadow-md active:scale-[0.99]" : "cursor-default"}`}
-    >
-      <div className="h-24 bg-sand-200">
-        {place.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={place.imageUrl}
-            alt={place.name}
-            className="h-full w-full object-cover"
-          />
-        ) : null}
-      </div>
-      <div className="p-3">
-        <p className="text-sm font-bold leading-tight text-ink">{place.name}</p>
-        <div className="mt-1 flex items-center gap-3 text-[11px] font-semibold text-ink-muted">
-          {place.rating ? (
-            <span className="flex items-center gap-1">
-              <StarIcon size={11} className="text-safety-armed" />
-              {place.rating}
-              {place.reviewCount ? (
-                <span className="font-normal text-ink-muted/70">
-                  ({place.reviewCount})
+    <div className="mt-2 flex items-center gap-2">
+      <input
+        type="date"
+        value={date}
+        min={new Date().toISOString().slice(0, 10)}
+        onChange={(e) => setDate(e.target.value)}
+        className="rounded-xl border border-sand-200 bg-white px-3 py-1.5 text-sm text-ink focus:border-primary-300 focus:outline-none"
+      />
+      <button
+        onClick={() => { onSave(planId, date); setSaved(true); }}
+        disabled={!date}
+        className="rounded-full bg-primary-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
+      >
+        Set date
+      </button>
+    </div>
+  );
+}
+
+// Compact pill that expands into a place card when tapped.
+// Auto-expands when `defaultOpen` is true (used when ≤3 places are shown as suggestions).
+function PlacePill({ place, defaultOpen = false }: { place: PlaceCard; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const reviews = place.reviews ?? [];
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 rounded-full border border-primary-200 bg-primary-50 px-2.5 py-1 text-[11px] font-semibold text-primary-700 transition hover:bg-primary-100"
+      >
+        <MapPinIcon size={9} />
+        {place.name}
+        <span className="text-primary-400 text-[9px]">{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div className="mt-1.5 overflow-hidden rounded-2xl bg-white shadow-ink-sm" style={{ width: 220 }}>
+          <div className="h-28 bg-sand-200">
+            {place.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={place.imageUrl} alt={place.name} className="h-full w-full object-cover" />
+            ) : null}
+          </div>
+          <div className="p-3">
+            <p className="text-sm font-bold leading-tight text-ink">{place.name}</p>
+            <div className="mt-1 flex items-center gap-3 text-[11px] font-semibold text-ink-muted">
+              {place.rating ? (
+                <span className="flex items-center gap-1">
+                  <StarIcon size={10} className="text-safety-armed" />
+                  {place.rating}
+                  {place.reviewCount ? (
+                    <span className="font-normal text-ink-muted/70">({place.reviewCount})</span>
+                  ) : null}
                 </span>
               ) : null}
-            </span>
-          ) : null}
-          {place.walkMinutes ? (
-            <span className="flex items-center gap-1">
-              <WalkIcon size={12} />
-              {place.walkMinutes} min
-            </span>
-          ) : null}
-        </div>
-
-        {expanded && place.address ? (
-          <p className="mt-2 text-[11px] leading-snug text-ink-muted">
-            📍 {place.address}
-          </p>
-        ) : null}
-
-        {shownReviews.length > 0 ? (
-          <div className="mt-2 space-y-1.5">
-            {shownReviews.map((review, i) => (
-              <div key={i} className="rounded-lg bg-sand-100 p-2">
-                <p
-                  className={`text-[11px] italic leading-snug text-ink-muted ${
-                    expanded ? "" : "line-clamp-3"
-                  }`}
-                >
-                  "{review.text}"
-                </p>
-                {review.author ? (
-                  <p className="mt-1 text-[10px] font-semibold text-ink-muted/70">
-                    — {review.author}
-                  </p>
-                ) : null}
-              </div>
-            ))}
+              {place.walkMinutes ? (
+                <span className="flex items-center gap-1">
+                  <WalkIcon size={11} />
+                  {place.walkMinutes} min
+                </span>
+              ) : null}
+            </div>
+            {place.address ? (
+              <p className="mt-1.5 text-[11px] leading-snug text-ink-muted">📍 {place.address}</p>
+            ) : null}
+            {reviews[0] ? (
+              <p className="mt-1.5 line-clamp-3 text-[11px] italic leading-snug text-ink-muted">
+                &ldquo;{reviews[0].text}&rdquo;
+              </p>
+            ) : place.description ? (
+              <p className="mt-1 line-clamp-2 text-[11px] text-ink-muted">{place.description}</p>
+            ) : null}
           </div>
-        ) : place.description ? (
-          <p className="mt-1 line-clamp-2 text-xs text-ink-muted">
-            {place.description}
-          </p>
-        ) : null}
-
-        {canExpand ? (
-          <span className="mt-2 inline-block text-[11px] font-semibold text-primary-600">
-            {expanded ? "Show less ▲" : "More details ▼"}
-          </span>
-        ) : null}
-      </div>
-    </button>
+        </div>
+      )}
+    </div>
   );
 }
 
