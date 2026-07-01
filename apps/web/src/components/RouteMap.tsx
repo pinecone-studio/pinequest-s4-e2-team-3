@@ -342,8 +342,12 @@ function DetourLine({
   return <DestMarker lat={destination.latitude} lng={destination.longitude} color={color} />;
 }
 
-// The "get to the start" leg: a route from the traveller's real GPS to the
-// journey's first stop, drawn until they arrive. A short gap is a dashed walking
+// The connector leg's colour — a distinct violet so the "get to the stop" line
+// stands out from the plan's blue route (they overlap on screen).
+const APPROACH_COLOR = "#7C3AED";
+
+// The "get to the target stop" leg: a route from the traveller's real GPS to the
+// stop they're heading to, drawn until they arrive. A short gap is a dashed walking
 // path; further out it's a solid driving road (as a taxi/bus would take). Matches
 // what Michelle says (both read the same approachPlan). Re-routes only when they
 // move ~100m (position rounded into the effect key), not on every GPS tick, so we
@@ -376,7 +380,7 @@ function ApproachLine({
     ];
     let cancelled = false;
     let drawn: google.maps.Polyline[] = [];
-    drawRoadPath(map, mapsLib, routesLib, points, "#2f6bff", () => cancelled, walk).then((p) => {
+    drawRoadPath(map, mapsLib, routesLib, points, APPROACH_COLOR, () => cancelled, walk).then((p) => {
       if (cancelled) p.forEach((l) => l.setMap(null));
       else drawn = p;
     });

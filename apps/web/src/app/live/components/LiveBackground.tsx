@@ -22,7 +22,7 @@ export function LiveBackground({ theme, demo = false }: { theme: Theme; demo?: b
   const { activeRoute, currentStopIndex, arrivedStopIds, simulatedCoords, forceOffline, suggestions, selectedPlace, returnTarget, returnMode, busLegs, mapType } =
     useLiveStore();
   const realCoords = useLocationStore((s) => s.coordinates);
-  const position: Coords | null = resolvePosition(simulatedCoords, realCoords, activeRoute);
+  const position: Coords | null = resolvePosition(simulatedCoords, realCoords);
 
   // The stop the traveller is currently heading to — the connector line is drawn
   // from their position to this. For a normal user it's the first stop they

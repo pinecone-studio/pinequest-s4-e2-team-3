@@ -106,6 +106,18 @@ export async function speak(
   const controller = new AbortController();
   activeController = controller;
 
+  // Bail out before playback started. CRITICAL: fire onEnd so the caller clears its
+  // "preparing…"/"speaking" state (otherwise the narration card sticks on
+  // "preparing" forever and its play button stays disabled). But only when NO newer
+  // utterance has taken over — after a bare stopSpeaking / unmount / pause,
+  // activeController is null; if a newer speak() is now in flight it owns the state,
+  // so we leave it alone. (This aborted-with-no-successor case is exactly what React
+  // StrictMode's mount→unmount→mount does to the one-shot welcome in dev.)
+  const bail = (): false => {
+    if (activeController === null) opts.onEnd?.();
+    return false;
+  };
+
   try {
     const res = await fetch("/api/tts", {
       method: "POST",
@@ -114,17 +126,17 @@ export async function speak(
       signal: controller.signal,
     });
     // A newer speak() (or stopSpeaking) superseded us while fetching — bail.
-    if (myToken !== speakToken) return false;
+    if (myToken !== speakToken) return bail();
     if (!res.ok) throw new Error(`tts ${res.status}`);
 
     const blob = await res.blob();
-    if (myToken !== speakToken) return false;
+    if (myToken !== speakToken) return bail();
 
     return await playBlobWithToken(blob, opts, myToken);
   } catch (err) {
-    // Superseded or deliberately aborted → stay silent (no fallback, no onEnd).
-    if (myToken !== speakToken) return false;
-    if (err instanceof DOMException && err.name === "AbortError") return false;
+    // Superseded or deliberately aborted → stay silent, but still release the state.
+    if (myToken !== speakToken) return bail();
+    if (err instanceof DOMException && err.name === "AbortError") return bail();
 
     // Genuine network/route/quota failure → don't go silent, use browser voice.
     browserSpeak(text, {

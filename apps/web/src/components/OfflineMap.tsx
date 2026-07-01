@@ -5,7 +5,47 @@ import "leaflet/dist/leaflet.css";
 import type * as Leaflet from "leaflet";
 import { boundsForStops, getTile, tileUrl, zoomRange, type TileStyle } from "@/lib/offlineTiles";
 import { decodePolyline, type BusLeg } from "@/lib/transit";
+import { haversineMeters } from "@/lib/geo";
 import type { Coords, RouteStop } from "@/types";
+
+// Offline has no Directions API, so a "take me there" guide line would otherwise
+// cut a straight line across the map. The target is a plan stop that sits ON the
+// saved route, so instead we follow the cached route polyline: take its slice
+// between the point nearest the traveller and the point nearest the target. Falls
+// back to a straight line when there's no cached geometry.
+function roadSegment(
+  encoded: string | null,
+  start: Coords,
+  end: Coords,
+): [number, number][] {
+  const straight: [number, number][] = [
+    [start.latitude, start.longitude],
+    [end.latitude, end.longitude],
+  ];
+  if (!encoded) return straight;
+  const path = decodePolyline(encoded);
+  if (path.length < 2) return straight;
+
+  const nearest = (c: Coords) => {
+    let best = 0;
+    let bestD = Infinity;
+    path.forEach((p, i) => {
+      const d = haversineMeters(c, p);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    return best;
+  };
+
+  let a = nearest(start);
+  let b = nearest(end);
+  if (a > b) [a, b] = [b, a];
+  const seg = path.slice(a, b + 1).map((p) => [p.latitude, p.longitude] as [number, number]);
+  // Connect exactly from the dot to the destination marker at each end.
+  return [[start.latitude, start.longitude], ...seg, [end.latitude, end.longitude]];
+}
 
 // Interactive offline map: renders cached CartoDB tiles from IndexedDB (with a
 // live network fallback), so the traveller can zoom/pan and see their live GPS
@@ -188,10 +228,8 @@ export default function OfflineMap({
         const color =
           returnMode === "transit" ? "#10B981" : returnMode === "walk" ? "#4F46E5" : "#3B82F6";
         if (start) {
-          const line: [number, number][] = [
-            [start.latitude, start.longitude],
-            [returnTarget.latitude, returnTarget.longitude],
-          ];
+          // Follow the cached road geometry instead of a straight line across the map.
+          const line = roadSegment(encodedPath, start, returnTarget);
           L.polyline(
             line,
             returnMode === "walk"
@@ -212,7 +250,7 @@ export default function OfflineMap({
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [returnTarget?.latitude, returnTarget?.longitude, returnMode, busLegs]);
+  }, [returnTarget?.latitude, returnTarget?.longitude, returnMode, busLegs, encodedPath]);
 
   // Move the live-position marker as GPS updates (without recentering the map,
   // so the traveller stays in control of pan/zoom).
