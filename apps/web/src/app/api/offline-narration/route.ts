@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { rateLimit, clientIp, rateLimitResponse } from "@/lib/rateLimit";
 
 // Generates Michelle's on-arrival narration for every stop of a route in ONE
 // call, so an offline pack can cache the spoken text (and its audio) once at
@@ -21,6 +22,8 @@ interface StopIn {
 }
 
 export async function POST(req: Request) {
+  if (!rateLimit(`offline-narration:${clientIp(req)}`, 10, 60_000)) return rateLimitResponse();
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return Response.json({ error: "OPENAI_API_KEY is not configured" }, { status: 500 });

@@ -1,10 +1,15 @@
 import twilio from "twilio";
+import { rateLimit, clientIp, rateLimitResponse } from "@/lib/rateLimit";
 
 // Places a REAL outbound call from the server via Twilio's REST API and, on
 // answer, speaks the SOS message to the operator IN MONGOLIAN using Chimege TTS
 // (via <Play> of /api/voice/sos-audio) — so the traveller's language barrier is
 // bridged. Falls back to an English Polly voice if no Mongolian text is given.
 export async function POST(req: Request) {
+  // No login required (an SOS caller may not be signed in) — a per-IP limit
+  // bounds toll/cost abuse of the real Twilio call this triggers.
+  if (!rateLimit(`voice-call:${clientIp(req)}`, 5, 60_000)) return rateLimitResponse();
+
   const {
     TWILIO_ACCOUNT_SID,
     TWILIO_AUTH_TOKEN,

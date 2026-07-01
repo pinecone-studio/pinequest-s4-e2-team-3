@@ -1,8 +1,11 @@
 import twilio from "twilio";
+import { rateLimit, clientIp, rateLimitResponse } from "@/lib/rateLimit";
 
 // Ends an in-progress server-initiated call (best-effort) when the traveller taps
 // "End call". Safe to call even if the call already finished.
 export async function POST(req: Request) {
+  if (!rateLimit(`voice-hangup:${clientIp(req)}`, 20, 60_000)) return rateLimitResponse();
+
   const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
   if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
     return Response.json({ ok: false }, { status: 503 });

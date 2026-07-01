@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { toFile } from "openai";
+import { rateLimit, clientIp, rateLimitResponse } from "@/lib/rateLimit";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -31,6 +32,8 @@ async function chimegeStt(audioBuffer: ArrayBuffer, mimeType: string): Promise<s
 }
 
 export async function POST(req: Request) {
+  if (!rateLimit(`stt:${clientIp(req)}`, 30, 60_000)) return rateLimitResponse();
+
   const formData = await req.formData();
   const audio = formData.get("audio") as Blob;
   const lang  = (formData.get("lang") as string) ?? "en";
