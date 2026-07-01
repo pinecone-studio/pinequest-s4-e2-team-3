@@ -9,13 +9,14 @@ import { putAudio } from "@/lib/offlineAudio";
 import { boundsForStops, cacheTiles } from "@/lib/offlineTiles";
 import { buildRoutePath } from "@/lib/routePath";
 import { encodePolyline } from "@/lib/transit";
-import type { DemoRoute } from "@/types";
+import type { Coords, DemoRoute } from "@/types";
 
 const KEY_PREFIX = "nomad:offline:";
 // Bump when the pack shape changes so stale/incomplete packs from older builds
 // are ignored and rebuilt (v8: both light+dark tiles cached so night mode works
-// offline; v9: client-SDK road-geometry fallback + route-fitted tile zoom range).
-const PACK_VERSION = 9;
+// offline; v9: client-SDK road-geometry fallback + route-fitted tile zoom range;
+// v10: cached approach geometry from the download-time position to the first stop).
+const PACK_VERSION = 10;
 
 export interface OfflinePack {
   version: number;
@@ -26,6 +27,10 @@ export interface OfflinePack {
   image: string | null;
   // Encoded road polyline so the offline map can draw the route line.
   encodedPath: string | null;
+  // Encoded road route from the traveller's position at download time to the FIRST
+  // stop, so the offline "get to the start" connector can follow real roads (the
+  // live position can't be routed offline; this is the best cached approximation).
+  approachPath: string | null;
   // True once map tiles were cached → render the interactive offline map.
   // (Both light + dark styles are cached, so the offline map follows the theme.)
   tiles: boolean;
@@ -70,6 +75,31 @@ async function roadPolyline(route: DemoRoute): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// Road route between two arbitrary points (download-time position → first stop),
+// as an encoded polyline, via the server Directions endpoint. Best-effort: null on
+// any failure (the offline connector then falls back to the inter-stop geometry).
+async function roadTo(from: Coords, to: Coords): Promise<string | null> {
+  try {
+    const res = await fetch("/api/route-geometry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        stops: [
+          { lat: from.latitude, lng: from.longitude },
+          { lat: to.latitude, lng: to.longitude },
+        ],
+      }),
+    });
+    if (res.ok) {
+      const { encoded } = (await res.json()) as { encoded: string | null };
+      if (encoded) return encoded;
+    }
+  } catch {
+    /* best-effort */
+  }
+  return null;
 }
 
 // Build a Google Static Maps API URL showing the whole route + numbered pins.
@@ -155,8 +185,12 @@ async function fetchStopTexts(route: DemoRoute): Promise<Record<string, string>>
 export async function savePack(
   route: DemoRoute,
   onProgress?: (done: number, total: number) => void,
+  origin?: Coords | null,
 ): Promise<OfflinePack> {
   const encodedPath = await roadPolyline(route); // road-following where possible
+  // Cache a road route from where the traveller is NOW to the first stop, so the
+  // offline approach connector follows real roads instead of a straight line.
+  const approachPath = origin && route.stops[0] ? await roadTo(origin, route.stops[0]) : null;
   const staticUrl = buildStaticMapUrl(route, encodedPath);
   const image = staticUrl ? await urlToDataUrl(staticUrl) : null;
   const texts = await fetchStopTexts(route);
@@ -193,6 +227,7 @@ export async function savePack(
     savedAt: Date.now(),
     image,
     encodedPath,
+    approachPath,
     tiles: tilesCached > 0,
     stops: route.stops.map((s) => ({ id: s.id, name: s.name, text: texts[s.id] })),
   };

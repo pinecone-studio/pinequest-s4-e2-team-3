@@ -20,7 +20,7 @@ export function IntentCard({
     { emoji: "🌳", label: "Rest", query: "Show me parks or quiet spots to rest near me right now — list the closest options, don't ask me anything." },
   ];
   return (
-    <div className="pointer-events-auto animate-rise mt-3 rounded-3xl bg-white p-3 shadow-sm dark:bg-white/[0.07] dark:shadow-none">
+    <div className="pointer-events-auto animate-rise mt-3 rounded-3xl bg-white p-3 shadow-sm backdrop-blur-md dark:bg-[#131b2c]/90 dark:shadow-none dark:ring-1 dark:ring-white/10">
       <p className="px-1 pb-2 text-[11px] font-bold uppercase tracking-wide text-ink-muted dark:text-white/50">
         What do you feel like?
       </p>
