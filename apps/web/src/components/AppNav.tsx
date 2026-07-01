@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase";
+import { signOutAndClear } from "@/lib/authSession";
 import {
   ChatIcon,
   CompassIcon,
@@ -41,7 +41,7 @@ export function AppNav() {
 function DesktopSidebar({ pathname }: { pathname: string }) {
   const router = useRouter();
   async function signOut() {
-    await createClient().auth.signOut();
+    await signOutAndClear();
     router.push("/login");
   }
 
