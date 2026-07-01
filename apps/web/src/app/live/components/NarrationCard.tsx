@@ -77,7 +77,7 @@ export function NarrationCard({
 
   // Expanded full panel.
   return (
-    <div className="pointer-events-auto rounded-3xl bg-white p-5 shadow-sm backdrop-blur dark:bg-white/[0.07] dark:shadow-none">
+    <div className="pointer-events-auto rounded-3xl bg-white p-5 shadow-sm backdrop-blur-md dark:bg-[#131b2c]/90 dark:shadow-none dark:ring-1 dark:ring-white/10">
       <div className="flex items-center gap-2.5">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white">
           <SparklesIcon size={14} />

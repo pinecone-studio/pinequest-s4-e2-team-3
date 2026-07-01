@@ -88,8 +88,10 @@ export function LiveBackground({ theme, demo = false }: { theme: Theme; demo?: b
           <OfflineMap
             stops={activeRoute.stops}
             encodedPath={pack.encodedPath}
+            approachPath={pack.approachPath}
             position={position}
             theme={theme}
+            targetStop={targetStop}
             returnTarget={returnTarget}
             returnMode={returnMode}
             busLegs={busLegs}

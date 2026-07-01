@@ -14,7 +14,7 @@ export function NarrationTeaser({
   onOpen: () => void;
 }) {
   return (
-    <div className="pointer-events-auto rounded-3xl bg-white px-4 py-3 shadow-sm backdrop-blur dark:bg-white/[0.07] dark:shadow-none">
+    <div className="pointer-events-auto rounded-3xl bg-white px-4 py-3 shadow-sm backdrop-blur-md dark:bg-[#131b2c]/90 dark:shadow-none dark:ring-1 dark:ring-white/10">
       <button
         type="button"
         onClick={onOpen}
