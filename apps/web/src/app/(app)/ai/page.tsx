@@ -6,14 +6,17 @@ import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChatIcon, MapPinIcon, MicIcon, PencilIcon, SendIcon, StarIcon, WalkIcon } from "@/components/icons";
+import { ChatIcon, MicIcon, PencilIcon, SendIcon } from "@/components/icons";
 import { GuideAvatar, type GuideAvatarState } from "@/components/GuideAvatar";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { guide } from "@/lib/mockData";
 import { FeatureGate } from "@/components/FeatureGate";
+import { ExploreCard } from "@/components/ExploreCard";
+import type { ExploreSpot } from "@/types";
 
 // A place Michelle recommends, shown as a card under her reply.
 interface PlaceCard {
+  id?: string;
   name: string;
   latitude?: number;
   longitude?: number;
@@ -729,6 +732,7 @@ function newChat() {
           <MessageBubble
             key={message.id}
             message={message}
+            coords={coords}
             onSavePlan={savePlan}
             onAddMore={addMoreToPlan}
             onUpdateStartDate={updatePlanStartDate}
@@ -786,33 +790,6 @@ function ChatHeader({
   );
 }
 
-// Generic non-place words that extractPlanPlaceNames may accidentally pick up.
-const NON_PLACE_NAMES = /^(free time|rest|break|relax|snack|walk|stroll|explore|lunch|dinner|breakfast|brunch|coffee|tea|check in|check out)$/i;
-
-// Replace place names in text with Google Maps links.
-// Works from BOTH the fetched place cards (with coordinates) AND names extracted
-// directly from the content, so links always appear even if API lookups fail.
-function addPlaceLinks(content: string, places: PlaceCard[]): string {
-  const norm = (s: string) => s.toLowerCase().trim();
-  const cardMap = new Map(places.map((p) => [norm(p.name), p]));
-
-  // Combine names from cards and names parsed from the content itself.
-  const extracted = extractPlanPlaceNames(content).filter((n) => !NON_PLACE_NAMES.test(n));
-  const allNames = [...new Set([...places.map((p) => p.name), ...extracted])];
-
-  let result = content;
-  for (const name of allNames) {
-    if (name.length < 3 || result.includes(`[${name}](`)) continue;
-    const card = cardMap.get(norm(name));
-    const url =
-      card?.latitude && card?.longitude
-        ? `https://www.google.com/maps/search/?api=1&query=${card.latitude},${card.longitude}`
-        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name + " Mongolia")}`;
-    result = result.split(name).join(`[${name}](${url})`);
-  }
-  return result;
-}
-
 // Extract specific place names from time-plan lines like "09:00: Breakfast at Sky Lounge — ..."
 // Also handles numbered suggestion lists like "1. Café Amsterdam — great coffee"
 // and bold-formatted names like "**Café Amsterdam**"
@@ -867,47 +844,60 @@ function extractPlanPlaceNames(content: string): string[] {
     if (!/^\d{1,2}:\d{2}/.test(match[1])) add(match[1]);
   }
 
+  // Inline numbered items without newlines: "1. BD's Mongolian BBQ — desc 2. Millie's..."
+  // Catches lists the AI emits as one paragraph (no \n between items).
+  for (const match of content.matchAll(/(?<!\d)\d+[.)]\s+(.+?)(?:\s+[—–-]\s+|\s{2,}(?=\d+[.)]))/g)) {
+    const candidate = match[1].replace(/\*\*/g, "").trim();
+    if (candidate.length > 2) add(candidate);
+  }
+
   return names;
 }
 
+
 function MessageBubble({
   message,
+  coords,
   onSavePlan,
   onAddMore,
   onUpdateStartDate,
   disabled,
 }: {
   message: Message;
+  coords: { lat: number; lng: number } | null;
   onSavePlan: (messageId: string, plan: PendingPlan) => void;
   onAddMore: (messageId: string) => void;
   onUpdateStartDate: (planId: string, date: string) => void;
   disabled: boolean;
 }) {
   const isUser = message.role === "user";
-  // Auto-lookup places mentioned in time-plan lines (HH:MM: Place — desc) when
-  // the model didn't call lookup_place itself.
-  const [autoPlaces, setAutoPlaces] = useState<PlaceCard[]>([]);
+  const [autoSpots, setAutoSpots] = useState<(ExploreSpot | { name: string })[]>([]);
+
   useEffect(() => {
-    if (isUser || message.places?.length) return;
-    const names = extractPlanPlaceNames(message.content);
+    if (isUser) return;
+    const names = message.places?.length
+      ? message.places.map((p) => p.name)
+      : extractPlanPlaceNames(message.content);
     if (!names.length) return;
+    const lat = coords?.lat ?? 47.9077;
+    const lng = coords?.lng ?? 106.8832;
     let cancelled = false;
     Promise.all(
       names.map((name) =>
-        fetch(`/api/chat/lookup?name=${encodeURIComponent(name)}`)
-          .then((r) => (r.ok ? r.json() : null))
+        fetch(`/api/places?q=${encodeURIComponent(name)}&lat=${lat}&lng=${lng}`)
+          .then((r) => (r.ok ? r.json() : []))
+          .then((data: ExploreSpot[]) => data[0] ?? null)
           .catch(() => null),
       ),
     ).then((results) => {
       if (cancelled) return;
-      setAutoPlaces(results.filter(Boolean) as PlaceCard[]);
+      const mapped = results.map((r, i) => r ?? { name: names[i] });
+      // Found places first, unfound last
+      mapped.sort((a, b) => ("id" in b ? 1 : 0) - ("id" in a ? 1 : 0));
+      setAutoSpots(mapped);
     });
     return () => { cancelled = true; };
-  // Re-run when places is finalised after streaming (undefined → [] triggers this).
-  }, [message.id, message.places]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const displayPlaces = message.places?.length ? message.places : autoPlaces;
-  const contentWithLinks = isUser ? message.content : addPlaceLinks(message.content, displayPlaces);
+  }, [message.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className={isUser ? "flex flex-col items-end" : "flex flex-col items-start"}>
@@ -924,14 +914,38 @@ function MessageBubble({
                 <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
               ),
             }}
-          >{contentWithLinks}</ReactMarkdown>
-          {displayPlaces.length ? (
-            <div className="flex flex-wrap gap-1.5 pt-0.5">
-              {displayPlaces.map((place) => (
-                <PlacePill key={place.name} place={place} defaultOpen={displayPlaces.length <= 3} />
-              ))}
+          >{message.content}</ReactMarkdown>
+
+          {autoSpots.length > 0 && (
+            <div className="flex gap-3 overflow-x-auto pb-1 pt-1" style={{ scrollbarWidth: "none" }}>
+              {autoSpots.map((spot) => {
+                if ("id" in spot) {
+                  return (
+                    <div key={spot.id} className="flex-none" style={{ width: 160 }}>
+                      <ExploreCard spot={spot} compact />
+                    </div>
+                  );
+                }
+                return (
+                  <a
+                    key={spot.name}
+                    href={`https://www.google.com/maps/search/${encodeURIComponent(spot.name + " Ulaanbaatar")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-none overflow-hidden rounded-3xl bg-white shadow-ink-sm text-left transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-ink-md active:translate-y-0 active:shadow-ink-sm"
+                    style={{ width: 160 }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/nature-default.jpg" alt="" className="h-28 w-full object-cover" />
+                    <div className="p-3">
+                      <h3 className="text-sm font-bold text-ink leading-tight line-clamp-2">{spot.name}</h3>
+                      <p className="mt-2 text-sm text-primary-500 font-medium">Search on Maps ↗</p>
+                    </div>
+                  </a>
+                );
+              })}
             </div>
-          ) : null}
+          )}
         </div>
       )}
 
