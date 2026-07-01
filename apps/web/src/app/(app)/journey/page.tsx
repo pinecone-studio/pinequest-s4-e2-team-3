@@ -12,6 +12,7 @@ import {
   ChevronRightIcon,
 } from "@/components/icons";
 import { FeatureGate } from "@/components/FeatureGate";
+import { DirectionsSheet } from "@/components/DirectionsSheet";
 import { demoRoutes, getRoutes } from "@/lib/routes";
 import { planDayToRoute } from "@/lib/planToRoute";
 import { useLiveStore } from "@/stores/liveStore";
@@ -628,12 +629,27 @@ function StopCard({
   onToggle: () => void;
   onMoveNextDay: () => void;
 }) {
+  const [mapOpen, setMapOpen] = useState(false);
   const done = status === "done";
   const missed = status === "missed";
 
   const imageUrl =
     place?.imageUrl ??
     `https://picsum.photos/seed/${encodeURIComponent(stop.title)}/700/400`;
+
+  const exploreSpot = {
+    id: "",
+    title: stop.title,
+    category: "Journey",
+    categoryTone: "blue" as const,
+    rating: place?.rating ?? 0,
+    distance: "",
+    walkTime: place?.walkMinutes ? `${place.walkMinutes} min walk` : "",
+    description: stop.note ?? "",
+    imageUrl,
+    latitude: place?.latitude,
+    longitude: place?.longitude,
+  };
 
   const dotClass = done
     ? "border-green-500 bg-green-500 text-white"
@@ -642,6 +658,7 @@ function StopCard({
       : "border-primary-600 bg-white text-primary-600 hover:bg-primary-50";
 
   return (
+  <>
     <li className="flex gap-3">
       {/* Timeline column */}
       <div className="flex flex-col items-center" style={{ width: 40 }}>
@@ -676,10 +693,13 @@ function StopCard({
             missed ? "text-ink-muted/40" : "text-ink-muted",
           ].join(" ")}>{stop.time}</p>
         ) : null}
-        <article className={[
-          "overflow-hidden rounded-3xl bg-white shadow-ink-sm transition-opacity",
-          done ? "opacity-60" : missed ? "opacity-40 grayscale" : "",
-        ].join(" ")}>
+        <article
+          onClick={() => setMapOpen(true)}
+          className={[
+            "cursor-pointer overflow-hidden rounded-3xl bg-white shadow-ink-sm transition-[opacity,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-ink-md active:translate-y-0",
+            done ? "opacity-60" : missed ? "opacity-40 grayscale" : "",
+          ].join(" ")}
+        >
           <div className="relative h-40">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={imageUrl} alt={stop.title} className="h-full w-full object-cover" />
@@ -733,5 +753,9 @@ function StopCard({
         )}
       </div>
     </li>
+
+    {mapOpen && <DirectionsSheet spot={exploreSpot} onClose={() => setMapOpen(false)} />}
+  </>
   );
 }
+
