@@ -23,6 +23,7 @@ export default function RouteMap({
   route,
   currentIndex,
   position,
+  targetStop = null,
   onError,
   theme = "dark",
   suggestions = [],
@@ -35,6 +36,9 @@ export default function RouteMap({
   route: DemoRoute;
   currentIndex: number;
   position: Coords | null;
+  // The stop the traveller is heading to now → the connector line goes here.
+  // Null when there's no next stop to route to (e.g. all reached).
+  targetStop?: { latitude: number; longitude: number; arrivalRadius?: number } | null;
   // Fired if the map can't load (e.g. an invalid/blocked key) so the caller can
   // fall back to the stylised backdrop instead of showing a blank area.
   onError?: () => void;
@@ -56,21 +60,19 @@ export default function RouteMap({
     [route],
   );
 
-  // Before the journey begins, draw a route from the traveller's real GPS to
-  // stop #1 so they can see how to reach the start (walk if close, taxi/bus road
-  // if far). Shown alongside the full route — the map fits both. Only while still
-  // on stop #1 and genuinely away from it (beyond its arrival radius) — when GPS
-  // falls back to the first stop the distance is ~0, so it stays hidden. Skipped
-  // only when absurdly far (tooFar) or during a detour / picked-place flow.
-  const firstStop = route.stops[0];
+  // The connector line: from the traveller's real GPS to the stop they're heading
+  // to now (targetStop) — walk if close, taxi/bus road if far. Drawn alongside the
+  // full route; the map fits both. Only when genuinely away from the target (beyond
+  // its arrival radius) — when GPS falls back to the target itself the distance is
+  // ~0, so it stays hidden. Skipped when absurdly far (tooFar) or during a detour /
+  // picked-place flow.
   const showApproach =
     !selectedPlace &&
     !returnTarget &&
-    currentIndex === 0 &&
     !!position &&
-    !!firstStop &&
-    haversineMeters(position, firstStop) > (firstStop.arrivalRadius ?? 150) &&
-    !approachPlan(position, firstStop).tooFar;
+    !!targetStop &&
+    haversineMeters(position, targetStop) > (targetStop.arrivalRadius ?? 150) &&
+    !approachPlan(position, targetStop).tooFar;
 
   // When approaching, also fit the traveller's position into view (rounded to
   // ~100m so the map doesn't re-fit on every GPS tick) so the WHOLE route plus
@@ -99,8 +101,8 @@ export default function RouteMap({
         {/* Show the full plan line only when not heading to a specific target —
             otherwise just the current→target leg (DetourLine below) is drawn. */}
         {!selectedPlace && !returnTarget && <RouteLine path={path} />}
-        {/* The "get to stop #1" leg, drawn on top of the full route. */}
-        {showApproach && <ApproachLine origin={position!} destination={firstStop} />}
+        {/* The "get to the current target stop" leg, drawn on top of the full route. */}
+        {showApproach && targetStop && <ApproachLine origin={position!} destination={targetStop} />}
         {/* Fit the whole journey — plus the traveller's position when approaching,
             so both the full route and the approach leg stay in view. */}
         {selectedPlace || returnTarget ? null : (

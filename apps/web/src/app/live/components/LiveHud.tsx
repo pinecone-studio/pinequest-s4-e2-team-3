@@ -21,6 +21,7 @@ export function LiveHud({
   currentStopIndex,
   nextStop,
   simulating,
+  demo = false,
   onWalkNext,
   onToggleSim,
   onRestart,
@@ -37,6 +38,8 @@ export function LiveHud({
   currentStopIndex: number;
   nextStop: RouteStop | null;
   simulating: boolean;
+  // Demo (sevo) account only: shows the auto-walk + manual "next stop" controls.
+  demo?: boolean;
   onWalkNext: () => void;
   onToggleSim: () => void;
   onRestart: () => void;
@@ -60,8 +63,10 @@ export function LiveHud({
           </span>
         )}
 
-        {/* Quick action buttons — icon-only so the row fits on any screen width */}
-        {nextStop && (
+        {/* Quick action buttons — icon-only so the row fits on any screen width.
+            Auto-walk + manual "next stop" are demo-only simulation controls; normal
+            users progress purely by real GPS proximity, so they're hidden. */}
+        {demo && nextStop && (
           <button
             type="button"
             onClick={onWalkNext}
@@ -73,18 +78,20 @@ export function LiveHud({
           </button>
         )}
 
-        <button
-          type="button"
-          onClick={onToggleSim}
-          aria-label={simulating ? "Stop auto-walk" : "Start auto-walk"}
-          title={simulating ? "Stop" : "Auto-walk"}
-          className={[
-            "flex h-7 w-7 items-center justify-center rounded-full backdrop-blur-sm",
-            simulating ? "bg-safety-safe text-white" : "bg-ink/[0.08] dark:bg-white/[0.12]",
-          ].join(" ")}
-        >
-          {simulating ? <PauseIcon size={13} /> : <PlayIcon size={13} />}
-        </button>
+        {demo && (
+          <button
+            type="button"
+            onClick={onToggleSim}
+            aria-label={simulating ? "Stop auto-walk" : "Start auto-walk"}
+            title={simulating ? "Stop" : "Auto-walk"}
+            className={[
+              "flex h-7 w-7 items-center justify-center rounded-full backdrop-blur-sm",
+              simulating ? "bg-safety-safe text-white" : "bg-ink/[0.08] dark:bg-white/[0.12]",
+            ].join(" ")}
+          >
+            {simulating ? <PauseIcon size={13} /> : <PlayIcon size={13} />}
+          </button>
+        )}
 
         <button
           type="button"
