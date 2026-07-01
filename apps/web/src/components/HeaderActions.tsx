@@ -4,9 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
+import { useOnlineStatus } from "@/context/OnlineStatus";
 
 export function HeaderActions() {
   const router = useRouter();
+  const { online } = useOnlineStatus();
   const [email, setEmail] = useState("");
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -18,6 +20,7 @@ export function HeaderActions() {
   }, []);
 
   async function handleSignOut() {
+    if (!online) return;
     await createClient().auth.signOut();
     router.push("/login");
   }
@@ -86,10 +89,12 @@ export function HeaderActions() {
             <button
               type="button"
               role="menuitem"
-              onClick={() => { setOpen(false); handleSignOut(); }}
-              className="block w-full px-4 py-2.5 text-left text-sm font-medium text-safety-critical hover:bg-sand-100"
+              disabled={!online}
+              title={online ? undefined : "Sign out needs a connection"}
+              onClick={() => { if (!online) return; setOpen(false); handleSignOut(); }}
+              className="block w-full px-4 py-2.5 text-left text-sm font-medium text-safety-critical hover:bg-sand-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
             >
-              Sign out
+              Sign out{!online && <span className="ml-1 text-xs font-normal text-ink-muted">(offline)</span>}
             </button>
           </div>
         )}
