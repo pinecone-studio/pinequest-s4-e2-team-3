@@ -1,9 +1,12 @@
 import twilio from "twilio";
+import { rateLimit, clientIp, rateLimitResponse } from "@/lib/rateLimit";
 
 // Mints a short-lived Twilio Voice access token so the browser SOS screen can
 // place a real call. Returns 503 (not an error the UI treats as fatal) when
 // Twilio isn't configured, so the SOS sheet can fall back gracefully.
-export async function GET() {
+export async function GET(req: Request) {
+  if (!rateLimit(`voice-token:${clientIp(req)}`, 10, 60_000)) return rateLimitResponse();
+
   const {
     TWILIO_ACCOUNT_SID,
     TWILIO_API_KEY,

@@ -1,6 +1,7 @@
 import twilio from "twilio";
 import OpenAI from "openai";
 import { appendOperatorMessage } from "@/lib/sosIncidents";
+import { isValidTwilioRequest, formDataToParams } from "@/lib/twilioWebhook";
 
 // Twilio <Gather speech> posts the operator's transcribed Mongolian here. We
 // translate it to English, save it on the incident (so the traveller's screen can
@@ -9,6 +10,14 @@ export async function POST(req: Request) {
   const url = new URL(req.url);
   const id = url.searchParams.get("id");
   const form = await req.formData();
+
+  // Only Twilio should be able to post a transcript onto a real incident's
+  // operator conversation. Skip when TWILIO_AUTH_TOKEN isn't configured (e.g.
+  // local dev without full Twilio setup) so nothing breaks there.
+  if (process.env.TWILIO_AUTH_TOKEN && !isValidTwilioRequest(req, formDataToParams(form))) {
+    return new Response("Forbidden", { status: 403 });
+  }
+
   const mn = String(form.get("SpeechResult") ?? "").trim();
 
   if (id && mn) {

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -1026,10 +1027,9 @@ function PlacePill({ place, defaultOpen = false }: { place: PlaceCard; defaultOp
 
       {open && (
         <div className="mt-1.5 overflow-hidden rounded-2xl bg-white shadow-ink-sm" style={{ width: 220 }}>
-          <div className="h-28 bg-sand-200">
+          <div className="relative h-28 bg-sand-200">
             {place.imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={place.imageUrl} alt={place.name} className="h-full w-full object-cover" />
+              <Image src={place.imageUrl} alt={place.name} fill sizes="220px" className="object-cover" />
             ) : null}
           </div>
           <div className="p-3">

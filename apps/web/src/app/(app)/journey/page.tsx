@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import {
   MapPinIcon,
   SparklesIcon,
@@ -681,8 +682,7 @@ function StopCard({
           done ? "opacity-60" : missed ? "opacity-40 grayscale" : "",
         ].join(" ")}>
           <div className="relative h-40">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imageUrl} alt={stop.title} className="h-full w-full object-cover" />
+            <Image src={imageUrl} alt={stop.title} fill sizes="100vw" className="object-cover" />
             {done && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/30">
                 <span className="rounded-full bg-green-500 px-3 py-1 text-sm font-bold text-white">✓ Done</span>
