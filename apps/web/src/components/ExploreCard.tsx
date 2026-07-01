@@ -8,9 +8,10 @@ import { DirectionsSheet } from "@/components/DirectionsSheet";
 
 type ExploreCardProps = {
   spot: ExploreSpot;
+  compact?: boolean;
 };
 
-export function ExploreCard({ spot }: ExploreCardProps) {
+export function ExploreCard({ spot, compact = false }: ExploreCardProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -19,16 +20,18 @@ export function ExploreCard({ spot }: ExploreCardProps) {
         onClick={() => setOpen(true)}
         className="cursor-pointer overflow-hidden rounded-3xl bg-white shadow-ink-sm transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:shadow-ink-md active:translate-y-0 active:shadow-ink-sm"
       >
-        <div className="relative h-44">
+        <div className={`relative ${compact ? "h-28" : "h-44"}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={spot.imageUrl}
             alt={spot.title}
             className="h-full w-full object-cover"
           />
-          <div className="absolute left-3 top-3">
-            <Tag label={spot.category} tone={spot.categoryTone} />
-          </div>
+          {spot.category ? (
+            <div className="absolute left-3 top-3">
+              <Tag label={spot.category} tone={spot.categoryTone} />
+            </div>
+          ) : null}
           <span className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-xs font-bold text-white">
             <StarIcon size={12} className="text-white" />
             {spot.rating}
@@ -41,8 +44,8 @@ export function ExploreCard({ spot }: ExploreCardProps) {
           ) : null}
         </div>
 
-        <div className="p-4">
-          <h3 className="text-lg font-bold text-ink">{spot.title}</h3>
+        <div className={compact ? "p-3" : "p-4"}>
+          <h3 className={`${compact ? "text-sm" : "text-lg"} font-bold text-ink`}>{spot.title}</h3>
 
           {/* Star rating */}
           <div className="mt-1 flex items-center gap-1.5">
@@ -62,16 +65,22 @@ export function ExploreCard({ spot }: ExploreCardProps) {
             </div>
           </div>
 
-          <div className="mt-2 flex items-center gap-4 text-xs font-semibold text-ink-muted">
-            <span className="flex items-center gap-1">
-              <MapPinIcon size={14} />
-              {spot.distance}
-            </span>
-            <span className="flex items-center gap-1">
-              <ClockIcon size={14} />
-              {spot.walkTime}
-            </span>
-          </div>
+          {(spot.distance || spot.walkTime) ? (
+            <div className="mt-2 flex items-center gap-4 text-xs font-semibold text-ink-muted">
+              {spot.distance ? (
+                <span className="flex items-center gap-1">
+                  <MapPinIcon size={14} />
+                  {spot.distance}
+                </span>
+              ) : null}
+              {spot.walkTime ? (
+                <span className="flex items-center gap-1">
+                  <ClockIcon size={14} />
+                  {spot.walkTime}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
           <p className="mt-2 text-sm text-ink-muted">{spot.description}</p>
         </div>
       </article>
