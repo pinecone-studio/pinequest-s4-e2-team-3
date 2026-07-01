@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { Stars } from "./Stars";
 import type { PlaceDetails, Review, TravelMode } from "./types";
 import type { ExploreSpot } from "@/types";
@@ -202,8 +203,9 @@ export function PlaceInfoCard({ spot, details, googleMapsUrl, onClose, routeDura
         <div>
           {spot.imageUrl && (
             <div className="p-4 pb-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={spot.imageUrl} alt={spot.title} className="w-full h-44 object-cover rounded-2xl" />
+              <div className="relative h-44 w-full overflow-hidden rounded-2xl">
+                <Image src={spot.imageUrl} alt={spot.title} fill sizes="100vw" className="object-cover" />
+              </div>
             </div>
           )}
           {spot.description && (

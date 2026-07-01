@@ -1,10 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
+import dynamic from "next/dynamic";
 import { Tag } from "@/components/Tag";
-import { DirectionsSheet } from "@/components/DirectionsSheet";
 import { useOnlineStatus } from "@/context/OnlineStatus";
 import type { ExploreSpot, Tone } from "@/types";
+
+// Pulls in the Google Maps SDK — deferred until a card is actually opened so
+// it's not part of the home page's initial bundle.
+const DirectionsSheet = dynamic(
+  () => import("@/components/DirectionsSheet").then((m) => m.DirectionsSheet),
+  { ssr: false },
+);
 
 const DEFAULT_LAT = 47.9077;
 const DEFAULT_LNG = 106.8832;
@@ -127,8 +135,13 @@ function NearbyCard({ spot }: { spot: NearbyPlace }) {
         className="w-44 shrink-0 overflow-hidden rounded-3xl bg-white shadow-ink-sm text-left transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:shadow-ink-md active:translate-y-0 active:shadow-ink-sm"
       >
         <div className="relative h-28 bg-sand-200">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={spot.imageUrl} alt={spot.title} className="h-full w-full object-cover" />
+          <Image
+            src={spot.imageUrl}
+            alt={spot.title}
+            fill
+            sizes="176px"
+            className="object-cover"
+          />
           <div className="absolute left-2 top-2">
             <Tag label={spot.category} tone={spot.categoryTone} />
           </div>

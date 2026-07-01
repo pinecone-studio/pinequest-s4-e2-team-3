@@ -4,6 +4,7 @@ import type {
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import { findNearbyPlaces, lookupPlace, type NearbyPlace } from "@/lib/places";
+import { rateLimit, clientIp, rateLimitResponse } from "@/lib/rateLimit";
 
 const SYSTEM_PROMPT =
   "You are Michelle, a friendly AI travel guide for Mongolia. Always reply in English. " +
@@ -174,6 +175,8 @@ function inMongolia(loc?: { lat: number; lng: number }): boolean {
 const META_DELIM = "\n\nPINEQUEST_META:";
 
 export async function POST(req: Request) {
+  if (!rateLimit(`chat:${clientIp(req)}`, 20, 60_000)) return rateLimitResponse();
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return Response.json({ error: "OPENAI_API_KEY is not configured" }, { status: 500 });

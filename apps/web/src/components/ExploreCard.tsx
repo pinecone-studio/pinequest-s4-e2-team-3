@@ -1,10 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
+import dynamic from "next/dynamic";
 import type { ExploreSpot } from "@/types";
 import { Tag } from "@/components/Tag";
 import { ClockIcon, MapPinIcon, StarIcon, SunIcon } from "@/components/icons";
-import { DirectionsSheet } from "@/components/DirectionsSheet";
+
+// Pulls in the Google Maps SDK — deferred until a card is actually opened so
+// it's not part of the bundle for every page that renders a list of cards.
+const DirectionsSheet = dynamic(
+  () => import("@/components/DirectionsSheet").then((m) => m.DirectionsSheet),
+  { ssr: false },
+);
 
 type ExploreCardProps = {
   spot: ExploreSpot;
@@ -20,12 +28,13 @@ export function ExploreCard({ spot, compact = false }: ExploreCardProps) {
         onClick={() => setOpen(true)}
         className="cursor-pointer overflow-hidden rounded-3xl bg-white shadow-ink-sm transition-[transform,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:shadow-ink-md active:translate-y-0 active:shadow-ink-sm"
       >
-        <div className={`relative ${compact ? "h-28" : "h-44"}`}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+        <div className="relative h-44">
+          <Image
             src={spot.imageUrl}
             alt={spot.title}
-            className="h-full w-full object-cover"
+            fill
+            sizes="(min-width: 1024px) 33vw, 100vw"
+            className="object-cover"
           />
           {spot.category ? (
             <div className="absolute left-3 top-3">

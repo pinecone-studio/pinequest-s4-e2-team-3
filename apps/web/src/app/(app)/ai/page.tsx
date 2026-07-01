@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -1020,6 +1021,66 @@ function DatePickerPrompt({ planId, onSave }: { planId: string; onSave: (planId:
   );
 }
 
+// Compact pill that expands into a place card when tapped.
+// Auto-expands when `defaultOpen` is true (used when ≤3 places are shown as suggestions).
+function PlacePill({ place, defaultOpen = false }: { place: PlaceCard; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const reviews = place.reviews ?? [];
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 rounded-full border border-primary-200 bg-primary-50 px-2.5 py-1 text-[11px] font-semibold text-primary-700 transition hover:bg-primary-100"
+      >
+        <MapPinIcon size={9} />
+        {place.name}
+        <span className="text-primary-400 text-[9px]">{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div className="mt-1.5 overflow-hidden rounded-2xl bg-white shadow-ink-sm" style={{ width: 220 }}>
+          <div className="relative h-28 bg-sand-200">
+            {place.imageUrl ? (
+              <Image src={place.imageUrl} alt={place.name} fill sizes="220px" className="object-cover" />
+            ) : null}
+          </div>
+          <div className="p-3">
+            <p className="text-sm font-bold leading-tight text-ink">{place.name}</p>
+            <div className="mt-1 flex items-center gap-3 text-[11px] font-semibold text-ink-muted">
+              {place.rating ? (
+                <span className="flex items-center gap-1">
+                  <StarIcon size={10} className="text-safety-armed" />
+                  {place.rating}
+                  {place.reviewCount ? (
+                    <span className="font-normal text-ink-muted/70">({place.reviewCount})</span>
+                  ) : null}
+                </span>
+              ) : null}
+              {place.walkMinutes ? (
+                <span className="flex items-center gap-1">
+                  <WalkIcon size={11} />
+                  {place.walkMinutes} min
+                </span>
+              ) : null}
+            </div>
+            {place.address ? (
+              <p className="mt-1.5 text-[11px] leading-snug text-ink-muted">📍 {place.address}</p>
+            ) : null}
+            {reviews[0] ? (
+              <p className="mt-1.5 line-clamp-3 text-[11px] italic leading-snug text-ink-muted">
+                &ldquo;{reviews[0].text}&rdquo;
+              </p>
+            ) : place.description ? (
+              <p className="mt-1 line-clamp-2 text-[11px] text-ink-muted">{place.description}</p>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // The "Michelle is typing" indicator shown while awaiting a reply.
 function TypingBubble() {
