@@ -19,7 +19,6 @@ export function useRouteSimulation({
   busy,
   setSimulated,
   advanceStop,
-  goToStop,
 }: {
   activeRoute: DemoRoute | null;
   effectiveCoords: Coords | null;
@@ -30,7 +29,6 @@ export function useRouteSimulation({
   busy: boolean;
   setSimulated: (c: Coords) => void;
   advanceStop: () => void;
-  goToStop: (index: number) => void;
 }) {
   const simTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const simActiveRef = useRef(false); // survives the async path load / re-renders
@@ -164,14 +162,6 @@ export function useRouteSimulation({
       longitude: nextStop.longitude,
     });
   };
-  const restartRoute = () => {
-    stopSimulation();
-    const first = activeRoute?.stops[0];
-    if (!first) return;
-    goToStop(0);
-    setSimulated({ latitude: first.latitude, longitude: first.longitude });
-  };
-
   // Stop the timer if the screen unmounts (e.g. switching routes).
   useEffect(() => {
     return () => {
@@ -187,6 +177,5 @@ export function useRouteSimulation({
     stopSimulation,
     simulateArrival,
     walkToNext,
-    restartRoute,
   };
 }

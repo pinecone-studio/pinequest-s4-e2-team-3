@@ -32,9 +32,9 @@ export function LiveExperience({
     returnTarget,
     busLegs,
     currentStopIndex,
+    setRoute,
     setSimulated,
     advanceStop,
-    goToStop,
     reset,
     setSuggestions,
     setReturnTarget,
@@ -97,7 +97,7 @@ export function LiveExperience({
     setOfflineReady,
   );
 
-  const { simulating, simActiveRef, startSimulation, stopSimulation, simulateArrival, walkToNext, restartRoute } =
+  const { simulating, simActiveRef, startSimulation, stopSimulation, simulateArrival, walkToNext } =
     useRouteSimulation({
       activeRoute,
       effectiveCoords,
@@ -108,7 +108,6 @@ export function LiveExperience({
       busy: isSpeaking || audioLoading || thinking,
       setSimulated,
       advanceStop,
-      goToStop,
     });
 
   const actions = useGuideActions({
@@ -151,6 +150,22 @@ export function LiveExperience({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arrived, currentStop?.id]);
 
+  // Refresh (↻) button: start the whole journey over from the traveller's CURRENT
+  // real location. setRoute on the same route wipes progress (stop index → 0,
+  // arrived stops, detours, suggestions) and clears simulatedCoords, so the marker
+  // drops back onto live GPS and the approach line to stop #1 redraws. The local
+  // decision UI (cards, targets, bus sheet) is reset too, for a clean start.
+  function restartJourney() {
+    stopSimulation();
+    if (activeRoute) setRoute(activeRoute);
+    setCardOpen(false);
+    setFullPlanOpen(false);
+    setTarget(null);
+    setIntentOpen(false);
+    setDetour(false);
+    setBusPlan(null);
+  }
+
   const narrationFooter = (
     <NarrationFooter
       showExtras={showExtras}
@@ -177,7 +192,7 @@ export function LiveExperience({
         onToggleSim={() => {
           simActiveRef.current ? stopSimulation() : void startSimulation();
         }}
-        onRestart={restartRoute}
+        onRestart={restartJourney}
         savingProgress={savingProgress}
         forceOffline={forceOffline}
         offlineSaved={offlineSaved}

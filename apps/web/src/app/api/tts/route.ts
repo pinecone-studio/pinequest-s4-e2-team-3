@@ -8,15 +8,31 @@ export async function POST(req: Request) {
     lang?: "mn" | "en";
   };
 
+  // Nothing to say → don't call the provider (empty input 400s on OpenAI).
+  if (!text?.trim()) {
+    return Response.json({ error: "Empty text" }, { status: 400 });
+  }
+
   if (lang === "en") {
-    // OpenAI TTS for English
-    const audio = await openai.audio.speech.create({
-      model: "tts-1",
-      voice: "nova",
-      input: text,
-    });
-    const buffer = Buffer.from(await audio.arrayBuffer());
-    return new Response(buffer, { headers: { "Content-Type": "audio/mpeg" } });
+    // OpenAI TTS for English. Wrapped so a provider error (quota, billing, rate
+    // limit) returns a clean status instead of an unhandled 500 — the client
+    // (lib/tts) then falls back to the browser voice. The logged message is how
+    // you see the REAL cause of a failing /api/tts in the server terminal.
+    if (!process.env.OPENAI_API_KEY) {
+      return Response.json({ error: "Missing OPENAI_API_KEY" }, { status: 500 });
+    }
+    try {
+      const audio = await openai.audio.speech.create({
+        model: "tts-1",
+        voice: "nova",
+        input: text,
+      });
+      const buffer = Buffer.from(await audio.arrayBuffer());
+      return new Response(buffer, { headers: { "Content-Type": "audio/mpeg" } });
+    } catch (err) {
+      console.error("TTS (OpenAI) failed:", err instanceof Error ? err.message : err);
+      return Response.json({ error: "TTS failed" }, { status: 502 });
+    }
   }
 
   // Chimege TTS for Mongolian

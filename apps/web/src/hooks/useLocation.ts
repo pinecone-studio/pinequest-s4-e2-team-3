@@ -18,6 +18,12 @@ export function useLocation() {
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         setPermissionGranted(true);
+        // Reject clearly-garbage fixes: a desktop/laptop with no GPS chip locates
+        // by WiFi/IP, often reported with accuracy of many kilometres — using that
+        // would drop the "you are here" dot (and the approach line) far from the
+        // traveller. Beyond ~5km of stated accuracy we skip the update and wait for
+        // a better one. ponytail: 5km cutoff; loosen if real phone fixes get dropped.
+        if (typeof pos.coords.accuracy === "number" && pos.coords.accuracy > 5_000) return;
         setCoordinates({
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
