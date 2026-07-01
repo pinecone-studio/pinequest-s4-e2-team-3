@@ -127,7 +127,7 @@ export default function ProfileScreen() {
               onPress={handleToggleSwitch}
             >
               <Text className="text-white font-semibold text-sm">
-                {isArmed ? "Disarm Switch" : "Arm Switch"}
+                {isArmed ? "Cancel" : "Turn On"}
               </Text>
             </TouchableOpacity>
 

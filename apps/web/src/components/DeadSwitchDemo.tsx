@@ -166,15 +166,15 @@ export function DeadSwitchOverlay({ demo }: { demo: DeadSwitchDemoState }) {
         <p className="mb-1.5 text-[11px] font-bold uppercase tracking-widest text-ink-muted">
           Dead Man&apos;s Switch
         </p>
-        <h2 className="mb-2.5 font-serif text-[32px] leading-none text-ink">Are you okay?</h2>
+        <h2 className="mb-2.5 font-serif text-[32px] leading-none text-ink">Activate the switch?</h2>
         <p className="mb-5 text-sm leading-5 text-ink-muted">
           <span className="font-semibold text-ink">Emergency Contact</span>{" "}
-          will be alerted if you need help.
+          will be alerted unless you cancel.
         </p>
 
         <div className="mb-2.5 flex items-baseline justify-center gap-2">
           <span className="font-mono text-[32px] font-bold tabular-nums text-ink">
-            {result ? (result === "ok" ? "Safe ✓" : "Alerting…") : timerLabel}
+            {result ? (result === "ok" ? "Cancelled" : "Turning on…") : timerLabel}
           </span>
           {!result && (
             <span className="text-xs text-ink-muted">until auto-alert</span>
@@ -191,16 +191,16 @@ export function DeadSwitchOverlay({ demo }: { demo: DeadSwitchDemoState }) {
         {!result && (
           <>
             <button
-              onClick={demo.approve}
+              onClick={demo.decline}
               className="mb-3 w-full rounded-2xl bg-safety-safe py-4 text-[17px] font-bold text-white transition-opacity active:opacity-90"
             >
-              I&apos;m Okay
+              Turn On
             </button>
             <button
-              onClick={demo.decline}
+              onClick={demo.approve}
               className="w-full rounded-2xl bg-safety-critical py-4 text-[17px] font-bold text-white transition-opacity active:opacity-90"
             >
-              I Need Help
+              Cancel
             </button>
           </>
         )}
