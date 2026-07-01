@@ -19,7 +19,7 @@ const OfflineMap = dynamic(() => import("@/components/OfflineMap"), { ssr: false
 // Decides what fills the screen behind the guide UI:
 //   real Mapbox route map → cached static snapshot (offline) → stylised backdrop.
 export function LiveBackground({ theme, demo = false }: { theme: Theme; demo?: boolean }) {
-  const { activeRoute, currentStopIndex, arrivedStopIds, simulatedCoords, forceOffline, suggestions, selectedPlace, returnTarget, returnMode, busLegs, mapType } =
+  const { activeRoute, currentStopIndex, arrivedStopIds, simulatedCoords, forceOffline, suggestions, selectedPlace, returnTarget, returnMode, busLegs, mapType, fullRouteView } =
     useLiveStore();
   const realCoords = useLocationStore((s) => s.coordinates);
   const position: Coords | null = resolvePosition(simulatedCoords, realCoords);
@@ -35,6 +35,24 @@ export function LiveBackground({ theme, demo = false }: { theme: Theme; demo?: b
       ? stops[0] ?? null
       : null
     : stops.find((s) => !arrivedStopIds.includes(s.id)) ?? null;
+
+  // Focused view (default): draw only the current leg; `null` = full route (the
+  // "view full" toggle). Demo starts parked AT stop 1 (index 0), so it shows the
+  // leg to the next stop and advances with currentStopIndex as the presenter walks.
+  // A normal user starts away from stop 1: the leg is empty until they reach a stop
+  // (so only the approach connector, position → stop 1, shows), then it's the leg
+  // from the last reached stop to the next un-reached one.
+  let focusStops: { latitude: number; longitude: number }[] | null = null;
+  if (!fullRouteView) {
+    if (demo) {
+      focusStops = stops[currentStopIndex + 1]
+        ? [stops[currentStopIndex], stops[currentStopIndex + 1]]
+        : [];
+    } else {
+      const nextIdx = stops.findIndex((s) => !arrivedStopIds.includes(s.id));
+      focusStops = nextIdx >= 1 ? [stops[nextIdx - 1], stops[nextIdx]] : [];
+    }
+  }
 
   const { online } = useOnlineStatus();
   const [mapFailed, setMapFailed] = useState(false);
@@ -62,6 +80,7 @@ export function LiveBackground({ theme, demo = false }: { theme: Theme; demo?: b
           currentIndex={currentStopIndex}
           position={position}
           targetStop={targetStop}
+          focusStops={focusStops}
           onError={() => setMapFailed(true)}
           theme={theme}
           suggestions={suggestions}
@@ -92,6 +111,7 @@ export function LiveBackground({ theme, demo = false }: { theme: Theme; demo?: b
             position={position}
             theme={theme}
             targetStop={targetStop}
+            focusStops={focusStops}
             returnTarget={returnTarget}
             returnMode={returnMode}
             busLegs={busLegs}

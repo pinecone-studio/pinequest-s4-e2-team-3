@@ -27,6 +27,9 @@ interface LiveState {
   busLegs: BusLeg[] | null;
   // Map base layer: standard roads vs satellite imagery (with labels).
   mapType: "roadmap" | "hybrid";
+  // Map shows only the current leg (this stop → next stop) by default; the
+  // "view full" toggle switches to the whole route at once. Not persisted.
+  fullRouteView: boolean;
 
   // Routes that have an offline pack saved, + a demo toggle to preview offline.
   offlineReadyIds: string[];
@@ -42,6 +45,7 @@ interface LiveState {
   setReturnTarget: (coords: Coords | null, mode?: "drive" | "transit" | "walk") => void;
   setBusLegs: (legs: BusLeg[] | null) => void;
   toggleMapType: () => void;
+  toggleFullRouteView: () => void;
   setOfflineReady: (routeId: string) => void;
   setForceOffline: (value: boolean) => void;
   reset: () => void;
@@ -60,6 +64,7 @@ export const useLiveStore = create<LiveState>()(
   returnMode: "drive",
   busLegs: null,
   mapType: "roadmap",
+  fullRouteView: false,
   offlineReadyIds: [],
   forceOffline: false,
 
@@ -104,6 +109,8 @@ export const useLiveStore = create<LiveState>()(
 
   toggleMapType: () =>
     set((state) => ({ mapType: state.mapType === "roadmap" ? "hybrid" : "roadmap" })),
+
+  toggleFullRouteView: () => set((state) => ({ fullRouteView: !state.fullRouteView })),
 
   setOfflineReady: (routeId) =>
     set((state) =>

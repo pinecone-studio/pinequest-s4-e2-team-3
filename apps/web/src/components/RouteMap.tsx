@@ -24,6 +24,7 @@ export default function RouteMap({
   currentIndex,
   position,
   targetStop = null,
+  focusStops = null,
   onError,
   theme = "dark",
   suggestions = [],
@@ -39,6 +40,10 @@ export default function RouteMap({
   // The stop the traveller is heading to now → the connector line goes here.
   // Null when there's no next stop to route to (e.g. all reached).
   targetStop?: { latitude: number; longitude: number; arrivalRadius?: number } | null;
+  // Focused view: the only stops whose leg is drawn (current stop → next stop).
+  // Empty array = just the approach connector (heading to the first stop).
+  // `null` = draw the whole route (the "view full" toggle).
+  focusStops?: { latitude: number; longitude: number }[] | null;
   // Fired if the map can't load (e.g. an invalid/blocked key) so the caller can
   // fall back to the stylised backdrop instead of showing a blank area.
   onError?: () => void;
@@ -58,6 +63,41 @@ export default function RouteMap({
   const path = useMemo(
     () => route.stops.map((s) => ({ lat: s.latitude, lng: s.longitude })),
     [route],
+  );
+
+  // In focused view only the current leg's stops are drawn; otherwise the full
+  // route. Keyed on the coords so it's stable across renders (focusStops is a fresh
+  // array each render) — the map only re-fits/redraws when the leg actually changes.
+  const focusKey = focusStops?.map((s) => `${s.latitude},${s.longitude}`).join("|") ?? null;
+  const linePath = useMemo(
+    () => (focusStops ? focusStops.map((s) => ({ lat: s.latitude, lng: s.longitude })) : path),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [focusKey, path],
+  );
+
+  // What FitBounds frames: the focused leg if present; the target alone when the
+  // leg is empty (heading to stop 1, so the approach connector centres); else the
+  // whole route. Memoised so the map only re-fits when the framed set changes.
+  const fitPath = useMemo(() => {
+    if (!focusStops) return path;
+    if (linePath.length) return linePath;
+    return targetStop ? [{ lat: targetStop.latitude, lng: targetStop.longitude }] : path;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusKey, linePath, path, targetStop?.latitude, targetStop?.longitude]);
+
+  // Which stop markers to show. Focused view → only the leg's stops plus the target
+  // (so heading to stop 1 still pins it); `null` = all stops (full view).
+  const shownCoords = useMemo(
+    () =>
+      focusStops
+        ? new Set(
+            [...focusStops, ...(targetStop ? [targetStop] : [])].map(
+              (c) => `${c.latitude},${c.longitude}`,
+            ),
+          )
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [focusKey, targetStop?.latitude, targetStop?.longitude],
   );
 
   // The connector line: from the traveller's real GPS to the stop they're heading
@@ -98,26 +138,32 @@ export default function RouteMap({
             styled roadmap, and matches the offline map); Google "hybrid" for sat. */}
         <BaseTiles mapType={mapType} theme={theme} />
 
-        {/* Show the full plan line only when not heading to a specific target —
-            otherwise just the current→target leg (DetourLine below) is drawn. */}
-        {!selectedPlace && !returnTarget && <RouteLine path={path} />}
+        {/* Show the route line only when not heading to a specific target —
+            otherwise just the current→target leg (DetourLine below) is drawn.
+            `linePath` is the current leg in focused view, the whole route in full. */}
+        {!selectedPlace && !returnTarget && <RouteLine path={linePath} />}
         {/* The "get to the current target stop" leg, drawn on top of the full route. */}
         {showApproach && targetStop && <ApproachLine origin={position!} destination={targetStop} />}
         {/* Fit the whole journey — plus the traveller's position when approaching,
             so both the full route and the approach leg stay in view. */}
         {selectedPlace || returnTarget ? null : (
-          <FitBounds path={path} extraLat={approachExtra?.lat} extraLng={approachExtra?.lng} />
+          <FitBounds path={fitPath} extraLat={approachExtra?.lat} extraLng={approachExtra?.lng} />
         )}
 
-        {route.stops.map((stop, i) => (
-          <StopMarker
-            key={stop.id}
-            lat={stop.latitude}
-            lng={stop.longitude}
-            label={i + 1}
-            state={i === currentIndex ? "current" : i < currentIndex ? "past" : "upcoming"}
-          />
-        ))}
+        {route.stops.map((stop, i) => {
+          // Focused view: only the current leg's stops (and the target) show; the
+          // rest reappear when "view full" is toggled (focusStops → null).
+          if (shownCoords && !shownCoords.has(`${stop.latitude},${stop.longitude}`)) return null;
+          return (
+            <StopMarker
+              key={stop.id}
+              lat={stop.latitude}
+              lng={stop.longitude}
+              label={i + 1}
+              state={i === currentIndex ? "current" : i < currentIndex ? "past" : "upcoming"}
+            />
+          );
+        })}
 
         {/* Suggested places (food / bus stops) as tappable-looking markers. */}
         {suggestions.map((p, i) => (
