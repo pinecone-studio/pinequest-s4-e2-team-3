@@ -21,6 +21,44 @@ export function useDeadSwitchPing() {
   const session = useAuthStore((s) => s.session)
   const sendingRef = useRef(false)
 
+  // Tells the server "the traveller was just online" so the 48h-no-heartbeat
+  // cron job (apps/web/src/app/api/cron/dead-switch-check) knows not to alert
+  // the emergency contact. Fires independently of the location-SMS interval
+  // above, since it needs to run even when the app is only briefly foregrounded.
+  useEffect(() => {
+    const token = session?.access_token
+    if (!token) return
+
+    const contact = getEmergencyContact(user)
+
+    async function sendHeartbeat() {
+      try {
+        await api.post(
+          '/api/dead-switch/heartbeat',
+          {
+            armed: isArmed,
+            contactName: contact?.name,
+            contactPhone: contact?.phone,
+          },
+          token,
+        )
+      } catch {
+        // Offline — the next tick or foreground event will retry.
+      }
+    }
+
+    sendHeartbeat()
+    const timer = setInterval(sendHeartbeat, CHECK_INTERVAL_MS)
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') sendHeartbeat()
+    })
+
+    return () => {
+      clearInterval(timer)
+      sub.remove()
+    }
+  }, [isArmed, user, session])
+
   useEffect(() => {
     async function sendPingIfDue() {
       if (!isArmed || sendingRef.current) return
