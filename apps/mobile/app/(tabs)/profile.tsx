@@ -11,6 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuthStore, getEmergencyContact } from "@/stores/authStore";
 import { useDeadSwitchStore } from "@/stores/deadSwitchStore";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 const GREEN = "#1F9D6B";
 const AMBER = "#D9831F";
@@ -18,6 +19,7 @@ const RED = "#e53935";
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const online = useOnlineStatus();
   const { user, signOut, updateEmergencyContact } = useAuthStore();
   const { isArmed, lastSentAt, arm, disarm } = useDeadSwitchStore();
 
@@ -50,6 +52,10 @@ export default function ProfileScreen() {
   }
 
   async function handleSignOut() {
+    if (!online) {
+      Alert.alert("You're offline", "Sign out needs a connection. Try again once you're back online.");
+      return;
+    }
     await signOut();
     router.replace("/(auth)/login");
   }
@@ -207,9 +213,13 @@ export default function ProfileScreen() {
         {/* Sign out */}
         <TouchableOpacity
           className="bg-red-50 border border-red-200 rounded-xl py-4 items-center mb-8"
+          style={{ opacity: online ? 1 : 0.5 }}
+          disabled={!online}
           onPress={handleSignOut}
         >
-          <Text className="text-red-600 font-semibold">Sign Out</Text>
+          <Text className="text-red-600 font-semibold">
+            {online ? "Sign Out" : "Sign Out (offline)"}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
