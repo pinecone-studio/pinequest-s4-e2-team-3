@@ -57,10 +57,11 @@ export default function RouteMap({
   );
 
   // Before the journey begins, draw a route from the traveller's real GPS to
-  // stop #1 so they can see how to reach the start. Only while still on stop #1
-  // and genuinely away from it (beyond its arrival radius) — when GPS falls back
-  // to the first stop itself (demoing far from Mongolia) the distance is ~0, so
-  // this stays hidden. Suppressed during a detour / picked-place flow.
+  // stop #1 so they can see how to reach the start (walk if close, taxi/bus road
+  // if far). Shown alongside the full route — the map fits both. Only while still
+  // on stop #1 and genuinely away from it (beyond its arrival radius) — when GPS
+  // falls back to the first stop the distance is ~0, so it stays hidden. Skipped
+  // only when absurdly far (tooFar) or during a detour / picked-place flow.
   const firstStop = route.stops[0];
   const showApproach =
     !selectedPlace &&
@@ -68,7 +69,16 @@ export default function RouteMap({
     currentIndex === 0 &&
     !!position &&
     !!firstStop &&
-    haversineMeters(position, firstStop) > (firstStop.arrivalRadius ?? 150);
+    haversineMeters(position, firstStop) > (firstStop.arrivalRadius ?? 150) &&
+    !approachPlan(position, firstStop).tooFar;
+
+  // When approaching, also fit the traveller's position into view (rounded to
+  // ~100m so the map doesn't re-fit on every GPS tick) so the WHOLE route plus
+  // the approach leg are visible together.
+  const approachExtra =
+    showApproach && position
+      ? { lat: Math.round(position.latitude * 1000) / 1000, lng: Math.round(position.longitude * 1000) / 1000 }
+      : null;
 
   return (
     <APIProvider apiKey={GOOGLE_MAPS_KEY}>
@@ -89,12 +99,12 @@ export default function RouteMap({
         {/* Show the full plan line only when not heading to a specific target —
             otherwise just the current→target leg (DetourLine below) is drawn. */}
         {!selectedPlace && !returnTarget && <RouteLine path={path} />}
-        {/* Approaching the start → focus the map on the "get to stop #1" leg;
-            otherwise fit the whole journey. */}
-        {selectedPlace || returnTarget ? null : showApproach ? (
-          <ApproachLine origin={position!} destination={firstStop} />
-        ) : (
-          <FitBounds path={path} />
+        {/* The "get to stop #1" leg, drawn on top of the full route. */}
+        {showApproach && <ApproachLine origin={position!} destination={firstStop} />}
+        {/* Fit the whole journey — plus the traveller's position when approaching,
+            so both the full route and the approach leg stay in view. */}
+        {selectedPlace || returnTarget ? null : (
+          <FitBounds path={path} extraLat={approachExtra?.lat} extraLng={approachExtra?.lng} />
         )}
 
         {route.stops.map((stop, i) => (
@@ -346,7 +356,6 @@ function ApproachLine({
   const map = useMap();
   const mapsLib = useMapsLibrary("maps");
   const routesLib = useMapsLibrary("routes");
-  const coreLib = useMapsLibrary("core");
 
   // ~3 decimal places ≈ 100m — the re-route granularity.
   const oLat = Math.round(origin.latitude * 1000) / 1000;
@@ -370,18 +379,14 @@ function ApproachLine({
       else drawn = p;
     });
 
-    if (coreLib) {
-      const bounds = new coreLib.LatLngBounds();
-      points.forEach((pt) => bounds.extend(pt));
-      map.fitBounds(bounds, 80);
-    }
-
+    // No fitBounds here — the shared FitBounds frames the whole route + the
+    // traveller's position, so the full journey and this leg stay visible together.
     return () => {
       cancelled = true;
       drawn.forEach((l) => l.setMap(null));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, mapsLib, routesLib, coreLib, oLat, oLng, destination.latitude, destination.longitude, walk]);
+  }, [map, mapsLib, routesLib, oLat, oLng, destination.latitude, destination.longitude, walk]);
 
   return null;
 }
@@ -510,8 +515,19 @@ function BusStopMarker({ lat, lng }: { lat: number; lng: number }) {
   return <Marker position={{ lat, lng }} icon={icon} zIndex={15} />;
 }
 
-// Fit the whole route into view once the map and geometry are ready.
-function FitBounds({ path }: { path: google.maps.LatLngLiteral[] }) {
+// Fit the whole route into view once the map and geometry are ready. An optional
+// extra point (the traveller's position while approaching the start) is included
+// so the full journey and the approach leg frame together. Kept as primitive
+// lat/lng so it only re-fits when the caller rounds them (≈100m), not every tick.
+function FitBounds({
+  path,
+  extraLat,
+  extraLng,
+}: {
+  path: google.maps.LatLngLiteral[];
+  extraLat?: number;
+  extraLng?: number;
+}) {
   const map = useMap();
   const coreLib = useMapsLibrary("core");
 
@@ -519,8 +535,9 @@ function FitBounds({ path }: { path: google.maps.LatLngLiteral[] }) {
     if (!map || !coreLib || path.length === 0) return;
     const bounds = new coreLib.LatLngBounds();
     path.forEach((p) => bounds.extend(p));
+    if (extraLat != null && extraLng != null) bounds.extend({ lat: extraLat, lng: extraLng });
     map.fitBounds(bounds, 60);
-  }, [map, coreLib, path]);
+  }, [map, coreLib, path, extraLat, extraLng]);
 
   return null;
 }
