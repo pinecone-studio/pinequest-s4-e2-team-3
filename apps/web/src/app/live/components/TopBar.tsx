@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Layers } from "lucide-react";
+import { Layers, Maximize2, Minimize2 } from "lucide-react";
 import { ChevronLeftIcon } from "@/components/icons";
 import { useLiveStore } from "@/stores/liveStore";
 import { useOnlineStatus } from "@/context/OnlineStatus";
@@ -20,6 +20,8 @@ export function TopBar({
 }) {
   const mapType = useLiveStore((s) => s.mapType);
   const toggleMapType = useLiveStore((s) => s.toggleMapType);
+  const fullRouteView = useLiveStore((s) => s.fullRouteView);
+  const toggleFullRouteView = useLiveStore((s) => s.toggleFullRouteView);
   const forceOffline = useLiveStore((s) => s.forceOffline);
   const { online } = useOnlineStatus();
   const satellite = mapType === "hybrid";
@@ -36,6 +38,22 @@ export function TopBar({
         <ChevronLeftIcon size={20} />
       </button>
 
+      {/* View toggle: focus the current leg (default) vs. show the whole route. */}
+      <button
+        type="button"
+        onClick={toggleFullRouteView}
+        aria-label={fullRouteView ? "Focus on current stop" : "View full route"}
+        title={fullRouteView ? "Focus current leg" : "View full route"}
+        className={[
+          "ml-auto flex h-10 w-10 items-center justify-center rounded-full transition-colors",
+          fullRouteView
+            ? "bg-primary-600 text-white"
+            : "bg-ink/5 text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15",
+        ].join(" ")}
+      >
+        {fullRouteView ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+      </button>
+
       {showLayers && (
         <button
           type="button"
@@ -43,7 +61,7 @@ export function TopBar({
           aria-label={satellite ? "Switch to map view" : "Switch to satellite view"}
           title={satellite ? "Map view" : "Satellite view"}
           className={[
-            "ml-auto flex h-10 w-10 items-center justify-center rounded-full transition-colors",
+            "flex h-10 w-10 items-center justify-center rounded-full transition-colors",
             satellite
               ? "bg-primary-600 text-white"
               : "bg-ink/5 text-ink hover:bg-ink/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15",
@@ -54,9 +72,7 @@ export function TopBar({
       )}
 
       {/* Satellite forces light chrome, so the light/dark toggle is hidden there. */}
-      {!satellite && (
-        <ThemeToggle theme={theme} onToggle={onToggleTheme} className={showLayers ? "" : "ml-auto"} />
-      )}
+      {!satellite && <ThemeToggle theme={theme} onToggle={onToggleTheme} />}
 
       <Link
         href="/sos"

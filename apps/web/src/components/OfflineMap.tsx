@@ -64,12 +64,16 @@ export default function OfflineMap({
   position,
   theme,
   targetStop = null,
+  focusStops = null,
   returnTarget = null,
   returnMode = "drive",
   busLegs = null,
 }: {
   stops: RouteStop[];
   encodedPath: string | null;
+  // Focused view: the two stops whose leg is drawn (current → next). Empty array =
+  // only the approach connector (heading to stop 1). `null` = the whole route.
+  focusStops?: { latitude: number; longitude: number }[] | null;
   // Cached road route from the download-time position to the first stop — used for
   // the approach connector so it follows roads offline, not a straight line.
   approachPath?: string | null;
@@ -91,6 +95,11 @@ export default function OfflineMap({
   const posRef = useRef<Leaflet.CircleMarker | null>(null);
   const layerRef = useRef<Leaflet.GridLayer | null>(null);
   const overlayRef = useRef<Leaflet.LayerGroup | null>(null);
+  // The route-line layer (full route or focused leg), redrawn by its own effect so
+  // toggling focus / advancing a leg swaps the line without rebuilding the map.
+  const routeLineRef = useRef<Leaflet.LayerGroup | null>(null);
+  // Stable key for the focused leg (focusStops is a fresh array each render).
+  const focusKey = focusStops?.map((s) => `${s.latitude},${s.longitude}`).join("|") ?? "full";
   // Current position read live by the detour effect without re-running on every
   // GPS tick (the guide line is drawn once per recommendation, not per step).
   const positionRef = useRef(position);
@@ -160,28 +169,8 @@ export default function OfflineMap({
       });
       layer.addTo(map);
 
-      // Route line — road geometry when we have it, else straight through stops
-      // (so the line never disappears). White casing under blue reads on any tiles.
-      const pts: [number, number][] = encodedPath
-        ? decodePolyline(encodedPath).map((p) => [p.latitude, p.longitude])
-        : stops.map((s) => [s.latitude, s.longitude]);
-      if (pts.length > 1) {
-        L.polyline(pts, { color: "#ffffff", weight: 8, opacity: 0.9 }).addTo(map);
-        L.polyline(pts, { color: "#2f6bff", weight: 4, opacity: 1 }).addTo(map);
-      }
-
-      // Stop markers (lettered tooltip).
-      stops.forEach((s, i) => {
-        L.circleMarker([s.latitude, s.longitude], {
-          radius: 7,
-          color: "#ffffff",
-          weight: 2,
-          fillColor: "#2f6bff",
-          fillOpacity: 1,
-        })
-          .bindTooltip(`${String.fromCharCode(65 + (i % 26))} · ${s.name}`)
-          .addTo(map);
-      });
+      // Route line + stop markers are drawn by their own effect below (focus-aware),
+      // so they swap between the full route and the current leg without a rebuild.
 
       // Live position marker (updated by the effect below).
       if (position) {
@@ -209,6 +198,7 @@ export default function OfflineMap({
       mapRef.current = null;
       posRef.current = null;
       layerRef.current = null;
+      routeLineRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -218,6 +208,81 @@ export default function OfflineMap({
   useEffect(() => {
     layerRef.current?.redraw();
   }, [theme]);
+
+  // Route line: the whole route (full view) or just the current leg (focused). The
+  // leg follows the cached road by slicing the route polyline between its two stops;
+  // when no geometry is cached it falls back to a straight line so it never vanishes.
+  // Redrawn (and re-fitted) when the leg changes, not on every render.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    let cancelled = false;
+    void (async () => {
+      const L = (await import("leaflet")).default;
+      if (cancelled || !mapRef.current) return;
+      routeLineRef.current?.remove();
+      const group = L.layerGroup().addTo(map);
+      routeLineRef.current = group;
+
+      let pts: [number, number][] = [];
+      if (focusStops) {
+        if (focusStops.length >= 2) {
+          const { road } = roadSegment(encodedPath, focusStops[0], focusStops[1]);
+          pts = road.length > 1 ? road : focusStops.map((s) => [s.latitude, s.longitude]);
+        }
+      } else {
+        pts = encodedPath
+          ? decodePolyline(encodedPath).map((p) => [p.latitude, p.longitude])
+          : stops.map((s) => [s.latitude, s.longitude]);
+      }
+
+      // White casing under blue reads on any tiles.
+      if (pts.length > 1) {
+        L.polyline(pts, { color: "#ffffff", weight: 8, opacity: 0.9 }).addTo(group);
+        L.polyline(pts, { color: "#2f6bff", weight: 4, opacity: 1 }).addTo(group);
+      }
+
+      // Stop markers (lettered tooltip). Focused view shows only the leg's stops
+      // (plus the target); full view (focusStops null) shows them all.
+      const shown = focusStops
+        ? new Set(
+            [...focusStops, ...(targetStop ? [targetStop] : [])].map(
+              (c) => `${c.latitude},${c.longitude}`,
+            ),
+          )
+        : null;
+      stops.forEach((s, i) => {
+        if (shown && !shown.has(`${s.latitude},${s.longitude}`)) return;
+        L.circleMarker([s.latitude, s.longitude], {
+          radius: 7,
+          color: "#ffffff",
+          weight: 2,
+          fillColor: "#2f6bff",
+          fillOpacity: 1,
+        })
+          .bindTooltip(`${String.fromCharCode(65 + (i % 26))} · ${s.name}`)
+          .addTo(group);
+      });
+
+      // Frame the focused leg; on switching back to full view, frame the whole route.
+      if (focusStops) {
+        if (focusStops.length >= 2) {
+          map.fitBounds(
+            focusStops.map((s) => [s.latitude, s.longitude] as [number, number]),
+            { padding: [50, 50] },
+          );
+        }
+      } else {
+        const all = stops.map((s) => [s.latitude, s.longitude] as [number, number]);
+        if (all.length > 1) map.fitBounds(all, { padding: [40, 40] });
+        else if (all.length === 1) map.setView(all[0], 14);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, focusKey, encodedPath, targetStop?.latitude, targetStop?.longitude]);
 
   // Guide overlay: a real bus route (busLegs), a "take me there" line to
   // returnTarget (+ red marker), or — with neither — an automatic approach line to
