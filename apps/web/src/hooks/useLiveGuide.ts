@@ -10,7 +10,11 @@ import { getAudio } from "@/lib/offlineAudio";
 import { createListener, ttsSupported, sttSupported } from "@/lib/speech";
 import { useWeather } from "@/hooks/useWeather";
 import { weatherTip } from "@/lib/weather";
+import { approachPlan, humanDistance, modePhrase } from "@/lib/approach";
 import type { Coords, PlaceOption, RouteStop } from "@/types";
+
+// Separates the streamed reply text from the metadata tail — must match /api/chat.
+const META_DELIM = "\n\nPINEQUEST_META:";
 
 // A short situational prefix so the grounded /api/chat guide knows where the
 // traveller currently is. The route itself supplies the full Michelle persona and
@@ -182,6 +186,39 @@ export function useLiveGuide() {
     });
   }, []);
 
+  // A warm welcome the moment a journey loads — and, when the traveller isn't at
+  // the first stop yet, how to get there: walk vs taxi/bus + a rough time, matching
+  // the approach line drawn on the map. Fires once per route; shows on the card too,
+  // so it still greets even if the browser blocks TTS autoplay. Waits for a
+  // position fix so the distance is real.
+  const welcomedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const first = activeRoute?.stops[0];
+    // Judge distance from a REAL fix (simulated demo position or actual GPS) —
+    // not effectiveCoords, which falls back to the first stop before GPS resolves
+    // and would wrongly greet an away traveller with "you're right here".
+    const pos = simulatedCoords ?? realCoords;
+    if (!activeRoute || !first || !pos) return;
+    if (welcomedRef.current === activeRoute.id) return;
+    welcomedRef.current = activeRoute.id;
+
+    const plan = approachPlan(pos, first);
+    const atStart = plan.meters <= (first.arrivalRadius ?? 150);
+    const region = activeRoute.region
+      ? activeRoute.region.charAt(0).toUpperCase() + activeRoute.region.slice(1)
+      : "";
+    let text: string;
+    if (atStart) {
+      text = `Welcome! Your Mongolian adventure starts right here at ${first.name}. I'm Michelle, and I'll guide you the whole way. Tap play whenever you're ready.`;
+    } else if (plan.far) {
+      // Different city / region / another day's leg — no "head over" or ETA.
+      text = `Welcome! This part of your journey begins at ${first.name}${region ? ` in ${region}` : ""}, quite far from where you are now. Make your way there, and I'll be ready to guide you the moment you arrive.`;
+    } else {
+      text = `Welcome! Your adventure is about to begin. You're about ${humanDistance(plan.meters)} from ${first.name}, your first stop — roughly a ${plan.etaMin}-minute ${modePhrase(plan.mode)} away. Head over and I'll take it from there.`;
+    }
+    announce(text);
+  }, [activeRoute, simulatedCoords, realCoords, announce]);
+
   // Proactive trigger: as the traveller moves, find the furthest stop they've
   // reached (from the current one onward), advance the guide to it, and narrate
   // it once. Scanning forward — not just checking the current stop — is what
@@ -253,10 +290,20 @@ export function useLiveGuide() {
           }),
         });
         if (!res.ok) throw new Error(`chat ${res.status}`);
-        const data = (await res.json()) as { reply?: string; places?: PlaceOption[] };
-        reply = data.reply?.trim() || fallbackAnswer(currentStop);
+        // /api/chat streams text/plain with a "\n\nPINEQUEST_META:{…}" tail — not
+        // JSON. Split the reply text from the metadata (place cards) the same way
+        // the planning page does.
+        const body = await res.text();
+        const i = body.indexOf(META_DELIM);
+        reply = (i >= 0 ? body.slice(0, i) : body).trim() || fallbackAnswer(currentStop);
+        let places: PlaceOption[] = [];
+        if (i >= 0) {
+          try {
+            places = (JSON.parse(body.slice(i + META_DELIM.length)).places ?? []) as PlaceOption[];
+          } catch { /* keep no suggestions */ }
+        }
         // Surface any places Michelle found as selectable buttons/markers.
-        setSuggestions(data.places ?? []);
+        setSuggestions(places);
       } catch {
         reply = fallbackAnswer(currentStop);
         setSuggestions([]);
