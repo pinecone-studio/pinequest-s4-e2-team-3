@@ -26,11 +26,12 @@ export function LiveClock() {
   return <span suppressHydrationWarning>{time || "—"}</span>;
 }
 
-// Current weekday in Ulaanbaatar (Monday, Tuesday, …) — shown instead of a
-// trip-day counter. Filled on mount to keep server/client markup in sync.
+// Current weekday in Ulaanbaatar (Mon, Tue, …) — shown instead of a trip-day
+// counter. Short form so the longest name ("Wednesday") still fits the narrow
+// 1/3-width stat card. Filled on mount to keep server/client markup in sync.
 function ulaanbaatarWeekday(): string {
   return new Date().toLocaleDateString("en-US", {
-    weekday: "long",
+    weekday: "short",
     timeZone: "Asia/Ulaanbaatar",
   });
 }

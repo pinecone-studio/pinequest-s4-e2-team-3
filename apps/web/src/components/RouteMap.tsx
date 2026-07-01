@@ -11,6 +11,8 @@ import {
 } from "@vis.gl/react-google-maps";
 import { GOOGLE_MAPS_KEY } from "@/lib/googlemaps";
 import { tileUrl } from "@/lib/offlineTiles";
+import { haversineMeters } from "@/lib/geo";
+import { approachPlan } from "@/lib/approach";
 import type { Coords, DemoRoute, PlaceOption } from "@/types";
 import type { BusLeg } from "@/lib/transit";
 
@@ -54,6 +56,20 @@ export default function RouteMap({
     [route],
   );
 
+  // Before the journey begins, draw a route from the traveller's real GPS to
+  // stop #1 so they can see how to reach the start. Only while still on stop #1
+  // and genuinely away from it (beyond its arrival radius) — when GPS falls back
+  // to the first stop itself (demoing far from Mongolia) the distance is ~0, so
+  // this stays hidden. Suppressed during a detour / picked-place flow.
+  const firstStop = route.stops[0];
+  const showApproach =
+    !selectedPlace &&
+    !returnTarget &&
+    currentIndex === 0 &&
+    !!position &&
+    !!firstStop &&
+    haversineMeters(position, firstStop) > (firstStop.arrivalRadius ?? 150);
+
   return (
     <APIProvider apiKey={GOOGLE_MAPS_KEY}>
       <LoadGuard onError={onError} />
@@ -73,7 +89,13 @@ export default function RouteMap({
         {/* Show the full plan line only when not heading to a specific target —
             otherwise just the current→target leg (DetourLine below) is drawn. */}
         {!selectedPlace && !returnTarget && <RouteLine path={path} />}
-        {selectedPlace || returnTarget ? null : <FitBounds path={path} />}
+        {/* Approaching the start → focus the map on the "get to stop #1" leg;
+            otherwise fit the whole journey. */}
+        {selectedPlace || returnTarget ? null : showApproach ? (
+          <ApproachLine origin={position!} destination={firstStop} />
+        ) : (
+          <FitBounds path={path} />
+        )}
 
         {route.stops.map((stop, i) => (
           <StopMarker
@@ -306,6 +328,62 @@ function DetourLine({
   }, [map, mapsLib, routesLib, coreLib, destination.latitude, destination.longitude, color, walk]);
 
   return <DestMarker lat={destination.latitude} lng={destination.longitude} color={color} />;
+}
+
+// The "get to the start" leg: a route from the traveller's real GPS to the
+// journey's first stop, drawn until they arrive. A short gap is a dashed walking
+// path; further out it's a solid driving road (as a taxi/bus would take). Matches
+// what Michelle says (both read the same approachPlan). Re-routes only when they
+// move ~100m (position rounded into the effect key), not on every GPS tick, so we
+// don't hammer the Directions API. Fits the map to show both points.
+function ApproachLine({
+  origin,
+  destination,
+}: {
+  origin: Coords;
+  destination: { latitude: number; longitude: number };
+}) {
+  const map = useMap();
+  const mapsLib = useMapsLibrary("maps");
+  const routesLib = useMapsLibrary("routes");
+  const coreLib = useMapsLibrary("core");
+
+  // ~3 decimal places ≈ 100m — the re-route granularity.
+  const oLat = Math.round(origin.latitude * 1000) / 1000;
+  const oLng = Math.round(origin.longitude * 1000) / 1000;
+  const walk =
+    approachPlan(origin, {
+      latitude: destination.latitude,
+      longitude: destination.longitude,
+    }).mode === "walk";
+
+  useEffect(() => {
+    if (!map || !mapsLib) return;
+    const points = [
+      { lat: origin.latitude, lng: origin.longitude },
+      { lat: destination.latitude, lng: destination.longitude },
+    ];
+    let cancelled = false;
+    let drawn: google.maps.Polyline[] = [];
+    drawRoadPath(map, mapsLib, routesLib, points, "#2f6bff", () => cancelled, walk).then((p) => {
+      if (cancelled) p.forEach((l) => l.setMap(null));
+      else drawn = p;
+    });
+
+    if (coreLib) {
+      const bounds = new coreLib.LatLngBounds();
+      points.forEach((pt) => bounds.extend(pt));
+      map.fitBounds(bounds, 80);
+    }
+
+    return () => {
+      cancelled = true;
+      drawn.forEach((l) => l.setMap(null));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, mapsLib, routesLib, coreLib, oLat, oLng, destination.latitude, destination.longitude, walk]);
+
+  return null;
 }
 
 // A teardrop pin at the place the traveller is heading to.
