@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
+import { signOutAndClear } from "@/lib/authSession";
 import { useOnlineStatus } from "@/context/OnlineStatus";
 
 export function HeaderActions() {
@@ -21,7 +22,7 @@ export function HeaderActions() {
 
   async function handleSignOut() {
     if (!online) return;
-    await createClient().auth.signOut();
+    await signOutAndClear();
     router.push("/login");
   }
 
