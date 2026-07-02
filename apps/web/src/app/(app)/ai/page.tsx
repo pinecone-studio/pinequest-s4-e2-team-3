@@ -134,6 +134,17 @@ function detectStage(messages: Message[]): ConvStage {
   // Real place cards mean the AI ran a live or name-lookup search this turn.
   if (lastAssistant.places?.length) return "recommending-place";
 
+  // Preference-gathering questions (collecting-info) — must come before food/nearby
+  // so "local markets & food" or "nature & hikes" don't falsely trigger those stages.
+  if (/\b(enjoy|interest|choose from|what.*prefer|what.*like)\b/.test(t) &&
+      /temples|nomadic|horse riding|hikes|markets/.test(t)) return "collecting-info";
+  if (/\b(how many hours|how many days|which month|what month|city or countryside|countryside or city)\b/.test(t)) return "collecting-info";
+  // Food *preference* question (Step 5) — not a food recommendation
+  if (/food preference|are you into|vegetarian|street food|fine dining/.test(t) &&
+      /prefer|preference|into/.test(t)) return "collecting-info";
+  // Start time question (Step 6)
+  if (/what time|what hour|when.*start|plan to start|time.*plan|time do you/.test(t)) return "collecting-info";
+
   // "Nearby" only when there's no day-planning context already matched above.
   if (/\b(nearby|walk|min away|around you|closest|nearest)\b/.test(t)) return "nearby";
   if (/\b(restaurant|lunch|dinner|breakfast|café|cafe|eat|food|meal)\b/.test(t)) return "food";
@@ -302,14 +313,24 @@ function getContextualSuggestions(messages: Message[]): string[] {
   // ── COLLECTING INFO: answer the specific question asked ───────────────────
   if (/which month|what month|when.*visit|time of year/.test(lastQ))
     return fresh(["July (Naadam season)", "June (pleasant weather)", "August", "Winter (Ice Festival)"]);
+  if (/how many hours|how much time|roughly how many|2 hours|half a day/.test(lastQ))
+    return fresh(["2 hours", "3–4 hours", "Half a day", "Full day"]);
   if (/how many days|how long|length of.*trip/.test(lastQ))
-    return fresh(["3 Days (Quick UB & Terelj)", "5 Days (Classic trip)", "7 Days (Countryside tour)", "2 Weeks+"]);
+    return fresh(["Just a few hours", "1 Day", "3 Days (Quick UB & Terelj)", "5 Days (Classic trip)"]);
+  if (/what time|when.*start|plan to start|time do you/.test(t))
+    return fresh(["08:00", "10:00", "14:00", "17:00"]);
   if (/(city|ulaanbaatar).{0,80}or.{0,80}(countryside|nature)|(countryside|nature).{0,80}or.{0,80}(city|ulaanbaatar)/.test(t))
     return fresh(["Mainly countryside & nature", "Explore Ulaanbaatar city", "A perfect mix of both"]);
   if (/gobi|khövsgöl|khovsgol|terelj/.test(t))
     return fresh(["Gobi Desert", "Northern Mongolia", "Terelj / Gorkhi", "Lake Khövsgöl"]);
-  if (/enjoy|interest|like to|prefer|what.*do|type of|kind of/.test(lastQ))
+  // Use `t` (full message) for multi-sentence questions — lastQ only captures the last "?" fragment
+  if (/\b(enjoy|what do you enjoy|what.*enjoy most)\b/.test(t) &&
+      /temples|nomadic|horse riding|hikes|markets/.test(t))
     return fresh(["Temples & history", "Nature & hiking", "Nomadic culture & horse riding", "Local markets & food"]);
+  if (/food preference|are you into|vegetarian|street food|fine dining/.test(t) &&
+      /prefer|preference|into|food preference/.test(t) &&
+      !/enjoy most|temples|nomadic/.test(t))
+    return fresh(["Traditional Mongolian", "Street food & local cafés", "Vegetarian", "Fine dining"]);
   if (/food|eat|cuisine|diet|meal|vegetar|vegan/.test(lastQ))
     return fresh(["Traditional Mongolian dishes", "Street food & local cafés", "Vegetarian options", "Fine dining"]);
   if (/active|pace|physical|hik|adventur|relax/.test(lastQ))
@@ -728,7 +749,7 @@ function newChat() {
           </div>
         )}
 
-        {messages.map((message) => (
+        {messages.map((message, idx) => (
           <MessageBubble
             key={message.id}
             message={message}
@@ -736,6 +757,15 @@ function newChat() {
             onSavePlan={savePlan}
             onAddMore={addMoreToPlan}
             onUpdateStartDate={updatePlanStartDate}
+            onSelect={
+              idx === messages.length - 1 &&
+              !isLoading &&
+              message.role === "assistant" &&
+              (/which would you prefer|which one do you prefer|which sounds best|which would you like|which do you prefer|which would you choose|which one would you/i.test(message.content) ||
+               /\n1\.\s+\S.+[—–]/.test(message.content))
+                ? sendMessage
+                : undefined
+            }
             disabled={isLoading}
           />
         ))}
@@ -854,6 +884,16 @@ function extractPlanPlaceNames(content: string): string[] {
   return names;
 }
 
+function extractTextFromChildren(children: React.ReactNode): string {
+  if (typeof children === "string") return children;
+  if (typeof children === "number") return String(children);
+  if (Array.isArray(children)) return children.map(extractTextFromChildren).join("");
+  if (children !== null && typeof children === "object" && "props" in (children as object)) {
+    const el = children as { props?: { children?: React.ReactNode } };
+    return extractTextFromChildren(el.props?.children);
+  }
+  return "";
+}
 
 function MessageBubble({
   message,
@@ -861,6 +901,7 @@ function MessageBubble({
   onSavePlan,
   onAddMore,
   onUpdateStartDate,
+  onSelect,
   disabled,
 }: {
   message: Message;
@@ -868,10 +909,12 @@ function MessageBubble({
   onSavePlan: (messageId: string, plan: PendingPlan) => void;
   onAddMore: (messageId: string) => void;
   onUpdateStartDate: (planId: string, date: string) => void;
+  onSelect?: (name: string) => void;
   disabled: boolean;
 }) {
   const isUser = message.role === "user";
   const [autoSpots, setAutoSpots] = useState<(ExploreSpot | { name: string })[]>([]);
+  const [spotsLoading, setSpotsLoading] = useState(false);
 
   useEffect(() => {
     if (isUser) return;
@@ -882,6 +925,7 @@ function MessageBubble({
     const lat = coords?.lat ?? 47.9077;
     const lng = coords?.lng ?? 106.8832;
     let cancelled = false;
+    setSpotsLoading(true);
     Promise.all(
       names.map((name) =>
         fetch(`/api/places?q=${encodeURIComponent(name)}&lat=${lat}&lng=${lng}`)
@@ -895,9 +939,10 @@ function MessageBubble({
       // Found places first, unfound last
       mapped.sort((a, b) => ("id" in b ? 1 : 0) - ("id" in a ? 1 : 0));
       setAutoSpots(mapped);
+      setSpotsLoading(false);
     });
     return () => { cancelled = true; };
-  }, [message.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [message.id, message.places]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className={isUser ? "flex flex-col items-end" : "flex flex-col items-start"}>
@@ -913,22 +958,63 @@ function MessageBubble({
               a: ({ href, children }) => (
                 <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
               ),
+              li: ({ children, ...props }) => {
+                if (onSelect) {
+                  const text = extractTextFromChildren(children);
+                  const placeName = text.split(/\s*[—–-]\s*/)[0].replace(/^\d+[.)]\s*/, "").trim();
+                  if (placeName.length > 2) {
+                    return (
+                      <li {...props}>
+                        <button
+                          type="button"
+                          onClick={() => onSelect(placeName)}
+                          className="text-left text-primary-600 underline underline-offset-2 hover:text-primary-700 active:opacity-70"
+                        >
+                          {placeName}
+                        </button>
+                        {text.includes("—") || text.includes("–") ? (
+                          <span className="text-ink"> — {text.split(/\s*[—–]\s*/).slice(1).join(" — ")}</span>
+                        ) : null}
+                      </li>
+                    );
+                  }
+                }
+                return <li {...props}>{children}</li>;
+              },
             }}
           >{message.content}</ReactMarkdown>
 
-          {autoSpots.length > 0 && (
+          {onSelect && (
+            <p className="text-[11px] text-ink-muted/70 -mt-1">(tap a name above to choose)</p>
+          )}
+
+          {spotsLoading && (
             <div className="flex gap-3 overflow-x-auto pb-1 pt-1" style={{ scrollbarWidth: "none" }}>
-              {autoSpots.map((spot) => {
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="flex-none overflow-hidden rounded-3xl bg-sand-100 animate-pulse" style={{ width: 160 }}>
+                  <div className="h-28 w-full bg-sand-200" />
+                  <div className="p-3 space-y-2">
+                    <div className="h-3 w-3/4 rounded-full bg-sand-200" />
+                    <div className="h-3 w-1/2 rounded-full bg-sand-200" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!spotsLoading && autoSpots.length > 0 && (
+            <div className="flex gap-3 overflow-x-auto pb-1 pt-1" style={{ scrollbarWidth: "none" }}>
+              {autoSpots.map((spot, spotIdx) => {
                 if ("id" in spot) {
                   return (
-                    <div key={spot.id} className="flex-none" style={{ width: 160 }}>
+                    <div key={`${spot.id}-${spotIdx}`} className="flex-none" style={{ width: 160 }}>
                       <ExploreCard spot={spot} compact />
                     </div>
                   );
                 }
                 return (
                   <a
-                    key={spot.name}
+                    key={`${spot.name}-${spotIdx}`}
                     href={`https://www.google.com/maps/search/${encodeURIComponent(spot.name + " Ulaanbaatar")}`}
                     target="_blank"
                     rel="noopener noreferrer"
