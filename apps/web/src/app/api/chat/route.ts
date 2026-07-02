@@ -3,7 +3,7 @@ import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
-import { findNearbyPlaces, lookupPlace, type NearbyPlace } from "@/lib/places";
+import { findNearbyPlaces, lookupPlace, nearestPlace, type NearbyPlace } from "@/lib/places";
 import { rateLimit, clientIp, rateLimitResponse } from "@/lib/rateLimit";
 
 const SYSTEM_PROMPT =
@@ -13,6 +13,12 @@ const SYSTEM_PROMPT =
 
   "NEARBY (live location available): Call find_nearby_places. Show 1–2 options max: " +
   "name, rating, walk time, one-line reason. No addresses or postal codes. " +
+
+  "AT A PLACE: If the traveller asks about the place they are currently at — its history, " +
+  "meaning, 'why is it like this', 'what is this place', 'why so many X here' — EXPLAIN it with " +
+  "real facts from your Mongolia knowledge (and any CURRENT PLACE context provided below). Do NOT " +
+  "run a nearby search for these, and NEVER say there is no such thing near them or offer to " +
+  "recommend a different place instead. " +
 
   "TRIP PLANNING (no live location): Use your Mongolia knowledge. " +
   "RULE: For EVERY specific place you name in a planning message, call lookup_place for it FIRST " +
@@ -194,8 +200,19 @@ export async function POST(req: Request) {
       "follow the PRE-ARRIVAL PLANNING rule by default. Only ask them to enable location if they clearly " +
       "are already in Mongolia and want something right around them.";
 
+  // Resolve WHERE the traveller is standing so the guide can answer questions
+  // about their surroundings with facts, instead of doing a nearby search and
+  // offering a different place. Cheap: cached ~10 min per ~110 m.
+  const here = location ? await nearestPlace(location.lat, location.lng) : null;
+  const currentPlaceNote = here
+    ? ` CURRENT PLACE — the traveller is standing at or right next to "${here.name}".` +
+      (here.description ? ` About it: ${here.description}` : "") +
+      (here.reviews?.[0]?.text ? ` A visitor noted: "${here.reviews[0].text.slice(0, 200)}".` : "") +
+      " Use this to answer questions about where they are."
+    : "";
+
   const conversation: ChatCompletionMessageParam[] = [
-    { role: "system", content: `${SYSTEM_PROMPT} ${locationNote}` },
+    { role: "system", content: `${SYSTEM_PROMPT} ${locationNote}${currentPlaceNote}` },
     ...messages.map((m) => ({ role: m.role, content: m.content })),
   ];
 

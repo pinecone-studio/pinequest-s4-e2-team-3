@@ -1,6 +1,7 @@
 "use client";
 
 import type { BusStep } from "@/lib/transit";
+import { BUS_INFO } from "@/lib/transport";
 
 // The bus route's steps: which bus to board, where to get on/off, walk segments.
 export function BusPlanCard({ steps, onClose }: { steps: BusStep[]; onClose: () => void }) {
@@ -25,6 +26,11 @@ export function BusPlanCard({ steps, onClose }: { steps: BusStep[]; onClose: () 
           </li>
         ))}
       </ol>
+      <div className="mt-3 space-y-1 border-t border-ink/10 pt-2.5 text-xs text-ink-muted dark:border-white/10 dark:text-white/50">
+        <p>💳 {BUS_INFO.payment}</p>
+        <p>🎫 {BUS_INFO.fare}</p>
+        <p>🕑 {BUS_INFO.hours}</p>
+      </div>
     </div>
   );
 }

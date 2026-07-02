@@ -122,6 +122,61 @@ export async function lookupPlace(name: string): Promise<NearbyPlace | null> {
   }
 }
 
+// Identify the single place the traveller is standing at/near, so the guide can
+// EXPLAIN where they are (history, meaning) instead of recommending somewhere new.
+// Nearest named place of any kind, with its editorial summary + reviews for
+// grounding. Returns null if nothing is close or on failure.
+export async function nearestPlace(
+  latitude: number,
+  longitude: number,
+): Promise<NearbyPlace | null> {
+  if (!GOOGLE_KEY) return null;
+
+  const cacheKey = `here:${roundCoord(latitude)},${roundCoord(longitude)}`;
+  try {
+    return await cached(cacheKey, PLACES_TTL_MS, async () => {
+      const res = await fetch(NEARBY_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": GOOGLE_KEY,
+          "X-Goog-FieldMask":
+            "places.id,places.displayName,places.rating,places.formattedAddress,places.location,places.photos,places.editorialSummary,places.userRatingCount,places.reviews",
+        },
+        body: JSON.stringify({
+          // No includedTypes → the nearest named place of any kind.
+          maxResultCount: 1,
+          rankPreference: "DISTANCE",
+          // ponytail: 200 m covers GPS drift + large complexes (a monastery, a
+          // square); widen if travellers report the wrong landmark.
+          locationRestriction: {
+            circle: { center: { latitude, longitude }, radius: 200 },
+          },
+          languageCode: "en",
+        }),
+      });
+      if (!res.ok) throw new Error(`places nearest ${res.status}`);
+
+      const place: PlacesTextResult | undefined = ((await res.json()).places ?? [])[0];
+      if (!place) return null;
+      return {
+        id: place.id ?? crypto.randomUUID(),
+        name: place.displayName?.text ?? "Unknown",
+        latitude: place.location?.latitude ?? latitude,
+        longitude: place.location?.longitude ?? longitude,
+        rating: place.rating,
+        address: place.formattedAddress,
+        imageUrl: photoMediaUrl(place.photos?.[0]?.name, 400),
+        description: place.editorialSummary?.text,
+        reviewCount: place.userRatingCount,
+        reviews: mapReviews(place.reviews),
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
 // Real places near a point, closest first, via the Places API (New) Text Search.
 // Free text (e.g. "park to rest", "coffee") plus a location bias, so it handles
 // both food and open-ended "somewhere to sit" searches. Runs server-side (no

@@ -95,6 +95,9 @@ export function LiveExperience({
   const [detour, setDetour] = useState(false);
   // The bus route's steps (which bus, board/alight stops) once "By bus" is picked.
   const [busPlan, setBusPlan] = useState<BusStep[] | null>(null);
+  // The chosen target for a taxi, once "By car / taxi" is picked. Held here (not
+  // in TransportCard) so the "Book a taxi" card persists after the target clears.
+  const [taxiPlan, setTaxiPlan] = useState<Target | null>(null);
 
   const { offlineSaved, saving, savingProgress, downloadPack } = useOfflinePack(
     activeRoute,
@@ -134,6 +137,7 @@ export function LiveExperience({
     setFullPlanOpen,
     setBusPlan,
     setBusLegs,
+    setTaxiPlan,
     setDetour,
     setReturnTarget,
     setTarget,
@@ -156,6 +160,7 @@ export function LiveExperience({
       if (arrivalMounted.current) {
         setBusPlan(null);
         setBusLegs(null);
+        setTaxiPlan(null);
         setDetour(false); // reached a plan stop → no longer on a side-trip
       }
       setCardOpen(true);
@@ -186,13 +191,14 @@ export function LiveExperience({
     setIntentOpen(false);
     setDetour(false);
     setBusPlan(null);
+    setTaxiPlan(null);
   }
 
   const narrationFooter = (
     <NarrationFooter
       showExtras={showExtras}
       onToggleExtras={() => setShowExtras(!showExtras)}
-      canAdvance={!target && !intentOpen && !cardOpen && suggestions.length === 0 && !busPlan}
+      canAdvance={!target && !intentOpen && !cardOpen && suggestions.length === 0 && !busPlan && !taxiPlan}
       detour={detour}
       onAdvance={() => setCardOpen(true)}
     />
@@ -251,6 +257,8 @@ export function LiveExperience({
         onCardClose={actions.cardClose}
         busPlan={busPlan}
         onCloseBusPlan={actions.closeBusPlan}
+        taxiPlan={taxiPlan}
+        onCloseTaxi={() => setTaxiPlan(null)}
         suggestions={suggestions}
         onDismissSuggestions={actions.dismissSuggestions}
         onPickSuggestion={actions.pickSuggestion}

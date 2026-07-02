@@ -19,6 +19,7 @@ export function useGuideActions({
   setFullPlanOpen,
   setBusPlan,
   setBusLegs,
+  setTaxiPlan,
   setDetour,
   setReturnTarget,
   setTarget,
@@ -33,6 +34,7 @@ export function useGuideActions({
   setFullPlanOpen: Dispatch<SetStateAction<boolean>>;
   setBusPlan: (steps: BusStep[] | null) => void;
   setBusLegs: (legs: BusLeg[] | null) => void;
+  setTaxiPlan: (t: Target | null) => void;
   setDetour: (v: boolean) => void;
   setReturnTarget: (coords: Coords | null, mode?: ReturnMode) => void;
   setTarget: (t: Target | null) => void;
@@ -50,6 +52,7 @@ export function useGuideActions({
     setTarget(t);
   };
   const chooseBus = (steps: BusStep[], legs?: BusLeg[]) => {
+    setTaxiPlan(null);
     if (target) {
       // Redraw the same map's guide line as a transit (bus) route + show steps.
       // legs = real per-leg geometry; without them the map uses Google transit.
@@ -68,10 +71,12 @@ export function useGuideActions({
   const chooseCar = () => {
     setBusPlan(null);
     setBusLegs(null);
-    if (target)
+    if (target) {
+      setTaxiPlan(target); // persist the taxi card after the target clears
       announce(
-        `For a taxi you can call UBCab, or just raise your hand by the road. I'll guide you to ${target.name.split(",")[0]}.`,
+        `Here are taxi options to ${target.name.split(",")[0]} — tap UBCab or Aba to book. I'll keep the route ready.`,
       );
+    }
     setTarget(null); // returnTarget stays (road line) → guide line to it
   };
   // Ask the traveller what they feel like first; the answer (a quick chip or a
