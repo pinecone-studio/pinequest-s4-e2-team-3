@@ -9,6 +9,7 @@ import { TransportCard } from "./TransportCard";
 import { IntentCard } from "./IntentCard";
 import { NextStepCard } from "./NextStepCard";
 import { BusPlanCard } from "./BusPlanCard";
+import { TaxiBooking } from "@/components/directions/TaxiBooking";
 import { SuggestionList } from "./SuggestionList";
 import { NarrationCard } from "./NarrationCard";
 import { PresenterStrip } from "./PresenterStrip";
@@ -76,6 +77,8 @@ export function ConversationDock({
   onCardClose,
   busPlan,
   onCloseBusPlan,
+  taxiPlan,
+  onCloseTaxi,
   suggestions,
   onDismissSuggestions,
   onPickSuggestion,
@@ -110,6 +113,8 @@ export function ConversationDock({
   onCardClose: () => void;
   busPlan: BusStep[] | null;
   onCloseBusPlan: () => void;
+  taxiPlan: Target | null;
+  onCloseTaxi: () => void;
   suggestions: PlaceOption[];
   onDismissSuggestions: () => void;
   onPickSuggestion: (place: PlaceOption) => void;
@@ -158,6 +163,15 @@ export function ConversationDock({
       ) : null}
 
       {busPlan && <BusPlanCard steps={busPlan} onClose={onCloseBusPlan} />}
+
+      {taxiPlan && (
+        <TaxiBooking
+          origin={effectiveCoords}
+          target={taxiPlan}
+          onClose={onCloseTaxi}
+          className="pointer-events-auto animate-rise mt-3"
+        />
+      )}
 
       {suggestions.length > 0 && (
         <SuggestionList
