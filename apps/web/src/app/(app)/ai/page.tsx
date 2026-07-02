@@ -201,7 +201,7 @@ function getContextualSuggestions(messages: Message[]): string[] {
   );
   function fresh(list: string[]): string[] {
     const filtered = list.filter((s) => !recentClicked.has(s.toLowerCase().trim()));
-    return (filtered.length >= 2 ? filtered : list).slice(0, 4);
+    return (filtered.length >= 2 ? filtered : list).slice(0, 5);
   }
 
   const requestedDays = getRequestedDays(messages);
@@ -762,7 +762,7 @@ function newChat() {
               !isLoading &&
               message.role === "assistant" &&
               (/which would you prefer|which one do you prefer|which sounds best|which would you like|which do you prefer|which would you choose|which one would you/i.test(message.content) ||
-               /\n1\.\s+\S.+[—–]/.test(message.content))
+               /[\r\n]1\.\s+\S.+[—–-]/.test(message.content))
                 ? sendMessage
                 : undefined
             }
@@ -915,6 +915,7 @@ function MessageBubble({
   const isUser = message.role === "user";
   const [autoSpots, setAutoSpots] = useState<(ExploreSpot | { name: string })[]>([]);
   const [spotsLoading, setSpotsLoading] = useState(false);
+  const [spotsCount, setSpotsCount] = useState(3);
 
   useEffect(() => {
     if (isUser) return;
@@ -925,6 +926,7 @@ function MessageBubble({
     const lat = coords?.lat ?? 47.9077;
     const lng = coords?.lng ?? 106.8832;
     let cancelled = false;
+    setSpotsCount(Math.min(names.length, 5));
     setSpotsLoading(true);
     Promise.all(
       names.map((name) =>
@@ -940,8 +942,13 @@ function MessageBubble({
       mapped.sort((a, b) => ("id" in b ? 1 : 0) - ("id" in a ? 1 : 0));
       setAutoSpots(mapped);
       setSpotsLoading(false);
+    }).catch(() => {
+      if (!cancelled) setSpotsLoading(false);
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      setSpotsLoading(false);
+    };
   }, [message.id, message.places]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -967,7 +974,7 @@ function MessageBubble({
                       <li {...props}>
                         <button
                           type="button"
-                          onClick={() => onSelect(placeName)}
+                          onClick={() => onSelect(`I'd like to go to ${placeName}`)}
                           className="text-left text-primary-600 underline underline-offset-2 hover:text-primary-700 active:opacity-70"
                         >
                           {placeName}
@@ -990,7 +997,7 @@ function MessageBubble({
 
           {spotsLoading && (
             <div className="flex gap-3 overflow-x-auto pb-1 pt-1" style={{ scrollbarWidth: "none" }}>
-              {Array.from({ length: 3 }).map((_, i) => (
+              {Array.from({ length: spotsCount }).map((_, i) => (
                 <div key={i} className="flex-none overflow-hidden rounded-3xl bg-sand-100 animate-pulse" style={{ width: 160 }}>
                   <div className="h-28 w-full bg-sand-200" />
                   <div className="p-3 space-y-2">
