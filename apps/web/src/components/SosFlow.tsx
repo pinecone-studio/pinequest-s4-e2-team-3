@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
 import Link from "next/link";
 import {
   CloseIcon,
@@ -36,9 +35,6 @@ const OPTION_ICON: Record<string, (props: { size?: number }) => React.ReactNode>
 const COUNTDOWN_SECONDS = 5;
 
 type Step = "choose" | "countdown" | "ready" | "calling";
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 // Writes a single incident to the offline queue in localStorage.
 function enqueueOfflineIncident(
@@ -114,23 +110,22 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
     });
   }
 
+  // Poll the incident for the admin's "Are you okay?" flag. Polling (not Supabase
+  // Realtime) so it works without the table being on the realtime publication.
   useEffect(() => {
     if (!incidentId) return;
-    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-    const channel = supabase
-      .channel(`incident_${incidentId}`)
-      .on("postgres_changes", {
-        event: "UPDATE",
-        schema: "public",
-        table: "sos_incidents",
-        filter: `id=eq.${incidentId}`,
-      }, (payload) => {
-        const row = payload.new as { check_in_requested?: boolean; status?: string };
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/sos/status?id=${incidentId}`);
+        if (!res.ok) return;
+        const row = (await res.json()) as { check_in_requested?: boolean; status?: string };
         if (row.check_in_requested) setCheckInRequested(true);
         if (row.status === "resolved") setCheckInRequested(false);
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+      } catch { /* ignore transient poll errors */ }
+    };
+    poll();
+    const t = setInterval(poll, 4000);
+    return () => clearInterval(t);
   }, [incidentId]);
 
   useEffect(() => {

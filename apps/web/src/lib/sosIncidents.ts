@@ -90,6 +90,24 @@ export async function getOperatorMessages(id: string): Promise<OperatorMessage[]
   return Array.isArray(data?.operator_msgs) ? data.operator_msgs : [];
 }
 
+// Everything the traveller's screen polls: operator replies, the admin's
+// "Are you okay?" check-in flag, and the incident status. Polling instead of
+// Supabase Realtime so it works without the table being on the realtime publication.
+export async function getIncidentStatus(
+  id: string,
+): Promise<{ messages: OperatorMessage[]; check_in_requested: boolean; status: string | null }> {
+  const { data } = await adminDb()
+    .from("sos_incidents")
+    .select("operator_msgs, check_in_requested, status")
+    .eq("id", id)
+    .single();
+  return {
+    messages: Array.isArray(data?.operator_msgs) ? data.operator_msgs : [],
+    check_in_requested: !!data?.check_in_requested,
+    status: data?.status ?? null,
+  };
+}
+
 export async function listSosIncidents(): Promise<{ incidents: SosIncident[]; error: string | null }> {
   const { data, error } = await adminDb()
     .from("sos_incidents")
