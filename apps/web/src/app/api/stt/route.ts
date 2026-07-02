@@ -1,34 +1,8 @@
 import OpenAI from "openai";
 import { toFile } from "openai";
+import { chimegeStt } from "@/lib/chimege";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-async function chimegeStt(audioBuffer: ArrayBuffer, mimeType: string): Promise<string> {
-  const token = process.env.CHIMEGE_STT_TOKEN!;
-
-  const upload = await fetch("https://api.chimege.com/v1.2/stt-long", {
-    method: "POST",
-    headers: { Token: token, "Content-Type": mimeType },
-    body: audioBuffer,
-  });
-
-  const uploadText = await upload.text();
-  if (!upload.ok || !uploadText.startsWith("{")) {
-    throw new Error(`Chimege STT upload failed: ${uploadText}`);
-  }
-
-  const { uuid } = JSON.parse(uploadText);
-
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    const poll = await fetch("https://api.chimege.com/v1.2/stt-long-transcript", {
-      headers: { Token: token, UUID: uuid },
-    });
-    const result = await poll.json();
-    if (result.done) return result.transcription ?? "";
-  }
-  return "";
-}
 
 export async function POST(req: Request) {
   const formData = await req.formData();

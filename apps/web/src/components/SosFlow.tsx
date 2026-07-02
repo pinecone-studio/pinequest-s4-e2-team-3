@@ -192,7 +192,7 @@ export function SosFlow({ onClose }: { onClose?: () => void }) {
   }
 
   return (
-    <div className="relative mx-auto w-full max-w-md rounded-t-[28px] bg-white px-5 pb-8 pt-3">
+    <div className="relative mx-auto max-h-screen w-full max-w-md overflow-y-auto rounded-t-[28px] bg-white px-5 pb-8 pt-3">
       <div className="mx-auto h-1.5 w-10 rounded-full bg-sand-300" />
       <Header onClose={onClose} location={location} />
       {step === "choose" ? (
@@ -709,6 +709,15 @@ function CallView({
   async function speakToOperator(en: string, mn: string) {
     const text = mn.trim();
     if (!text) return;
+    // Speak a short "Translating" cue on the device while the call is redirected
+    // and the audio synthesized; the cancel() below barges it in with the real
+    // translation the moment it's ready.
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      const cue = new SpeechSynthesisUtterance("Translating");
+      cue.lang = "en-US";
+      window.speechSynthesis.speak(cue);
+    }
     await say(text);
     setSent((s) => [...s, { en, mn: text }]);
 
@@ -737,6 +746,23 @@ function CallView({
     await speakToOperator(followUp.trim(), translatedMn);
     setFollowUp("");
     setTranslatedMn("");
+  }
+
+  // Speak the traveller's current location (place + coordinates) to the operator.
+  async function shareLocation() {
+    const place = location.place?.trim() ?? "";
+    const { rawLat, rawLng } = location;
+    if (!place && (rawLat == null || rawLng == null)) return;
+
+    const coordsEn =
+      rawLat != null && rawLng != null ? ` (${rawLat.toFixed(5)}, ${rawLng.toFixed(5)})` : "";
+    const en = `My current location: ${place || "unknown place"}${coordsEn}`;
+
+    let mn = place ? `Миний одоогийн байршил ${place}.` : "";
+    if (rawLat != null && rawLng != null) {
+      mn += ` Өргөрөг ${coordsToMn(rawLat.toFixed(5))}. Уртраг ${coordsToMn(rawLng.toFixed(5))}.`;
+    }
+    await speakToOperator(en, mn.trim());
   }
 
   function endCall() {
@@ -810,6 +836,17 @@ function CallView({
       {/* Speak to the operator — type in English, translate, then read it aloud */}
       <div className="mt-4 rounded-3xl border border-ink/5 bg-sand-50 p-4">
         <p className="text-sm font-bold text-ink">Speak to the operator</p>
+
+        {/* One tap reads the traveller's live location aloud to the operator. */}
+        <button
+          onClick={shareLocation}
+          disabled={location.status !== "ready"}
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-ink/10 bg-white py-2.5 text-sm font-bold text-ink disabled:opacity-50"
+        >
+          <MapPinIcon size={16} />
+          {location.status === "ready" ? "Share my location" : "Locating…"}
+        </button>
+
         {sent.length > 0 && (
           <div className="mt-2 space-y-1.5">
             {sent.map((s, i) => (
@@ -884,6 +921,23 @@ const CALL_STATUS = {
   ended: { title: "Call ended", subtitle: "You can call again if you need to", dot: "bg-ink-muted" },
   unavailable: { title: "Couldn't place call", subtitle: "Tap End and try again", dot: "bg-safety-critical" },
 } as const;
+
+const MN_DIGITS = ["тэг", "нэг", "хоёр", "гурав", "дөрөв", "тав", "зургаа", "долоо", "найм", "ес"];
+
+// Chimege TTS silently drops digits, so spell coordinates out as Mongolian words
+// (e.g. "47.92" → "дөрөв долоо цэг ес хоёр") so the operator actually hears them.
+function coordsToMn(s: string): string {
+  return s
+    .split("")
+    .map((ch) => {
+      if (ch >= "0" && ch <= "9") return MN_DIGITS[Number(ch)];
+      if (ch === ".") return "цэг";
+      if (ch === "-") return "хасах";
+      return "";
+    })
+    .filter(Boolean)
+    .join(" ");
+}
 
 function formatDuration(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);

@@ -24,15 +24,25 @@ export async function POST(req: Request) {
 
   void incidentId;
   const twiml = new twilio.twiml.VoiceResponse();
-  twiml.play(`${origin}/api/voice/sos-audio?text=${encodeURIComponent(messageMn.trim())}`);
-  // Resume listening to the operator (keeps the line open too).
+  // Repeat "Орчуулж байна" (translating) with a 1s gap between each so the operator
+  // knows to wait, then read the translated message.
   if (origin) {
-    twiml.gather({
-      input: ["speech"],
-      language: "mn-MN",
-      speechTimeout: "auto",
+    const fillerUrl = `${origin}/api/voice/sos-audio?text=${encodeURIComponent("Орчуулж байна")}`;
+    for (let i = 0; i < 2; i++) {
+      twiml.play(fillerUrl);
+      twiml.pause({ length: 1 });
+    }
+  }
+  twiml.play(`${origin}/api/voice/sos-audio?text=${encodeURIComponent(messageMn.trim())}`);
+  // Record the operator's reply (Whisper transcribes the Mongolian in /heard).
+  if (origin) {
+    twiml.record({
       action: `${origin}/api/voice/heard?id=${incidentId ?? ""}`,
       method: "POST",
+      maxLength: 30,
+      timeout: 4,
+      playBeep: false,
+      trim: "trim-silence",
     });
   } else {
     twiml.pause({ length: 3600 });
