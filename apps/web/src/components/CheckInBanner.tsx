@@ -1,41 +1,37 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 export function CheckInBanner() {
   const [show, setShow] = useState(false);
   const [incidentId, setIncidentId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
 
+  // Poll the incident for the admin's "Are you okay?" flag. Polling (not Supabase
+  // Realtime) so it works without the table being on the realtime publication.
+  // The id is re-read every tick so it's picked up even if the call started after
+  // this banner mounted.
   useEffect(() => {
     if (window.location.pathname.startsWith("/admin")) return;
-    const id = localStorage.getItem("sos_incident_id");
-    if (!id) return;
-    setIncidentId(id);
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-    const channel = supabase
-      .channel(`checkin_${id}`)
-      .on("postgres_changes", {
-        event: "UPDATE",
-        schema: "public",
-        table: "sos_incidents",
-        filter: `id=eq.${id}`,
-      }, (payload) => {
-        const row = payload.new as { check_in_requested?: boolean; status?: string };
+    const poll = async () => {
+      const id = localStorage.getItem("sos_incident_id");
+      if (!id) return;
+      setIncidentId(id);
+      try {
+        const res = await fetch(`/api/sos/status?id=${id}`);
+        if (!res.ok) return;
+        const row = (await res.json()) as { check_in_requested?: boolean; status?: string };
         if (row.check_in_requested) setShow(true);
         if (row.status === "resolved") {
           setShow(false);
           localStorage.removeItem("sos_incident_id");
         }
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+      } catch { /* ignore transient poll errors */ }
+    };
+    poll();
+    const t = setInterval(poll, 4000);
+    return () => clearInterval(t);
   }, []);
 
   if (!show || !incidentId) return null;

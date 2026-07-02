@@ -435,7 +435,7 @@ export const sos = {
       message: "I am lost and need help finding my way to safety.",
       messageMn: "Би төөрчихсөн, аюулгүй газар очих замаа олоход тусламж хэрэгтэй байна.",
       service: "Help line",
-      serviceNumber: "108",
+      serviceNumber: "103",
     },
     {
       id: "sos-3",
