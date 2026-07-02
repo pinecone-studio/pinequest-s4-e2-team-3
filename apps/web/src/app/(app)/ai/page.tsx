@@ -6,7 +6,7 @@ import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChatIcon, MicIcon, PencilIcon, SendIcon } from "@/components/icons";
+import { ChatIcon, MapPinIcon, MicIcon, PencilIcon, SendIcon, StarIcon, WalkIcon } from "@/components/icons";
 import { GuideAvatar, type GuideAvatarState } from "@/components/GuideAvatar";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { guide } from "@/lib/mockData";
