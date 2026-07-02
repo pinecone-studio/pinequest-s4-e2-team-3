@@ -264,12 +264,15 @@ interface TextApiPlace {
   location?: { latitude?: number; longitude?: number };
   photos?: { name: string }[];
   formattedAddress?: string;
+  editorialSummary?: { text?: string };
   types?: string[];
 }
 
 function guessCategory(types: string[] = []): { label: string; tone: BrowsePlace["categoryTone"] } {
   if (types.some((t) => ["restaurant","cafe","bakery","fast_food_restaurant","meal_takeaway","food"].includes(t)))
     return { label: "Food", tone: "amber" };
+  if (types.some((t) => ["place_of_worship","monastery","shrine","church","mosque","temple","hindu_temple"].includes(t)))
+    return { label: "Temple", tone: "purple" };
   if (types.some((t) => ["museum","art_gallery","cultural_center"].includes(t)))
     return { label: "Culture", tone: "purple" };
   if (types.some((t) => ["park","national_park"].includes(t)))
@@ -277,7 +280,7 @@ function guessCategory(types: string[] = []): { label: string; tone: BrowsePlace
   if (types.some((t) => ["historical_landmark","monument"].includes(t)))
     return { label: "History", tone: "blue" };
   if (types.some((t) => ["tourist_attraction","observation_deck"].includes(t)))
-    return { label: "Viewpoint", tone: "green" };
+    return { label: "Attraction", tone: "green" };
   return { label: "Place", tone: "blue" };
 }
 
@@ -298,7 +301,7 @@ export async function searchPlacesByText(
           "Content-Type": "application/json",
           "X-Goog-Api-Key": GOOGLE_KEY,
           "X-Goog-FieldMask":
-            "places.id,places.displayName,places.rating,places.photos,places.location,places.formattedAddress,places.types",
+            "places.id,places.displayName,places.rating,places.photos,places.location,places.formattedAddress,places.editorialSummary,places.types",
         },
         body: JSON.stringify({
           textQuery: query,
@@ -331,7 +334,7 @@ export async function searchPlacesByText(
             rating: p.rating ?? 4.0,
             distance: `${distKm.toFixed(1)} km`,
             walkTime: `${walkMinutes} min`,
-            description: p.formattedAddress ?? "",
+            description: p.editorialSummary?.text ?? p.formattedAddress ?? "",
             imageUrl,
             latitude: lat,
             longitude: lng,
