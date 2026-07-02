@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, memo, useCallback } from "react";
+import Image from "next/image";
 import { APIProvider, Map, AdvancedMarker } from "@vis.gl/react-google-maps";
 
 const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
@@ -264,8 +265,13 @@ export default function AdminPlacesPage() {
             </label>
             {form.imageUrl && (
               <div className="mt-2 flex items-center gap-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={form.imageUrl} alt="preview" className="h-16 w-24 rounded-lg object-cover border border-gray-200" />
+                <Image
+                  src={form.imageUrl}
+                  alt="preview"
+                  width={96}
+                  height={64}
+                  className="h-16 w-24 rounded-lg object-cover border border-gray-200"
+                />
                 <button onClick={() => set("imageUrl", "")} className="text-xs text-red-400 hover:text-red-600">Устгах</button>
               </div>
             )}

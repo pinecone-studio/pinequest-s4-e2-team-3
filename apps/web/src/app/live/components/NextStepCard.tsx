@@ -27,7 +27,7 @@ export function NextStepCard({
   onClose: () => void;
 }) {
   return (
-    <div className="pointer-events-auto animate-rise mt-3 rounded-3xl bg-white p-3 shadow-sm dark:bg-white/[0.07] dark:shadow-none">
+    <div className="pointer-events-auto animate-rise mt-3 rounded-3xl bg-white p-3 shadow-sm backdrop-blur-md dark:bg-[#131b2c]/90 dark:shadow-none dark:ring-1 dark:ring-white/10">
       <div className="flex items-center justify-between px-1 pb-2">
         <p className="text-[11px] font-bold uppercase tracking-wide text-ink-muted dark:text-white/50">
           {nextStop ? `Next stop: ${nextStop.name}` : "You're at your last stop"}

@@ -115,9 +115,18 @@ export function LiveExperience({
       advanceStop,
     });
 
+  // The stop the traveller is heading to NOW — what the "what's next?" card and
+  // "Take me there" point at. For a normal user it's the first stop they haven't
+  // reached yet, so before reaching stop 1 the card offers stop 1 (not stop 2), in
+  // step with the map's connector line and the proximity arrival. Demo keeps the
+  // old "stop after the current index" so its walkthrough is byte-for-byte the same.
+  const cardTarget = demo
+    ? nextStop
+    : activeRoute?.stops.find((s) => !arrivedStopIds.includes(s.id)) ?? null;
+
   const actions = useGuideActions({
     target,
-    nextStop,
+    nextStop: cardTarget,
     announce,
     ask,
     setSuggestions,
@@ -230,7 +239,7 @@ export function LiveExperience({
         onPickIntent={actions.pickIntent}
         onIntentBack={actions.intentBack}
         cardOpen={cardOpen}
-        nextStop={nextStop}
+        nextStop={cardTarget}
         stops={activeRoute?.stops ?? []}
         currentStopId={currentStop?.id ?? null}
         fullPlanOpen={fullPlanOpen}

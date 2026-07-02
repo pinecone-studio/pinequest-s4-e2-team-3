@@ -1,9 +1,12 @@
 import twilio from "twilio";
+import { rateLimit, clientIp, rateLimitResponse } from "@/lib/rateLimit";
 
 // Mid-call: redirect an in-progress SOS call to speak a new Mongolian phrase to
 // the operator (Chimege via <Play>), then hold the line open for the next one —
 // so the traveller can keep the conversation going through translation.
 export async function POST(req: Request) {
+  if (!rateLimit(`voice-say:${clientIp(req)}`, 20, 60_000)) return rateLimitResponse();
+
   const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
   if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
     return Response.json({ ok: false, error: "twilio_not_configured" }, { status: 503 });

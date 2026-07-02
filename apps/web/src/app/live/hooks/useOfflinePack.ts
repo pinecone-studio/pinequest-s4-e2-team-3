@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { hasPack, savePack } from "@/lib/offline";
+import { useLocationStore } from "@/stores/locationStore";
 import type { DemoRoute } from "@/types";
 
 // Owns the offline travel pack for the active route: whether it's saved, the
@@ -15,6 +16,11 @@ export function useOfflinePack(
   const [saving, setSaving] = useState(false);
   const [savingProgress, setSavingProgress] = useState<{ done: number; total: number } | null>(null);
   const savingRef = useRef(false);
+  // Live position, read at save time so the pack caches a road route from where the
+  // traveller actually is to the first stop (for the offline approach connector).
+  const position = useLocationStore((s) => s.coordinates);
+  const positionRef = useRef(position);
+  positionRef.current = position;
 
   // Build (or rebuild) the offline pack: AI narration text + voice audio + map.
   const downloadPack = async () => {
@@ -23,7 +29,7 @@ export function useOfflinePack(
     setSaving(true);
     setSavingProgress({ done: 0, total: activeRoute.stops.length });
     try {
-      await savePack(activeRoute, (done, total) => setSavingProgress({ done, total }));
+      await savePack(activeRoute, (done, total) => setSavingProgress({ done, total }), positionRef.current);
       setOfflineReady(activeRoute.id);
     } finally {
       savingRef.current = false;

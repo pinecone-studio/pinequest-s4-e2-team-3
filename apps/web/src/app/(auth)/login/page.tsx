@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase";
-import { DEMO_EMAIL, DEMO_PASSWORD } from "@/lib/demoAuth";
+import { DEMO_EMAIL, DEMO_PASSWORD, JUDGE_ACCOUNTS } from "@/lib/demoAuth";
 import { SparklesIcon } from "@/components/icons";
 
 export default function LoginPage() {
@@ -99,6 +99,21 @@ export default function LoginPage() {
           {/* Presentation shortcut: skip the credentials form and jump straight
               into the app demo. Handy when walking through the product live. */}
           <div className="mt-6 border-t border-sand-200 pt-6">
+            {/* One demo login per judge (1-6) — same demo experience, separate
+                accounts so their saved trips don't collide. */}
+            <div className="mb-3 flex gap-2">
+              {JUDGE_ACCOUNTS.map((acc, i) => (
+                <button
+                  key={acc.email}
+                  type="button"
+                  onClick={() => void signIn(acc.email, acc.password)}
+                  disabled={submitting}
+                  className="flex-1 rounded-xl border border-primary-600 py-3 font-semibold text-primary-600 transition-colors hover:bg-primary-50 active:scale-[0.97] disabled:opacity-60"
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </div>
             <button
               type="button"
               onClick={enterDemo}

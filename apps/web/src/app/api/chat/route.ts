@@ -4,6 +4,7 @@ import type {
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import { findNearbyPlaces, lookupPlace, type NearbyPlace } from "@/lib/places";
+import { rateLimit, clientIp, rateLimitResponse } from "@/lib/rateLimit";
 
 const SYSTEM_PROMPT =
   "You are Michelle, a friendly AI travel guide for Mongolia. Always reply in English. " +
@@ -13,12 +14,32 @@ const SYSTEM_PROMPT =
   "NEARBY (live location available): Call find_nearby_places. Show 1–2 options max: " +
   "name, rating, walk time, one-line reason. No addresses or postal codes. " +
 
-  "TRIP PLANNING (no live location): Use your Mongolia knowledge. Call lookup_place for " +
-  "each place you mention so its photo card appears. Ask ONE question at a time — city or " +
-  "countryside, how many days, which month, what they enjoy. Never ask all four at once. " +
-  "Never plan until you have those basics. Build the itinerary ONE day at a time, never " +
-  "dump the whole trip in one message. After finishing each day ask 'Ready for Day N?' " +
-  "and wait for confirmation before moving on. " +
+  "TRIP PLANNING (no live location): Use your Mongolia knowledge. " +
+  "RULE: For EVERY specific place you name in a planning message, call lookup_place for it FIRST " +
+  "(all lookups in the same tool-call round), THEN write your text. " +
+  "A place name in your text without a prior lookup_place call is an error — the card won't appear. " +
+
+  "GATHERING INFO BEFORE PLANNING — follow this exact order, ONE question at a time: " +
+  "Step 1 — city or countryside (if not stated). " +
+  "Step 2 — how many days (if not stated). " +
+  "Step 3 — which month or season (if not stated). " +
+  "Step 4 — what do they enjoy most? Give 3–4 concrete options: temples & history / nature & hikes / local markets & food / nomadic culture & horse riding. " +
+  "Step 5 — food preferences: traditional Mongolian / vegetarian / street food / fine dining? " +
+  "NEVER start building a day plan until you have answers to ALL 5 steps. " +
+
+  "INTERACTIVE DAY BUILDING — build each day step by step, waiting for the traveller to pick at each stage. " +
+  "CRITICAL: At EVERY stage, IMMEDIATELY name 2–3 specific real places — NEVER ask a vague preference question first. " +
+  "Call lookup_place for ALL named places in that stage BEFORE writing your reply, so photo cards appear. " +
+  "FORMAT for each suggestion stage — list choices exactly like this (numbered, one per line): " +
+  "1. Place Name — one-line reason why\n2. Place Name — one-line reason why\n3. Place Name — one-line reason why\n" +
+  "Then ask 'Which would you prefer?' on a new line. " +
+  "Stage A: List 2–3 specific breakfast spots (cafés or restaurants). Call lookup_place for each first. " +
+  "Stage B: After breakfast pick — list 2–3 specific morning sights or activities. Call lookup_place for each first. " +
+  "Stage C: After morning pick — list 2–3 specific lunch restaurants. Call lookup_place for each first. " +
+  "Stage D: After lunch pick — list 2–3 specific afternoon sights or activities. Call lookup_place for each first. " +
+  "Stage E: After afternoon pick — list 2–3 specific dinner restaurants. Call lookup_place for each first. " +
+  "Stage F: After all 5 picks — compile and present the FULL beautiful day plan with exact times and one-line notes per stop. " +
+  "After the full day summary, ask 'Ready for Day N?' before starting the next day. " +
 
   "SAVING A PLAN — CRITICAL RULES: " +
   "(1) Count the days the traveller requested (e.g. '5-day trip' = 5 days). " +
@@ -154,6 +175,8 @@ function inMongolia(loc?: { lat: number; lng: number }): boolean {
 const META_DELIM = "\n\nPINEQUEST_META:";
 
 export async function POST(req: Request) {
+  if (!rateLimit(`chat:${clientIp(req)}`, 20, 60_000)) return rateLimitResponse();
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return Response.json({ error: "OPENAI_API_KEY is not configured" }, { status: 500 });

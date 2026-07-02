@@ -7,8 +7,13 @@ async function bootstrap() {
 
   app.setGlobalPrefix("api/v1");
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+
+  // Explicit origins always win. Without ALLOWED_ORIGINS set, stay permissive
+  // in dev (so local tooling keeps working) but closed in production, rather
+  // than silently serving every origin on a live deployment.
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",");
   app.enableCors({
-    origin: process.env.ALLOWED_ORIGINS?.split(",") ?? "*",
+    origin: allowedOrigins ?? (process.env.NODE_ENV === "production" ? false : "*"),
   });
 
   const port = process.env.PORT ?? 3000;

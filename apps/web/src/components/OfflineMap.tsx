@@ -1,11 +1,56 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import type * as Leaflet from "leaflet";
 import { boundsForStops, getTile, tileUrl, zoomRange, type TileStyle } from "@/lib/offlineTiles";
 import { decodePolyline, type BusLeg } from "@/lib/transit";
+import { haversineMeters } from "@/lib/geo";
 import type { Coords, RouteStop } from "@/types";
+
+// Offline has no Directions API, so a "take me there" line can only follow the
+// plan's CACHED road geometry (saved when online) — which covers the route between
+// stops, not arbitrary ground. So we split the guide into two honest parts:
+//   • road  — the slice of the cached route polyline the traveller will actually
+//              walk/drive (between the points nearest them and nearest the target),
+//   • gap   — the straight hop from their real position to where they join that
+//              route. Offline we genuinely can't route this bit, so the UI draws it
+//              dashed rather than pretending it's a road. On/near the route the gap
+//              is ~0 and it's all road; far off (e.g. an inaccurate desktop fix) the
+//              dashed gap is honest instead of a solid wrong line.
+function roadSegment(
+  encoded: string | null,
+  start: Coords,
+  end: Coords,
+): { gap: [number, number][]; road: [number, number][] } {
+  const s: [number, number] = [start.latitude, start.longitude];
+  const e: [number, number] = [end.latitude, end.longitude];
+  if (!encoded) return { gap: [s, e], road: [] };
+  const path = decodePolyline(encoded);
+  if (path.length < 2) return { gap: [s, e], road: [] };
+
+  const nearest = (c: Coords) => {
+    let best = 0;
+    let bestD = Infinity;
+    path.forEach((p, i) => {
+      const d = haversineMeters(c, p);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    return best;
+  };
+
+  let a = nearest(start);
+  let b = nearest(end);
+  if (a > b) [a, b] = [b, a];
+  const road = path.slice(a, b + 1).map((p) => [p.latitude, p.longitude] as [number, number]);
+  // Straight hop from the traveller to where they join the cached route. The road
+  // slice already ends at the point nearest the target (a plan stop on the route).
+  const join = road[0] ?? e;
+  return { gap: [s, join], road };
+}
 
 // Interactive offline map: renders cached CartoDB tiles from IndexedDB (with a
 // live network fallback), so the traveller can zoom/pan and see their live GPS
@@ -15,19 +60,32 @@ import type { Coords, RouteStop } from "@/types";
 export default function OfflineMap({
   stops,
   encodedPath,
+  approachPath = null,
   position,
   theme,
+  targetStop = null,
+  focusStops = null,
   returnTarget = null,
   returnMode = "drive",
   busLegs = null,
 }: {
   stops: RouteStop[];
   encodedPath: string | null;
+  // Focused view: the two stops whose leg is drawn (current → next). Empty array =
+  // only the approach connector (heading to stop 1). `null` = the whole route.
+  focusStops?: { latitude: number; longitude: number }[] | null;
+  // Cached road route from the download-time position to the first stop — used for
+  // the approach connector so it follows roads offline, not a straight line.
+  approachPath?: string | null;
   position: Coords | null;
   theme: "dark" | "light";
+  // The stop the traveller is heading to now — an automatic guide line is drawn to
+  // it (following the cached road), mirroring the online map's approach line, so the
+  // offline map isn't empty before "take me there" is tapped.
+  targetStop?: { latitude: number; longitude: number; arrivalRadius?: number } | null;
   // The recommended detour: a guide line from here to returnTarget (drive/walk/
   // transit), or a real bus route (busLegs). Drawn as a Leaflet overlay so the
-  // offline map matches the online one. Straight line offline — no road geometry.
+  // offline map matches the online one.
   returnTarget?: Coords | null;
   returnMode?: "drive" | "transit" | "walk";
   busLegs?: BusLeg[] | null;
@@ -37,10 +95,23 @@ export default function OfflineMap({
   const posRef = useRef<Leaflet.CircleMarker | null>(null);
   const layerRef = useRef<Leaflet.GridLayer | null>(null);
   const overlayRef = useRef<Leaflet.LayerGroup | null>(null);
+  // The route-line layer (full route or focused leg), redrawn by its own effect so
+  // toggling focus / advancing a leg swaps the line without rebuilding the map.
+  const routeLineRef = useRef<Leaflet.LayerGroup | null>(null);
+  // Stable key for the focused leg (focusStops is a fresh array each render).
+  const focusKey = focusStops?.map((s) => `${s.latitude},${s.longitude}`).join("|") ?? "full";
   // Current position read live by the detour effect without re-running on every
   // GPS tick (the guide line is drawn once per recommendation, not per step).
   const positionRef = useRef(position);
   positionRef.current = position;
+  // Rounded to ~100m so the guide overlay redraws as the traveller moves toward the
+  // stop, but not on every GPS tick.
+  const posLat100 = position ? Math.round(position.latitude * 1000) / 1000 : null;
+  const posLng100 = position ? Math.round(position.longitude * 1000) / 1000 : null;
+  // Flips true once the (async-built) Leaflet map exists, so the guide-overlay
+  // effect below re-runs and draws even when the position is static — otherwise it
+  // ran once before the map was ready, bailed, and never redrew.
+  const [mapReady, setMapReady] = useState(false);
   // Current tile style, read live by createTile so a theme change + redraw swaps
   // the tiles without rebuilding the map.
   const styleRef = useRef<TileStyle>(theme === "dark" ? "dark" : "voyager");
@@ -98,28 +169,8 @@ export default function OfflineMap({
       });
       layer.addTo(map);
 
-      // Route line — road geometry when we have it, else straight through stops
-      // (so the line never disappears). White casing under blue reads on any tiles.
-      const pts: [number, number][] = encodedPath
-        ? decodePolyline(encodedPath).map((p) => [p.latitude, p.longitude])
-        : stops.map((s) => [s.latitude, s.longitude]);
-      if (pts.length > 1) {
-        L.polyline(pts, { color: "#ffffff", weight: 8, opacity: 0.9 }).addTo(map);
-        L.polyline(pts, { color: "#2f6bff", weight: 4, opacity: 1 }).addTo(map);
-      }
-
-      // Stop markers (lettered tooltip).
-      stops.forEach((s, i) => {
-        L.circleMarker([s.latitude, s.longitude], {
-          radius: 7,
-          color: "#ffffff",
-          weight: 2,
-          fillColor: "#2f6bff",
-          fillOpacity: 1,
-        })
-          .bindTooltip(`${String.fromCharCode(65 + (i % 26))} · ${s.name}`)
-          .addTo(map);
-      });
+      // Route line + stop markers are drawn by their own effect below (focus-aware),
+      // so they swap between the full route and the current leg without a rebuild.
 
       // Live position marker (updated by the effect below).
       if (position) {
@@ -136,14 +187,18 @@ export default function OfflineMap({
       const all = stops.map((s) => [s.latitude, s.longitude] as [number, number]);
       if (all.length === 1) map.setView(all[0], 14);
       else if (all.length > 1) map.fitBounds(all, { padding: [40, 40] });
+
+      if (!cancelled) setMapReady(true); // map exists → let the overlay effect draw
     })();
 
     return () => {
       cancelled = true;
+      setMapReady(false);
       mapRef.current?.remove();
       mapRef.current = null;
       posRef.current = null;
       layerRef.current = null;
+      routeLineRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -154,9 +209,86 @@ export default function OfflineMap({
     layerRef.current?.redraw();
   }, [theme]);
 
-  // Recommended detour overlay: a real bus route (busLegs) or a straight guide
-  // line here → returnTarget, plus a red destination marker. Redrawn only when
-  // the recommendation changes, not on every position tick.
+  // Route line: the whole route (full view) or just the current leg (focused). The
+  // leg follows the cached road by slicing the route polyline between its two stops;
+  // when no geometry is cached it falls back to a straight line so it never vanishes.
+  // Redrawn (and re-fitted) when the leg changes, not on every render.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    let cancelled = false;
+    void (async () => {
+      const L = (await import("leaflet")).default;
+      if (cancelled || !mapRef.current) return;
+      routeLineRef.current?.remove();
+      const group = L.layerGroup().addTo(map);
+      routeLineRef.current = group;
+
+      let pts: [number, number][] = [];
+      if (focusStops) {
+        if (focusStops.length >= 2) {
+          const { road } = roadSegment(encodedPath, focusStops[0], focusStops[1]);
+          pts = road.length > 1 ? road : focusStops.map((s) => [s.latitude, s.longitude]);
+        }
+      } else {
+        pts = encodedPath
+          ? decodePolyline(encodedPath).map((p) => [p.latitude, p.longitude])
+          : stops.map((s) => [s.latitude, s.longitude]);
+      }
+
+      // White casing under blue reads on any tiles.
+      if (pts.length > 1) {
+        L.polyline(pts, { color: "#ffffff", weight: 8, opacity: 0.9 }).addTo(group);
+        L.polyline(pts, { color: "#2f6bff", weight: 4, opacity: 1 }).addTo(group);
+      }
+
+      // Stop markers (lettered tooltip). Focused view shows only the leg's stops
+      // (plus the target); full view (focusStops null) shows them all.
+      const shown = focusStops
+        ? new Set(
+            [...focusStops, ...(targetStop ? [targetStop] : [])].map(
+              (c) => `${c.latitude},${c.longitude}`,
+            ),
+          )
+        : null;
+      stops.forEach((s, i) => {
+        if (shown && !shown.has(`${s.latitude},${s.longitude}`)) return;
+        L.circleMarker([s.latitude, s.longitude], {
+          radius: 7,
+          color: "#ffffff",
+          weight: 2,
+          fillColor: "#2f6bff",
+          fillOpacity: 1,
+        })
+          .bindTooltip(`${String.fromCharCode(65 + (i % 26))} · ${s.name}`)
+          .addTo(group);
+      });
+
+      // Frame the focused leg; on switching back to full view, frame the whole route.
+      if (focusStops) {
+        if (focusStops.length >= 2) {
+          map.fitBounds(
+            focusStops.map((s) => [s.latitude, s.longitude] as [number, number]),
+            { padding: [50, 50] },
+          );
+        }
+      } else {
+        const all = stops.map((s) => [s.latitude, s.longitude] as [number, number]);
+        if (all.length > 1) map.fitBounds(all, { padding: [40, 40] });
+        else if (all.length === 1) map.setView(all[0], 14);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, focusKey, encodedPath, targetStop?.latitude, targetStop?.longitude]);
+
+  // Guide overlay: a real bus route (busLegs), a "take me there" line to
+  // returnTarget (+ red marker), or — with neither — an automatic approach line to
+  // the current target stop, so the offline map shows the way to the next stop just
+  // like the online one. Redrawn when the recommendation changes or the traveller
+  // moves ~100m (posLat100/posLng100), not on every GPS tick.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -164,7 +296,8 @@ export default function OfflineMap({
       const L = (await import("leaflet")).default;
       if (!mapRef.current) return;
       overlayRef.current?.remove();
-      if (!returnTarget && !(busLegs && busLegs.length)) {
+      const hasBus = !!(busLegs && busLegs.length);
+      if (!returnTarget && !hasBus && !targetStop) {
         overlayRef.current = null;
         return;
       }
@@ -188,16 +321,38 @@ export default function OfflineMap({
         const color =
           returnMode === "transit" ? "#10B981" : returnMode === "walk" ? "#4F46E5" : "#3B82F6";
         if (start) {
-          const line: [number, number][] = [
-            [start.latitude, start.longitude],
-            [returnTarget.latitude, returnTarget.longitude],
-          ];
-          L.polyline(
-            line,
-            returnMode === "walk"
-              ? { color, weight: 4, opacity: 0.9, dashArray: "2 8" }
-              : { color, weight: 4, opacity: 0.95 },
-          ).addTo(group);
+          // Cached road part solid (or dashed for walking); the off-route hop from
+          // the traveller to the route drawn dashed — offline can't route that bit.
+          // To the first stop, prefer the cached approach geometry.
+          const first = stops[0];
+          const toFirst =
+            !!first && returnTarget.latitude === first.latitude && returnTarget.longitude === first.longitude;
+          const geom = toFirst && approachPath ? approachPath : encodedPath;
+          const { gap, road } = roadSegment(geom, start, returnTarget);
+          const solid = { color, weight: 4, opacity: 0.95 };
+          const dashed = { color, weight: 4, opacity: 0.85, dashArray: "2 8" };
+          if (road.length > 1) L.polyline(road, returnMode === "walk" ? dashed : solid).addTo(group);
+          if (gap.length > 1) L.polyline(gap, dashed).addTo(group);
+        }
+      } else if (targetStop) {
+        // Automatic approach to the current target stop (violet, matching the online
+        // map). Follows the cached road; the off-route hop is dashed. Hidden once
+        // within the stop's arrival radius (they're basically there).
+        const start = positionRef.current;
+        const away = start && haversineMeters(start, targetStop) > (targetStop.arrivalRadius ?? 150);
+        if (start && away) {
+          // Heading to the very first stop → follow the road cached from the
+          // download-time position (best offline approximation); later stops use the
+          // inter-stop route geometry.
+          const first = stops[0];
+          const toFirst =
+            !!first && targetStop.latitude === first.latitude && targetStop.longitude === first.longitude;
+          const geom = toFirst && approachPath ? approachPath : encodedPath;
+          const { gap, road } = roadSegment(geom, start, targetStop);
+          const solid = { color: "#7C3AED", weight: 4, opacity: 0.95 };
+          const dashed = { color: "#7C3AED", weight: 4, opacity: 0.85, dashArray: "2 8" };
+          if (road.length > 1) L.polyline(road, solid).addTo(group);
+          if (gap.length > 1) L.polyline(gap, dashed).addTo(group);
         }
       }
 
@@ -212,7 +367,19 @@ export default function OfflineMap({
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [returnTarget?.latitude, returnTarget?.longitude, returnMode, busLegs]);
+  }, [
+    returnTarget?.latitude,
+    returnTarget?.longitude,
+    returnMode,
+    busLegs,
+    encodedPath,
+    approachPath,
+    targetStop?.latitude,
+    targetStop?.longitude,
+    posLat100,
+    posLng100,
+    mapReady,
+  ]);
 
   // Move the live-position marker as GPS updates (without recentering the map,
   // so the traveller stays in control of pan/zoom).

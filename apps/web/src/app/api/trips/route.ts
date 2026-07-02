@@ -82,18 +82,33 @@ export async function POST(req: Request) {
   return Response.json({ saved: true, id: data.id });
 }
 
-// PATCH — update a plan's completion (done_stops) for the owner.
+// PATCH — update a plan's completion (done_stops) and/or content (stops, places, title, summary).
 export async function PATCH(req: Request) {
   const userId = await currentUserId();
   if (!userId) return Response.json({ ok: false }, { status: 401 });
   if (!supabaseAdmin) return Response.json({ ok: false }, { status: 500 });
 
-  const { id, doneStops } = (await req.json()) as { id?: string; doneStops?: string[] };
+  const body = (await req.json()) as {
+    id?: string;
+    doneStops?: string[];
+    stops?: unknown[];
+    places?: unknown[];
+    title?: string;
+    summary?: string;
+  };
+  const { id } = body;
   if (!id) return Response.json({ ok: false, error: "Missing id" }, { status: 400 });
+
+  const patch: Record<string, unknown> = {};
+  if (body.doneStops !== undefined) patch.done_stops = body.doneStops;
+  if (body.stops !== undefined) patch.stops = body.stops;
+  if (body.places !== undefined) patch.places = body.places;
+  if (body.title !== undefined) patch.title = body.title;
+  if (body.summary !== undefined) patch.summary = body.summary;
 
   const { error } = await supabaseAdmin
     .from("trip_plans")
-    .update({ done_stops: doneStops ?? [] })
+    .update(patch)
     .eq("id", id)
     .eq("user_id", userId);
   if (error) return Response.json({ ok: false, error: error.message }, { status: 500 });

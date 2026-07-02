@@ -3,6 +3,7 @@
 import { useLiveStore } from "@/stores/liveStore";
 import { useLocation } from "@/hooks/useLocation";
 import { useIsDemo } from "@/hooks/useIsDemo";
+import { useOnlineStatus } from "@/context/OnlineStatus";
 import { useLiveTheme } from "./hooks/useLiveTheme";
 import { LiveBackground } from "./components/LiveBackground";
 import { LiveExperience } from "./components/LiveExperience";
@@ -15,6 +16,8 @@ import { RoutePicker } from "./components/RoutePicker";
 export default function LiveGuidePage() {
   const activeRoute = useLiveStore((s) => s.activeRoute);
   const mapType = useLiveStore((s) => s.mapType);
+  const forceOffline = useLiveStore((s) => s.forceOffline);
+  const { online } = useOnlineStatus();
   // Begin watching real GPS as soon as the screen mounts.
   useLocation();
   // Demo (sevo) account keeps the auto-walk / presenter simulation; everyone else
@@ -24,8 +27,12 @@ export default function LiveGuidePage() {
 
   // On satellite, the dark chrome (white text + dark scrim) reads best over the
   // imagery — so force the dark theme there regardless of the toggle. Off
-  // satellite, the toggle works normally.
-  const satellite = !!activeRoute && mapType === "hybrid";
+  // satellite, the toggle works normally. But OFFLINE there is no satellite layer
+  // (the offline map is light/dark CartoDB tiles that follow the theme), so the
+  // "hybrid" selection must NOT force dark chrome offline — otherwise white text
+  // lands on the light offline map and washes out.
+  const offline = forceOffline || !online;
+  const satellite = !!activeRoute && mapType === "hybrid" && !offline;
   const isDark = theme === "dark" || satellite;
 
   // The `dark` class lives on the OUTER element; the themed colours live on the

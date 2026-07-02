@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { rateLimit, clientIp, rateLimitResponse } from "@/lib/rateLimit";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -8,6 +9,8 @@ const LANG_NAME: Record<string, string> = {
 };
 
 export async function POST(req: Request) {
+  if (!rateLimit(`translate:${clientIp(req)}`, 30, 60_000)) return rateLimitResponse();
+
   const { text, from, to } = await req.json() as {
     text: string;
     from: "mn" | "en";

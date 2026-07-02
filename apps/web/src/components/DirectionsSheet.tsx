@@ -72,12 +72,14 @@ export function DirectionsSheet({ spot, onClose, origin: originProp }: Props) {
   useEffect(() => {
     if (originProp) return;
     if (!navigator.geolocation) { setGeoOrigin(DEFAULT); return; }
+    // Fall back to city centre after 5 s so the map never stays blank.
+    const timer = setTimeout(() => setGeoOrigin((prev) => prev ?? DEFAULT), 5000);
     const id = navigator.geolocation.watchPosition(
       (p) => setGeoOrigin({ lat: p.coords.latitude, lng: p.coords.longitude }),
       () => setGeoOrigin(DEFAULT),
-      { enableHighAccuracy: true, maximumAge: 30000 },
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: 8000 },
     );
-    return () => navigator.geolocation.clearWatch(id);
+    return () => { navigator.geolocation.clearWatch(id); clearTimeout(timer); };
   }, [originProp]);
 
   useEffect(() => {
@@ -107,7 +109,7 @@ export function DirectionsSheet({ spot, onClose, origin: originProp }: Props) {
 
       {/* Map — top 55% */}
       <div className="relative flex-none bg-sand-100" style={{ height: "55%" }}>
-        {origin && destination ? (
+        {destination ? (
           <APIProvider apiKey={API_KEY}>
             <Map
               defaultCenter={destination}
@@ -120,12 +122,14 @@ export function DirectionsSheet({ spot, onClose, origin: originProp }: Props) {
               zoomControl={false}
               style={{ width: "100%", height: "100%" }}
             >
-              <RouteLayer origin={origin} destination={destination} mode={mode} onDuration={setRouteDuration} onDistanceM={setRouteDistanceM} />
+              {origin && (
+                <RouteLayer origin={origin} destination={destination} mode={mode} onDuration={setRouteDuration} onDistanceM={setRouteDistanceM} />
+              )}
             </Map>
           </APIProvider>
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-ink-muted">
-            Getting your location…
+            Location not available for this place
           </div>
         )}
 
