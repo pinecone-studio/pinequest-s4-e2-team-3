@@ -1,6 +1,12 @@
 import twilio from "twilio";
 import { rateLimit, clientIp, rateLimitResponse } from "@/lib/rateLimit";
 
+// Greets the operator right after they pick up — a foreign tourist is calling
+// through the app's translator, so the line would otherwise be silent for the
+// first few seconds and they wouldn't know what's happening.
+const INTRO_MN =
+  "Сайн байна уу. Энэ бол орчуулгын программаар дамжуулж буй гадаадын жуулчны яаралтай дуудлага. Түр хүлээнэ үү.";
+
 // Places a REAL outbound call from the server via Twilio's REST API and, on
 // answer, speaks the SOS message to the operator IN MONGOLIAN using Chimege TTS
 // (via <Play> of /api/voice/sos-audio) — so the traveller's language barrier is
@@ -37,6 +43,12 @@ export async function POST(req: Request) {
   void message;
   const twiml = new twilio.twiml.VoiceResponse();
 
+  // Wait a beat after pickup, then greet the operator so the call isn't silent.
+  if (origin) {
+    twiml.pause({ length: 1 });
+    twiml.play(`${origin}/api/voice/sos-audio?text=${encodeURIComponent(INTRO_MN)}`);
+  }
+
   // If the traveller pre-wrote a message (the "describe it in your own words"
   // box), read it to the operator once on answer. Otherwise stay silent and let
   // them drive with "Say more". Either way we then listen for the operator.
@@ -44,15 +56,16 @@ export async function POST(req: Request) {
     twiml.play(`${origin}/api/voice/sos-audio?text=${encodeURIComponent(messageMn.trim())}`);
   }
 
-  // Listen to the operator's reply (transcribe → translate → show via
-  // /api/voice/heard), which also keeps the line open for follow-ups.
+  // Record the operator's reply (Whisper transcribe → translate → show via
+  // /api/voice/heard) — Twilio can't do Mongolian speech recognition itself.
   if (origin) {
-    twiml.gather({
-      input: ["speech"],
-      language: "mn-MN",
-      speechTimeout: "auto",
+    twiml.record({
       action: `${origin}/api/voice/heard?id=${incidentId ?? ""}`,
       method: "POST",
+      maxLength: 30,
+      timeout: 4,
+      playBeep: false,
+      trim: "trim-silence",
     });
   } else {
     twiml.pause({ length: 3600 });
