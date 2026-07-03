@@ -761,8 +761,10 @@ function newChat() {
               idx === messages.length - 1 &&
               !isLoading &&
               message.role === "assistant" &&
-              (/which would you prefer|which one do you prefer|which sounds best|which would you like|which do you prefer|which would you choose|which one would you/i.test(message.content) ||
-               /[\r\n]1\.\s+\S.+[—–-]/.test(message.content))
+              (
+                /which would you prefer|which one do you prefer|which sounds best|which would you like|which do you prefer|which would you choose|which one would you|which option you.{0,10}prefer|let me know which|which of these|which catch|which interests/i.test(message.content) ||
+                (/[\r\n]1\.\s+\S/.test(message.content) && !/[\r\n]\d{1,2}:\d{2}/.test(message.content))
+              )
                 ? sendMessage
                 : undefined
             }
