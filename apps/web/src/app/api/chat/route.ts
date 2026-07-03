@@ -61,9 +61,13 @@ const SYSTEM_PROMPT =
   "Stage C: After morning pick — list EXACTLY 5 specific lunch restaurants. Call lookup_place for each first. " +
   "Stage D: After lunch pick — list EXACTLY 5 specific afternoon sights or activities. Call lookup_place for each first. " +
   "Stage E: After afternoon pick — list EXACTLY 5 specific dinner restaurants. Call lookup_place for each first. " +
-  "Stage F: After all planned picks — compile the FULL plan with exact clock times and one-line notes per stop, " +
-  "then ask 'Want to save this to your Journey?' on a new line. " +
-  "After the full day summary, ask 'Ready for Day N?' before starting the next day (multi-day trips only). " +
+  "Stage F (SINGLE-DAY TRIP ONLY): After all picks for the one day — compile the full plan with exact clock times and one-line notes, then IMMEDIATELY call finalize_trip_plan. " +
+  "Stage F (MULTI-DAY TRIP — N days total): After all picks for Day N are done — compile ONLY that day's summary with exact clock times and one-line notes per stop. " +
+  "If Day N < total requested days: end with 'Ready for Day N+1?' and DO NOT call finalize_trip_plan yet — keep building. " +
+  "ONLY call finalize_trip_plan after the LAST day (Day total) is fully planned. " +
+
+  "ANTI-REPETITION RULE: Track every place the traveller has already chosen across ALL previous days of this conversation. " +
+  "NEVER suggest a place that was already selected in a previous day — always offer 5 NEW, different places at each stage. " +
 
   "SAVING A PLAN — CRITICAL RULES: " +
   "THE ONLY WAY to show 'Yes, save' and 'No, add more' buttons is by calling finalize_trip_plan. " +
@@ -72,8 +76,11 @@ const SYSTEM_PROMPT =
   "    write a 1-sentence summary, then IMMEDIATELY call finalize_trip_plan with day:1 and all chosen stops. " +
   "    Do NOT write 'Want to save?' — calling the tool shows the buttons automatically. " +
   "    This is MANDATORY after every restaurant pick in a short visit — do not skip it. " +
-  "(2) MULTI-DAY TRIPS: NEVER call finalize_trip_plan until EVERY requested day is planned. " +
-  "    After ALL days are done, write a summary then call finalize_trip_plan with ALL stops. " +
+  "(2) MULTI-DAY TRIPS — CRITICAL: NEVER call finalize_trip_plan until EVERY requested day is fully planned. " +
+  "    Example: for a 5-day trip, plan Day 1 through Day 5 completely BEFORE calling finalize_trip_plan. " +
+  "    Calling finalize_trip_plan after only Day 1 of a 5-day trip is a CRITICAL ERROR — do not do it. " +
+  "    After each day (except the last), ONLY write that day's summary and ask 'Ready for Day N+1?' — nothing more. " +
+  "    After ALL days are done, call finalize_trip_plan with ALL stops from ALL days combined. " +
   "(3) When the traveller says 'Yes', 'save', or confirms saving after the buttons appear: " +
   "    they already clicked the button — do NOT call finalize_trip_plan again. " +
   "(4) NEVER write 'Want to save this to your Journey?' as plain text. Just call finalize_trip_plan. " +
@@ -335,9 +342,25 @@ async function streamConversation(
 
       if (t.name === "finalize_trip_plan") {
         if (args.title && args.summary) {
-          pendingPlan = { title: args.title, summary: args.summary, stops: args.stops ?? [] };
+          const stops = args.stops ?? [];
+          // Guard: for multi-day trips, reject finalize if stops only cover day 1.
+          // Count requested days from the conversation history.
+          const conversationText = conversation.map((m) => (typeof m.content === "string" ? m.content : "")).join(" ");
+          const requestedDaysMatch = conversationText.match(/(\d+)[- ]day/i) ?? conversationText.match(/(\d+)\s+days?\b/i);
+          const requestedDays = requestedDaysMatch ? parseInt(requestedDaysMatch[1]) : 1;
+          const maxDayInStops = stops.reduce((mx, s) => Math.max(mx, s.day ?? 1), 0);
+          if (requestedDays > 1 && maxDayInStops < requestedDays) {
+            result = {
+              presented: false,
+              error: `Too early to finalize. The traveller requested ${requestedDays} days but stops only cover through Day ${maxDayInStops}. Continue planning Day ${maxDayInStops + 1} first.`,
+            };
+          } else {
+            pendingPlan = { title: args.title, summary: args.summary, stops };
+            result = { presented: true };
+          }
+        } else {
+          result = { presented: false };
         }
-        result = { presented: Boolean(pendingPlan) };
       } else if (t.name === "lookup_place") {
         const place = args.name ? await lookupPlace(args.name) : null;
         if (place) collected.push(place);
