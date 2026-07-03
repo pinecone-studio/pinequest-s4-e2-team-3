@@ -4,6 +4,12 @@ import { toFile } from "openai";
 import { appendOperatorMessage } from "@/lib/sosIncidents";
 import { chimegeStt } from "@/lib/chimege";
 import { isValidTwilioRequest, formDataToParams } from "@/lib/twilioWebhook";
+import { after } from "next/server";
+
+// On Vercel the function is frozen once the response is sent, so the transcription
+// must run via after() (kept alive until it resolves or maxDuration). Chimege's
+// long-STT poll can take ~30s, so give the function room.
+export const maxDuration = 60;
 
 // Twilio's own speech recognition does NOT support Mongolian (mn-MN is only on its
 // deprecated STT model), so <Gather speech> never transcribes the operator. Instead
@@ -17,14 +23,16 @@ export async function POST(req: Request) {
   const recordingUrl = String(form.get("RecordingUrl") ?? "");
   const duration = Number(form.get("RecordingDuration") ?? "0");
 
-  // Transcribe + translate off the request path so Twilio gets its next <Record>
-  // instantly — a slow response here trips Twilio's timeout and drops the call.
-  // Skip near-silent clips; transcribers hallucinate text on silence.
-  // ponytail: fire-and-forget is fine on the long-running dev server; move to a
-  // recordingStatusCallback + job if this ever runs on serverless.
+  // Transcribe + translate AFTER the response so Twilio gets its next <Record>
+  // instantly (a slow response trips Twilio's timeout and drops the call). after()
+  // keeps the work alive on Vercel serverless, where a bare fire-and-forget promise
+  // is killed the moment the response is sent. Skip near-silent clips; transcribers
+  // hallucinate text on silence.
   if (id && recordingUrl && duration >= 1) {
-    void processReply(id, recordingUrl).catch((e) =>
-      console.warn("[voice/heard] transcription failed:", e instanceof Error ? e.message : e),
+    after(() =>
+      processReply(id, recordingUrl).catch((e) =>
+        console.warn("[voice/heard] transcription failed:", e instanceof Error ? e.message : e),
+      ),
     );
   }
 
