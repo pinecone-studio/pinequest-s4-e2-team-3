@@ -56,6 +56,21 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // App screens require a signed-in user — unauthenticated visitors start at
+  // /login. "/" is NOT gated here: at top level it hands off to the public
+  // /preview phone frame, and the in-frame dashboard runs its own session
+  // check. /sos stays open — it's the emergency page.
+  const GATED_APP_ROUTES = ["/ai", "/journey", "/explore", "/translate", "/live"];
+  const isGatedApp = GATED_APP_ROUTES.some(
+    (r) => pathname === r || pathname.startsWith(r + "/"),
+  );
+  if (isGatedApp && !user) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    loginUrl.search = "";
+    return NextResponse.redirect(loginUrl);
+  }
+
   return response;
 }
 
