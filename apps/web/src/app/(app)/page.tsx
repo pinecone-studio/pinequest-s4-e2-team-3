@@ -9,6 +9,7 @@ import { SectionHeader } from "@/components/SectionHeader";
 import { MapPinIcon, MicIcon, PlayIcon, ShieldIcon } from "@/components/icons";
 import { guide, todaysJourney, trip, weather } from "@/lib/mockData";
 import { NearbySection } from "./NearbySection";
+import { createClient } from "@/lib/supabase";
 
 export default function HomePage() {
   // The deployed root should immediately show the phone-frame demo (/preview),
@@ -24,7 +25,15 @@ export default function HomePage() {
       window.location.replace("/preview");
       return;
     }
-    setFramed(true);
+    // In-frame the dashboard needs a signed-in user, same as the middleware
+    // gate on the other app screens ("/" can't be gated there because at top
+    // level it must stay reachable to hand off to /preview).
+    void createClient()
+      .auth.getUser()
+      .then(({ data }) => {
+        if (data.user) setFramed(true);
+        else window.location.replace("/login");
+      });
   }, []);
 
   if (framed !== true) return null;

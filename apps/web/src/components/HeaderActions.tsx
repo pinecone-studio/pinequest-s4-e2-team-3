@@ -10,7 +10,8 @@ import { useOnlineStatus } from "@/context/OnlineStatus";
 export function HeaderActions() {
   const router = useRouter();
   const { online } = useOnlineStatus();
-  const [email, setEmail] = useState("");
+  // null = auth check pending, "" = confirmed signed out, otherwise the email.
+  const [email, setEmail] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -26,7 +27,7 @@ export function HeaderActions() {
     router.push("/login");
   }
 
-  const initial = (email.trim()[0] ?? "U").toUpperCase();
+  const initial = (email?.trim()[0] ?? "").toUpperCase();
 
   useEffect(() => {
     if (!open) return;
@@ -57,6 +58,16 @@ export function HeaderActions() {
         </span>
       </Link>
 
+      {/* Signed out (email === "") gets an honest Sign in link instead of a
+          fake avatar; while the check is pending (null) the circle is blank. */}
+      {email === "" ? (
+        <Link
+          href="/login"
+          className="flex h-11 items-center rounded-full bg-primary-600 px-4 text-sm font-semibold text-white"
+        >
+          Sign in
+        </Link>
+      ) : (
       <div className="relative" ref={menuRef}>
         <button
           type="button"
@@ -75,7 +86,7 @@ export function HeaderActions() {
             className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-2xl border border-ink/10 bg-white shadow-lg shadow-ink/10"
           >
             <div className="border-b border-ink/5 px-4 py-3">
-              <p className="truncate text-xs text-ink-muted">{email || "Signed in"}</p>
+              <p className="truncate text-xs text-ink-muted">{email}</p>
             </div>
 
             <Link
@@ -100,6 +111,7 @@ export function HeaderActions() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
