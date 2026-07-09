@@ -8,6 +8,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ChatIcon, MapPinIcon, MicIcon, PencilIcon, SendIcon, StarIcon, WalkIcon } from "@/components/icons";
 import { GuideAvatar, type GuideAvatarState } from "@/components/GuideAvatar";
+import { GuideStar } from "@/components/LiveGuideAvatar";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { guide } from "@/lib/mockData";
 import { FeatureGate } from "@/components/FeatureGate";
@@ -472,6 +473,13 @@ export default function AiPage() {
 
   const suggestions = useMemo(() => getContextualSuggestions(messages), [messages]);
 
+  // Which phase of the trip-planning flow we're in — drives the header stepper
+  // so the screen reads as "building a plan" rather than an open-ended chat.
+  const planPhase = useMemo<0 | 1 | 2>(() => {
+    if (messages.some((m) => m.pendingPlan)) return 2;
+    return detectStage(messages) === "collecting-info" ? 0 : 1;
+  }, [messages]);
+
   // Keep the latest message in view as the conversation grows.
   useEffect(() => {
     scrollAnchor.current?.scrollIntoView({ behavior: "smooth" });
@@ -733,7 +741,7 @@ function newChat() {
     <div className="flex h-[calc(100dvh-7rem)] flex-col lg:h-[calc(100dvh-5rem)]">
       <ChatHeader
         avatarState={avatarState}
-
+        phase={planPhase}
         onNewChat={newChat}
         disabled={isLoading}
       />
@@ -743,9 +751,16 @@ function newChat() {
             conversation starts. Demonstrates the "centred above chat input"
             context alongside the small header widget. */}
         {messages.length === 1 && messages[0].id === 'welcome' && (
-          <div className="flex flex-col items-center gap-3 pb-2 pt-6">
+          <div className="flex flex-col items-center gap-3 px-6 pb-2 pt-6 text-center">
             <GuideAvatar size="lg" state={avatarState} />
-            <p className="text-sm font-medium text-ink-muted">{guide.name} · {guide.status}</p>
+            <div>
+              <h2 className="font-serif text-2xl leading-tight text-ink">
+                Let&apos;s plan your trip
+              </h2>
+              <p className="mx-auto mt-1.5 max-w-[280px] text-sm text-ink-muted">
+                Tell me your dates, interests, and pace — I&apos;ll build a day-by-day Mongolia itinerary with you.
+              </p>
+            </div>
           </div>
         )}
 
@@ -796,29 +811,121 @@ function newChat() {
 
 function ChatHeader({
   avatarState,
+  phase,
   onNewChat,
   disabled,
 }: {
   avatarState: GuideAvatarState;
+  phase: 0 | 1 | 2;
   onNewChat: () => void;
   disabled: boolean;
 }) {
   return (
-    <header className="flex items-center gap-3 border-b border-sand-200 pb-4">
-      <GuideAvatar size="sm" state={avatarState} />
-      <div className="flex-1">
-        <p className="font-bold text-ink">{guide.name}</p>
-        <p className="text-sm text-ink-muted">{guide.status}</p>
+    <header className="border-b border-sand-200 pb-3">
+      <div className="flex items-center gap-3">
+        <GuideStar size={40} />
+        <div className="flex-1">
+          <p className="font-bold text-ink">{guide.name}</p>
+          <p className="text-sm text-ink-muted">Your trip planner</p>
+        </div>
+        <button
+          onClick={onNewChat}
+          disabled={disabled}
+          aria-label="Start a new plan"
+          className="flex h-9 w-9 items-center justify-center rounded-full text-ink-muted hover:bg-sand-100 hover:text-ink disabled:opacity-40"
+        >
+          <PencilIcon size={18} />
+        </button>
       </div>
-      <button
-        onClick={onNewChat}
-        disabled={disabled}
-        aria-label="New chat"
-        className="flex h-9 w-9 items-center justify-center rounded-full text-ink-muted hover:bg-sand-100 hover:text-ink disabled:opacity-40"
-      >
-        <PencilIcon size={18} />
-      </button>
+      <PlanProgress phase={phase} />
     </header>
+  );
+}
+
+// Trip-planning progress — drawn as a 3-stop route (Preferences → Planning →
+// Ready) so the screen feels like charting a journey, not an open-ended chat.
+function PlanProgress({ phase }: { phase: 0 | 1 | 2 }) {
+  const steps = ["Preferences", "Planning", "Ready"];
+  return (
+    <div className="mt-3 px-1">
+      <div className="flex items-center">
+        <RouteNode state={nodeState(0, phase)} />
+        <RouteLine active={phase >= 1} />
+        <RouteNode state={nodeState(1, phase)} />
+        <RouteLine active={phase >= 2} />
+        <RouteNode state={nodeState(2, phase)} />
+      </div>
+      <div className="mt-1.5 flex">
+        {steps.map((label, i) => (
+          <span
+            key={label}
+            className={`flex-1 text-[10px] font-semibold transition-colors ${
+              i === 0 ? "text-left" : i === 2 ? "text-right" : "text-center"
+            } ${
+              i === phase
+                ? "text-primary-600"
+                : i < phase
+                  ? "text-ink-muted"
+                  : "text-ink-muted/40"
+            }`}
+          >
+            {label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+type RouteNodeState = "done" | "current" | "todo";
+
+function nodeState(i: number, phase: number): RouteNodeState {
+  if (i < phase) return "done";
+  if (i === phase) return "current";
+  return "todo";
+}
+
+// Dashed connector between two stops — like a route drawn on a map.
+function RouteLine({ active }: { active: boolean }) {
+  return (
+    <div
+      className={`mx-1 h-0 flex-1 border-t-2 border-dashed transition-colors ${
+        active ? "border-primary-500" : "border-sand-300"
+      }`}
+    />
+  );
+}
+
+// A single stop on the route: checked when passed, ringed while active,
+// hollow when still ahead.
+function RouteNode({ state }: { state: RouteNodeState }) {
+  if (state === "done") {
+    return (
+      <span className="flex h-4 w-4 flex-none items-center justify-center rounded-full bg-primary-600 text-white">
+        <svg
+          width="9"
+          height="9"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M5 12l5 5 9-11" />
+        </svg>
+      </span>
+    );
+  }
+  if (state === "current") {
+    return (
+      <span className="flex h-4 w-4 flex-none items-center justify-center rounded-full bg-primary-600 ring-4 ring-primary-600/15">
+        <span className="h-1.5 w-1.5 rounded-full bg-white" />
+      </span>
+    );
+  }
+  return (
+    <span className="h-4 w-4 flex-none rounded-full border-2 border-sand-300 bg-white" />
   );
 }
 
@@ -897,6 +1004,33 @@ function extractTextFromChildren(children: React.ReactNode): string {
   return "";
 }
 
+// Module-level cache so a given place lookup hits the network at most once —
+// shared across every message bubble, re-render, remount, and Fast Refresh.
+// Without this, reloading a saved itinerary re-fired /api/places endlessly.
+const placeLookupCache = new Map<string, Promise<ExploreSpot | null>>();
+
+function lookupPlace(
+  name: string,
+  lat: number,
+  lng: number,
+): Promise<ExploreSpot | null> {
+  const key = `${name.toLowerCase()}|${lat.toFixed(2)}|${lng.toFixed(2)}`;
+  const cached = placeLookupCache.get(key);
+  if (cached) return cached;
+  const pending = fetch(
+    `/api/places?q=${encodeURIComponent(name)}&lat=${lat}&lng=${lng}`,
+  )
+    .then((r) => (r.ok ? r.json() : []))
+    .then((data: ExploreSpot[]) => data[0] ?? null)
+    .catch(() => null);
+  placeLookupCache.set(key, pending);
+  // Drop failed lookups from the cache so they can be retried later.
+  pending.then((v) => {
+    if (v === null) placeLookupCache.delete(key);
+  });
+  return pending;
+}
+
 function MessageBubble({
   message,
   coords,
@@ -919,39 +1053,42 @@ function MessageBubble({
   const [spotsLoading, setSpotsLoading] = useState(false);
   const [spotsCount, setSpotsCount] = useState(3);
 
-  useEffect(() => {
-    if (isUser) return;
-    const names = message.places?.length
+  // The place names to look up for this message. Memoised to a stable list so
+  // the fetch effect below only re-runs when the names themselves change —
+  // not on every parent re-render or messages-array rebuild.
+  const names = useMemo<string[]>(() => {
+    if (isUser) return [];
+    return message.places?.length
       ? message.places.map((p) => p.name)
       : extractPlanPlaceNames(message.content);
+  }, [isUser, message.places, message.content]);
+  const namesKey = names.join("|");
+
+  useEffect(() => {
     if (!names.length) return;
     const lat = coords?.lat ?? 47.9077;
     const lng = coords?.lng ?? 106.8832;
     let cancelled = false;
     setSpotsCount(Math.min(names.length, 5));
     setSpotsLoading(true);
-    Promise.all(
-      names.map((name) =>
-        fetch(`/api/places?q=${encodeURIComponent(name)}&lat=${lat}&lng=${lng}`)
-          .then((r) => (r.ok ? r.json() : []))
-          .then((data: ExploreSpot[]) => data[0] ?? null)
-          .catch(() => null),
-      ),
-    ).then((results) => {
-      if (cancelled) return;
-      const mapped = results.map((r, i) => r ?? { name: names[i] });
-      // Found places first, unfound last
-      mapped.sort((a, b) => ("id" in b ? 1 : 0) - ("id" in a ? 1 : 0));
-      setAutoSpots(mapped);
-      setSpotsLoading(false);
-    }).catch(() => {
-      if (!cancelled) setSpotsLoading(false);
-    });
+    Promise.all(names.map((name) => lookupPlace(name, lat, lng)))
+      .then((results) => {
+        if (cancelled) return;
+        const mapped = results.map((r, i) => r ?? { name: names[i] });
+        // Found places first, unfound last
+        mapped.sort((a, b) => ("id" in b ? 1 : 0) - ("id" in a ? 1 : 0));
+        setAutoSpots(mapped);
+        setSpotsLoading(false);
+      })
+      .catch(() => {
+        if (!cancelled) setSpotsLoading(false);
+      });
     return () => {
       cancelled = true;
-      setSpotsLoading(false);
     };
-  }, [message.id, message.places]); // eslint-disable-line react-hooks/exhaustive-deps
+    // namesKey captures the identity of `names`; coords are read at fire time
+    // but intentionally don't retrigger a refetch on location resolve.
+  }, [namesKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className={isUser ? "flex flex-col items-end" : "flex flex-col items-start"}>
@@ -1148,13 +1285,16 @@ function QuickReplies({
   disabled: boolean;
 }) {
   return (
-    <div className="flex flex-wrap gap-2 py-3">
+    <div
+      className="flex gap-2 overflow-x-auto py-3"
+      style={{ scrollbarWidth: "none" }}
+    >
       {suggestions.map((reply) => (
         <button
           key={reply}
           onClick={() => onPick(reply)}
           disabled={disabled}
-          className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-ink-muted shadow-ink-sm transition-colors hover:bg-sand-50 hover:text-ink disabled:opacity-50"
+          className="flex-none whitespace-nowrap rounded-full bg-white px-4 py-2 text-sm font-semibold text-ink-muted shadow-ink-sm transition-colors hover:bg-sand-50 hover:text-ink disabled:opacity-50"
         >
           {reply}
         </button>
@@ -1189,7 +1329,7 @@ function MessageInput({
         type="text"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder={isListening ? "Listening…" : "Message Polaris…"}
+        placeholder={isListening ? "Listening…" : "Tell Michelle about your trip…"}
         className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-muted"
       />
       {voiceSupported ? (
