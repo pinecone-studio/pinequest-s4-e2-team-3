@@ -8,6 +8,7 @@ import { LiveClock, LiveWeekday } from "@/components/LiveClock";
 import { SectionHeader } from "@/components/SectionHeader";
 import { MapPinIcon, MicIcon, PlayIcon, ShieldIcon } from "@/components/icons";
 import { guide, todaysJourney, trip, weather } from "@/lib/mockData";
+import { LiveGuideAvatar } from "@/components/LiveGuideAvatar";
 import { NearbySection } from "./NearbySection";
 import { createClient } from "@/lib/supabase";
 
@@ -123,10 +124,27 @@ function LiveGuideCard() {
         fill="none"
       >
         <circle cx="50" cy="50" r="48" stroke="currentColor" strokeWidth="1" />
-        <circle cx="50" cy="50" r="34" stroke="currentColor" strokeWidth="0.8" />
-        <circle cx="50" cy="50" r="20" stroke="currentColor" strokeWidth="0.6" />
+        <circle
+          cx="50"
+          cy="50"
+          r="34"
+          stroke="currentColor"
+          strokeWidth="0.8"
+        />
+        <circle
+          cx="50"
+          cy="50"
+          r="20"
+          stroke="currentColor"
+          strokeWidth="0.6"
+        />
         <circle cx="50" cy="50" r="8" fill="currentColor" opacity="0.35" />
       </svg>
+
+      {/* Floating guide character with "Travel with me" speech bubble */}
+      <div className="pointer-events-none absolute right-4 top-4 z-10">
+        <LiveGuideAvatar />
+      </div>
 
       <div className="relative p-5">
         {/* Live indicator — a pulse dot + label, no pill wrapper */}
@@ -143,8 +161,8 @@ function LiveGuideCard() {
         <h2 className="font-serif text-[28px] leading-[1.1] text-white">
           Live Guide
         </h2>
-        <p className="mt-2 text-sm leading-snug text-white/55">
-          Voice narration, real-time tips, and answers for your journey.
+        <p className="mt-2 max-w-[66%] text-sm leading-snug text-white/55">
+          Experience More, Worry Less.
         </p>
 
         <Link
